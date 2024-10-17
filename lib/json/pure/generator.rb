@@ -378,8 +378,8 @@ module JSON
           # Converts this object to a string (calling #to_s), converts
           # it to a JSON string, and returns the result. This is a fallback, if no
           # special method #to_json was defined for some object.
-          def to_json(generator_state)
-            if generator_state.strict?
+          def to_json(state = nil, *)
+            if state && State.from_state(state).strict?
               raise GeneratorError, "#{self.class} not allowed in JSON"
             else
               to_s.to_json

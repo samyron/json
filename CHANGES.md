@@ -1,6 +1,7 @@
 # Changes
 
 * Numerous performance optimizations in `JSON.generate` and `JSON.dump`.
+* Fix json-pure's `Object#to_json` to accept non state arguments 
 * Fix multiline comment support in `json-pure`.
 * Fix `JSON.parse` to no longer mutate the argument encoding when passed an ASCII-8BIT string.
 * Fix `String#to_json` to raise on invalid encoding in `json-pure`.
