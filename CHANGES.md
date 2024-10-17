@@ -1,5 +1,13 @@
 # Changes
 
+* Numerous performance optimizations in `JSON.generate` and `JSON.dump`.
+* Fix multiline comment support in `json-pure`.
+* Fix `JSON.parse` to no longer mutate the argument encoding when passed an ASCII-8BIT string.
+* Fix `String#to_json` to raise on invalid encoding in `json-pure`.
+* Delete code that was based on CVTUTF.
+* Use the pure-Ruby generator on TruffleRuby.
+* Fix `strict` mode in `json-pure` to not break on Integer.
+
 ### 2024-04-04 (2.7.2)
 
 * Use rb_sym2str instead of SYM2ID #561
