@@ -131,10 +131,14 @@ public class Parser extends RubyObject {
      * defaults to <code>true</code>.
      *
      * <dt><code>:object_class</code>
-     * <dd>Defaults to Hash.
+     * <dd>Defaults to Hash. If another type is provided, it will be used
+     * instead of Hash to represent JSON objects. The type must respond to
+     * <code>new</code> without arguments, and return an object that respond to <code>[]=</code>.
      *
      * <dt><code>:array_class</code>
-     * <dd>Defaults to Array.
+     * <dd>Defaults to Array. If another type is provided, it will be used
+     * instead of Hash to represent JSON arrays. The type must respond to
+     * <code>new</code> without arguments, and return an object that respond to <code><<</code>.
      *
      * <dt><code>:decimal_class</code>
      * <dd>Specifies which class to use instead of the default (Float) when
@@ -142,6 +146,7 @@ public class Parser extends RubyObject {
      * in its constructor.
      * </dl>
      */
+
     @JRubyMethod(name = "new", required = 1, optional = 1, meta = true)
     public static IRubyObject newInstance(IRubyObject clazz, IRubyObject[] args, Block block) {
         Parser parser = (Parser)((RubyClass)clazz).allocate();
