@@ -332,7 +332,7 @@ public class Parser extends RubyObject {
 
         private RaiseException unexpectedToken(int absStart, int absEnd) {
             RubyString msg = getRuntime().newString("unexpected token at '")
-                    .cat(data, absStart, absEnd - absStart)
+                    .cat(data, absStart, Math.min(absEnd - absStart, 32))
                     .cat((byte)'\'');
             return newException(Utils.M_PARSER_ERROR, msg);
         }
