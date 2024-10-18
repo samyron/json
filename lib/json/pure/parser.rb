@@ -40,7 +40,7 @@ module JSON
          /\*               # c-style comments
          (?:
           [\s\S]*?         # any char, repeated lazily
-         )*
+         )
            \*/               # the End of this comment
            |[ \t\r\n]+       # whitespaces: space, horizontal tab, lf, cr
         )+
