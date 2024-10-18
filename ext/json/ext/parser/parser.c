@@ -1824,80 +1824,88 @@ static VALUE cParser_initialize(int argc, VALUE *argv, VALUE self)
     if (json->Vsource) {
         rb_raise(rb_eTypeError, "already initialized instance");
     }
-    rb_scan_args(argc, argv, "1:", &source, &opts);
+
+    rb_check_arity(argc, 1, 2);
+    source = argv[0];
+    opts = Qnil;
+    if (argc == 2) {
+        opts = argv[1];
+        Check_Type(opts, T_HASH);
+    }
+
     if (!NIL_P(opts)) {
-	VALUE tmp = ID2SYM(i_max_nesting);
-	if (option_given_p(opts, tmp)) {
-	    VALUE max_nesting = rb_hash_aref(opts, tmp);
-	    if (RTEST(max_nesting)) {
-		Check_Type(max_nesting, T_FIXNUM);
-		json->max_nesting = FIX2INT(max_nesting);
-	    } else {
-		json->max_nesting = 0;
-	    }
-	} else {
-	    json->max_nesting = 100;
-	}
-	tmp = ID2SYM(i_allow_nan);
-	if (option_given_p(opts, tmp)) {
-	    json->allow_nan = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-	} else {
-	    json->allow_nan = 0;
-	}
-	tmp = ID2SYM(i_symbolize_names);
-	if (option_given_p(opts, tmp)) {
-	    json->symbolize_names = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-	} else {
-	    json->symbolize_names = 0;
-	}
-	tmp = ID2SYM(i_freeze);
-	if (option_given_p(opts, tmp)) {
-	    json->freeze = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-	} else {
-	    json->freeze = 0;
-	}
-	tmp = ID2SYM(i_create_additions);
-	if (option_given_p(opts, tmp)) {
-	    json->create_additions = RTEST(rb_hash_aref(opts, tmp));
-	} else {
-	    json->create_additions = 0;
-	}
-	if (json->symbolize_names && json->create_additions) {
-	    rb_raise(rb_eArgError,
-		     "options :symbolize_names and :create_additions cannot be "
-		     " used in conjunction");
-	}
-	tmp = ID2SYM(i_create_id);
-	if (option_given_p(opts, tmp)) {
-	    json->create_id = rb_hash_aref(opts, tmp);
-	} else {
-	    json->create_id = rb_funcall(mJSON, i_create_id, 0);
-	}
-	tmp = ID2SYM(i_object_class);
-	if (option_given_p(opts, tmp)) {
-	    json->object_class = rb_hash_aref(opts, tmp);
-	} else {
-	    json->object_class = Qnil;
-	}
-	tmp = ID2SYM(i_array_class);
-	if (option_given_p(opts, tmp)) {
-	    json->array_class = rb_hash_aref(opts, tmp);
-	} else {
-	    json->array_class = Qnil;
-	}
-	tmp = ID2SYM(i_decimal_class);
-	if (option_given_p(opts, tmp)) {
-	    json->decimal_class = rb_hash_aref(opts, tmp);
-	} else {
-	    json->decimal_class = Qnil;
-	}
-	tmp = ID2SYM(i_match_string);
-	if (option_given_p(opts, tmp)) {
-	    VALUE match_string = rb_hash_aref(opts, tmp);
-	    json->match_string = RTEST(match_string) ? match_string : Qnil;
-	} else {
-	    json->match_string = Qnil;
-	}
+    VALUE tmp = ID2SYM(i_max_nesting);
+    if (option_given_p(opts, tmp)) {
+        VALUE max_nesting = rb_hash_aref(opts, tmp);
+        if (RTEST(max_nesting)) {
+            Check_Type(max_nesting, T_FIXNUM);
+            json->max_nesting = FIX2INT(max_nesting);
+        } else {
+            json->max_nesting = 0;
+        }
+    } else {
+        json->max_nesting = 100;
+    }
+    tmp = ID2SYM(i_allow_nan);
+    if (option_given_p(opts, tmp)) {
+        json->allow_nan = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
+    } else {
+        json->allow_nan = 0;
+    }
+    tmp = ID2SYM(i_symbolize_names);
+    if (option_given_p(opts, tmp)) {
+        json->symbolize_names = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
+    } else {
+        json->symbolize_names = 0;
+    }
+    tmp = ID2SYM(i_freeze);
+    if (option_given_p(opts, tmp)) {
+        json->freeze = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
+    } else {
+        json->freeze = 0;
+    }
+    tmp = ID2SYM(i_create_additions);
+    if (option_given_p(opts, tmp)) {
+        json->create_additions = RTEST(rb_hash_aref(opts, tmp));
+    } else {
+        json->create_additions = 0;
+    }
+    if (json->symbolize_names && json->create_additions) {
+        rb_raise(rb_eArgError,
+            "options :symbolize_names and :create_additions cannot be "
+            " used in conjunction");
+    }
+    tmp = ID2SYM(i_create_id);
+    if (option_given_p(opts, tmp)) {
+        json->create_id = rb_hash_aref(opts, tmp);
+    } else {
+        json->create_id = rb_funcall(mJSON, i_create_id, 0);
+    }
+    tmp = ID2SYM(i_object_class);
+    if (option_given_p(opts, tmp)) {
+        json->object_class = rb_hash_aref(opts, tmp);
+    } else {
+        json->object_class = Qnil;
+    }
+    tmp = ID2SYM(i_array_class);
+    if (option_given_p(opts, tmp)) {
+        json->array_class = rb_hash_aref(opts, tmp);
+    } else {
+        json->array_class = Qnil;
+    }
+    tmp = ID2SYM(i_decimal_class);
+    if (option_given_p(opts, tmp)) {
+        json->decimal_class = rb_hash_aref(opts, tmp);
+    } else {
+        json->decimal_class = Qnil;
+    }
+    tmp = ID2SYM(i_match_string);
+    if (option_given_p(opts, tmp)) {
+        VALUE match_string = rb_hash_aref(opts, tmp);
+        json->match_string = RTEST(match_string) ? match_string : Qnil;
+    } else {
+        json->match_string = Qnil;
+    }
     } else {
         json->max_nesting = 100;
         json->allow_nan = 0;
@@ -1916,7 +1924,7 @@ static VALUE cParser_initialize(int argc, VALUE *argv, VALUE self)
 }
 
 
-#line 1920 "parser.c"
+#line 1928 "parser.c"
 enum {JSON_start = 1};
 enum {JSON_first_final = 10};
 enum {JSON_error = 0};
@@ -1924,7 +1932,7 @@ enum {JSON_error = 0};
 enum {JSON_en_main = 1};
 
 
-#line 828 "parser.rl"
+#line 836 "parser.rl"
 
 
 /*
@@ -1942,16 +1950,16 @@ static VALUE cParser_parse(VALUE self)
   GET_PARSER;
 
 
-#line 1946 "parser.c"
+#line 1954 "parser.c"
 	{
 	cs = JSON_start;
 	}
 
-#line 845 "parser.rl"
+#line 853 "parser.rl"
   p = json->source;
   pe = p + json->len;
 
-#line 1955 "parser.c"
+#line 1963 "parser.c"
 	{
 	if ( p == pe )
 		goto _test_eof;
@@ -1985,7 +1993,7 @@ st0:
 cs = 0;
 	goto _out;
 tr2:
-#line 820 "parser.rl"
+#line 828 "parser.rl"
 	{
         char *np = JSON_parse_value(json, p, pe, &result, 0);
         if (np == NULL) { p--; {p++; cs = 10; goto _out;} } else {p = (( np))-1;}
@@ -1995,7 +2003,7 @@ st10:
 	if ( ++p == pe )
 		goto _test_eof10;
 case 10:
-#line 1999 "parser.c"
+#line 2007 "parser.c"
 	switch( (*p) ) {
 		case 13: goto st10;
 		case 32: goto st10;
@@ -2084,7 +2092,7 @@ case 9:
 	_out: {}
 	}
 
-#line 848 "parser.rl"
+#line 856 "parser.rl"
 
   if (cs >= JSON_first_final && p == pe) {
     return result;

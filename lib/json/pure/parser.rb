@@ -76,7 +76,7 @@ module JSON
       # * *decimal_class*: Specifies which class to use instead of the default
       #    (Float) when parsing decimal numbers. This class must accept a single
       #    string argument in its constructor.
-      def initialize(source, opts = {})
+      def initialize(source, opts = nil)
         opts ||= {}
         source = convert_encoding source
         super source
