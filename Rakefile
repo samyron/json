@@ -122,6 +122,41 @@ namespace :gems do
   end
 end
 
+file EXT_PARSER_DL => EXT_PARSER_SRC do
+  cd EXT_PARSER_DIR do
+    ruby 'extconf.rb'
+    sh MAKE
+  end
+  cp "#{EXT_PARSER_DIR}/parser.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
+end
+
+file EXT_GENERATOR_DL => EXT_GENERATOR_SRC do
+  cd EXT_GENERATOR_DIR do
+    ruby 'extconf.rb'
+    sh MAKE
+  end
+  cp "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
+end
+
+file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
+  cd JAVA_DIR do
+    if RAGEL_CODEGEN == 'ragel'
+      sh "ragel Parser.rl -J -o Parser.java"
+    else
+      sh "ragel -x Parser.rl | #{RAGEL_CODEGEN} -J"
+    end
+  end
+end
+
+desc "Generate parser with ragel"
+task :ragel => [EXT_PARSER_SRC, JAVA_PARSER_SRC]
+
+desc "Delete the ragel generated C source"
+task :ragel_clean do
+  rm_rf EXT_PARSER_SRC
+  rm_rf JAVA_PARSER_SRC
+end
+
 if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   ENV['JAVA_HOME'] ||= [
     '/usr/local/java/jdk',
@@ -135,24 +170,6 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   else
     warn " *** JAVA_HOME was not set or could not be guessed!"
     exit 1
-  end
-
-  file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
-    cd JAVA_DIR do
-      if RAGEL_CODEGEN == 'ragel'
-        sh "ragel Parser.rl -J -o Parser.java"
-      else
-        sh "ragel -x Parser.rl | #{RAGEL_CODEGEN} -J"
-      end
-    end
-  end
-
-  desc "Generate parser for java with ragel"
-  task :ragel => JAVA_PARSER_SRC
-
-  desc "Delete the ragel generated Java source"
-  task :ragel_clean do
-    rm_rf JAVA_PARSER_SRC
   end
 
   JRUBY_JAR = File.join(CONFIG["libdir"], "jruby.jar")
@@ -170,7 +187,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   end
 
   desc "Compiling jruby extension"
-  task :compile => JAVA_CLASSES
+  task :compile => [:ragel] + JAVA_CLASSES
 
   desc "Package the jruby gem"
   task :jruby_gem => :create_jar do
@@ -236,26 +253,11 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
 else
   desc "Compiling extension"
   if RUBY_ENGINE == 'truffleruby'
-    task :compile => [ EXT_PARSER_DL ]
+    task :compile => [ :ragel, EXT_PARSER_DL ]
   else
-    task :compile => [ EXT_PARSER_DL, EXT_GENERATOR_DL ]
+    task :compile => [ :ragel, EXT_PARSER_DL, EXT_GENERATOR_DL ]
   end
 
-  file EXT_PARSER_DL => EXT_PARSER_SRC do
-    cd EXT_PARSER_DIR do
-      ruby 'extconf.rb'
-      sh MAKE
-    end
-    cp "#{EXT_PARSER_DIR}/parser.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
-  end
-
-  file EXT_GENERATOR_DL => EXT_GENERATOR_SRC do
-    cd EXT_GENERATOR_DIR do
-      ruby 'extconf.rb'
-      sh MAKE
-    end
-    cp "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
-  end
 
   desc "Testing library (extension)"
   task :test_ext => [ :set_env_ext, :check_env, :compile, :do_test_ext ]
@@ -266,14 +268,6 @@ else
     t.test_files = FileList['test/json/*_test.rb']
     t.verbose = true
     t.options = '-v'
-  end
-
-  desc "Generate parser with ragel"
-  task :ragel => EXT_PARSER_SRC
-
-  desc "Delete the ragel generated C source"
-  task :ragel_clean do
-    rm_rf EXT_PARSER_SRC
   end
 
   desc "Update the tags file"
