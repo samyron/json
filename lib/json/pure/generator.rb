@@ -1,4 +1,4 @@
-#frozen_string_literal: false
+# frozen_string_literal: true
 module JSON
   MAP = {
     "\x0" => '\u0000',
@@ -35,7 +35,7 @@ module JSON
     "\x1f" => '\u001f',
     '"'   =>  '\"',
     '\\'  =>  '\\\\',
-  } # :nodoc:
+  }.freeze # :nodoc:
 
   ESCAPE_PATTERN = /[\/"\\\x0-\x1f]/n # :nodoc:
 
@@ -43,7 +43,7 @@ module JSON
     '/'  =>  '\\/',
     "\u2028".b => '\u2028',
     "\u2029".b => '\u2029',
-  )
+  ).freeze
 
   SCRIPT_SAFE_ESCAPE_PATTERN = Regexp.union(ESCAPE_PATTERN, "\u2028".b, "\u2029".b)
 
@@ -75,7 +75,7 @@ module JSON
       [\x80-\xc1\xf5-\xff]       # invalid
     )/nx) { |c|
       c.size == 1 and raise GeneratorError, "invalid utf8 byte: '#{c}'"
-      s = JSON.iconv('utf-16be', 'utf-8', c).unpack('H*')[0]
+      s = c.encode(::Encoding::UTF_16BE, ::Encoding::UTF_8).unpack('H*')[0]
       s.force_encoding(::Encoding::ASCII_8BIT)
       s.gsub!(/.{4}/n, '\\\\u\&')
       s.force_encoding(::Encoding::UTF_8)
@@ -292,7 +292,7 @@ module JSON
         def generate(obj)
           if @indent.empty? and @space.empty? and @space_before.empty? and @object_nl.empty? and @array_nl.empty? and
               !@ascii_only and !@script_safe and @max_nesting == 0 and !@strict
-            result = generate_json(obj, '')
+            result = generate_json(obj, ''.dup)
           else
             result = obj.to_json(self)
           end
@@ -305,25 +305,25 @@ module JSON
         private def generate_json(obj, buf)
           case obj
           when Hash
-            buf << '{'.freeze
+            buf << '{'
             first = true
             obj.each_pair do |k,v|
-              buf << ','.freeze unless first
+              buf << ',' unless first
               fast_serialize_string(k.to_s, buf)
-              buf << ':'.freeze
+              buf << ':'
               generate_json(v, buf)
               first = false
             end
-            buf << '}'.freeze
+            buf << '}'
           when Array
-            buf << '['.freeze
+            buf << '['
             first = true
             obj.each do |e|
-              buf << ','.freeze unless first
+              buf << ',' unless first
               generate_json(e, buf)
               first = false
             end
-            buf << ']'.freeze
+            buf << ']'
           when String
             fast_serialize_string(obj, buf)
           when Integer
@@ -337,7 +337,7 @@ module JSON
         # Assumes !@ascii_only, !@script_safe
         if Regexp.method_defined?(:match?)
           private def fast_serialize_string(string, buf) # :nodoc:
-            buf << '"'.freeze
+            buf << '"'
             string = string.encode(::Encoding::UTF_8) unless string.encoding == ::Encoding::UTF_8
 
             if /["\\\x0-\x1f]/n.match?(string)
@@ -345,7 +345,7 @@ module JSON
             else
               buf << string
             end
-            buf << '"'.freeze
+            buf << '"'
           end
         else
           # Ruby 2.3 compatibility
@@ -409,6 +409,7 @@ module JSON
           def json_transform(state)
             delim = ",#{state.object_nl}"
             result = "{#{state.object_nl}"
+            result = result.dup if result.frozen? # RUBY_VERSION < 3.0
             depth = state.depth += 1
             first = true
             indent = !state.object_nl.empty?
@@ -416,6 +417,7 @@ module JSON
               result << delim unless first
               result << state.indent * depth if indent
               result = "#{result}#{key.to_s.to_json(state)}#{state.space_before}:#{state.space}"
+              result = result.dup if result.frozen? # RUBY_VERSION < 3.0
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
                 raise GeneratorError, "#{value.class} not allowed in JSON"
               elsif value.respond_to?(:to_json)
@@ -449,10 +451,13 @@ module JSON
           private
 
           def json_transform(state)
-            delim = ','
-            delim << state.array_nl
-            result = '['
-            result << state.array_nl
+            result = '['.dup
+            if state.array_nl.empty?
+              delim = ","
+            else
+              result << state.array_nl
+              delim = ",#{state.array_nl}"
+            end
             depth = state.depth += 1
             first = true
             indent = !state.array_nl.empty?
@@ -518,9 +523,9 @@ module JSON
               string = encode(::Encoding::UTF_8)
             end
             if state.ascii_only?
-              '"' << JSON.utf8_to_json_ascii(string, state.script_safe) << '"'
+              %("#{JSON.utf8_to_json_ascii(string, state.script_safe)}")
             else
-              '"' << JSON.utf8_to_json(string, state.script_safe) << '"'
+              %("#{JSON.utf8_to_json(string, state.script_safe)}")
             end
           end
 

@@ -1,5 +1,4 @@
-# encoding: utf-8
-# frozen_string_literal: false
+# frozen_string_literal: true
 require_relative 'test_helper'
 require 'stringio'
 require 'tempfile'
@@ -36,7 +35,8 @@ class JSONParserTest < Test::Unit::TestCase
     pend if RUBY_ENGINE == 'truffleruby'
 
     bug10705 = '[ruby-core:67386] [Bug #10705]'
-    json = ".\"\xE2\x88\x9A\"".force_encoding(Encoding::UTF_8)
+    json = ".\"\xE2\x88\x9A\""
+    assert_equal(Encoding::UTF_8, json.encoding)
     e = assert_raise(JSON::ParserError) {
       JSON::Ext::Parser.new(json).parse
     }
@@ -133,23 +133,21 @@ class JSONParserTest < Test::Unit::TestCase
     assert_equal(["éé"], JSON.parse("[\"\\u00e9é\"]"))
   end
 
-  if Array.method_defined?(:permutation)
-    def test_parse_more_complex_arrays
-      a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
-      a.permutation.each do |perm|
-        json = pretty_generate(perm)
-        assert_equal perm, parse(json)
-      end
+  def test_parse_more_complex_arrays
+    a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
+    a.permutation.each do |perm|
+      json = pretty_generate(perm)
+      assert_equal perm, parse(json)
     end
+  end
 
-    def test_parse_complex_objects
-      a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
-      a.permutation.each do |perm|
-        s = "a"
-        orig_obj = perm.inject({}) { |h, x| h[s.dup] = x; s = s.succ; h }
-        json = pretty_generate(orig_obj)
-        assert_equal orig_obj, parse(json)
-      end
+  def test_parse_complex_objects
+    a = [ nil, false, true, "foßbar", [ "n€st€d", true ], { "nested" => true, "n€ßt€ð2" => {} }]
+    a.permutation.each do |perm|
+      s = "a"
+      orig_obj = perm.inject({}) { |h, x| h[s.dup] = x; s = s.succ; h }
+      json = pretty_generate(orig_obj)
+      assert_equal orig_obj, parse(json)
     end
   end
 
@@ -502,7 +500,7 @@ EOT
   def test_parsing_frozen_ascii8bit_string
     assert_equal(
       { 'foo' => 'bar' },
-      JSON('{ "foo": "bar" }'.force_encoding(Encoding::ASCII_8BIT).freeze)
+      JSON('{ "foo": "bar" }'.b.freeze)
     )
   end
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: false
+# frozen_string_literal: true
 
 require_relative 'test_helper'
 
@@ -304,12 +304,12 @@ EOT
     state.configure(:indent => '1')
     assert_equal '1', state.indent
     state = JSON.state.new
-    foo = 'foo'
+    foo = 'foo'.dup
     assert_raise(TypeError) do
       state.configure(foo)
     end
     def foo.to_h
-      { :indent => '2' }
+      { indent: '2' }
     end
     state.configure(foo)
     assert_equal '2', state.indent
@@ -480,6 +480,6 @@ EOT
   end
 
   def test_nonutf8_encoding
-    assert_equal("\"5\u{b0}\"", "5\xb0".force_encoding("iso-8859-1").to_json)
+    assert_equal("\"5\u{b0}\"", "5\xb0".dup.force_encoding(Encoding::ISO_8859_1).to_json)
   end
 end
