@@ -180,7 +180,7 @@ module JSON
                 bytes << c[6 * i + 2, 2].to_i(16) << c[6 * i + 4, 2].to_i(16)
                 i += 1
               end
-              JSON.iconv('utf-8', 'utf-16be', bytes).force_encoding(::Encoding::ASCII_8BIT)
+              bytes.encode(Encoding::UTF_8, Encoding::UTF_16BE).force_encoding(::Encoding::BINARY)
             end
           end
           if string.respond_to?(:force_encoding)

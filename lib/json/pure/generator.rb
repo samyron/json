@@ -75,7 +75,7 @@ module JSON
       [\x80-\xc1\xf5-\xff]       # invalid
     )/nx) { |c|
       c.size == 1 and raise GeneratorError, "invalid utf8 byte: '#{c}'"
-      s = JSON.iconv('utf-16be', 'utf-8', c).unpack('H*')[0]
+      s = c.encode(::Encoding::UTF_16BE, ::Encoding::UTF_8).unpack('H*')[0]
       s.force_encoding(::Encoding::ASCII_8BIT)
       s.gsub!(/.{4}/n, '\\\\u\&')
       s.force_encoding(::Encoding::UTF_8)
