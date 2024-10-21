@@ -1,6 +1,7 @@
 .*.sw[pon]
 *.bundle
 *.bundle.dSYM
+*.so
 coverage
 tags
 pkg
