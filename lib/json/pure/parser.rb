@@ -1,4 +1,4 @@
-#frozen_string_literal: false
+#frozen_string_literal: true
 require 'strscan'
 
 module JSON
@@ -161,11 +161,6 @@ module JSON
         ?u  => nil,
       })
 
-      EMPTY_8BIT_STRING = ''
-      if ::String.method_defined?(:encode)
-        EMPTY_8BIT_STRING.force_encoding Encoding::ASCII_8BIT
-      end
-
       STR_UMINUS = ''.respond_to?(:-@)
       def parse_string
         if scan(STRING)
@@ -174,7 +169,7 @@ module JSON
             if u = UNESCAPE_MAP[$&[1]]
               u
             else # \uXXXX
-              bytes = EMPTY_8BIT_STRING.dup
+              bytes = ''.b
               i = 0
               while c[6 * i] == ?\\ && c[6 * i + 1] == ?u
                 bytes << c[6 * i + 2, 2].to_i(16) << c[6 * i + 4, 2].to_i(16)
@@ -183,9 +178,7 @@ module JSON
               bytes.encode(Encoding::UTF_8, Encoding::UTF_16BE).force_encoding(::Encoding::BINARY)
             end
           end
-          if string.respond_to?(:force_encoding)
-            string.force_encoding(::Encoding::UTF_8)
-          end
+          string.force_encoding(::Encoding::UTF_8)
 
           if @freeze
             if STR_UMINUS
