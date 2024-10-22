@@ -191,9 +191,8 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
 
   desc "Package the jruby gem"
   task :jruby_gem => :create_jar do
-    sh 'gem build json-java.gemspec'
     mkdir_p 'pkg'
-    mv "json-#{PKG_VERSION}-java.gem", 'pkg'
+    sh "gem build -o pkg/json-#{PKG_VERSION}-java.gem json.gemspec"
   end
 
   desc "Testing library (jruby)"

@@ -1,27 +1,23 @@
-# vim: set ft=ruby:
-
 source 'https://rubygems.org'
 
-case ENV['JSON']
-when 'ext', nil
-  if ENV['RUBY_ENGINE'] == 'jruby'
-    gemspec :name => 'json-java'
-  else
-    gemspec :name => 'json'
-  end
-when 'pure'
-  gemspec :name => 'json_pure'
+if ENV['JSON'] == 'pure'
+  gemspec name: 'json_pure'
+else
+  gemspec name: 'json'
 end
 
-gem "rake"
-gem "test-unit"
-gem "test-unit-ruby-core"
-gem "all_images", "~> 0" unless RUBY_PLATFORM =~ /java/
+group :development do
+  gem "rake"
+  gem "rake-compiler"
+  gem "test-unit"
+  gem "test-unit-ruby-core"
+  gem "all_images", "~> 0" unless RUBY_PLATFORM =~ /java/
 
-if ENV['BENCHMARK']
-  gem "benchmark-ips"
-  unless RUBY_PLATFORM =~ /java/
-    gem "oj"
-    gem "rapidjson"
+  if ENV['BENCHMARK']
+    gem "benchmark-ips"
+    unless RUBY_PLATFORM =~ /java/
+      gem "oj"
+      gem "rapidjson"
+    end
   end
 end

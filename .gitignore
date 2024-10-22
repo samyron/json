@@ -20,3 +20,5 @@ Gemfile.lock
 */**/*.jar
 .byebug_history
 *.log
+/tmp
+
