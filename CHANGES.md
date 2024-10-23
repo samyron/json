@@ -1,5 +1,7 @@
 # Changes
 
+### 2024-10-23 (2.7.3.rc1)
+
 * Numerous performance optimizations in `JSON.generate` and `JSON.dump`.
 * Limit the size of ParserError exception messages, only include up to 32 bytes of the unparseable source.
 * Fix json-pure's `Object#to_json` to accept non state arguments 

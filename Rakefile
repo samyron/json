@@ -57,7 +57,7 @@ else
 end
 
 desc "Installing library (pure)"
-task :install_pure => :version do
+task :install_pure do
   ruby 'install.rb'
 end
 
@@ -78,24 +78,6 @@ task :install_ext => [ :compile, :install_pure, :install_ext_really ]
 
 desc "Installing library (extension)"
 task :install => :install_ext
-
-desc m = "Writing version information for #{PKG_VERSION}"
-task :version do
-  puts m
-  File.open(File.join('lib', 'json', 'version.rb'), 'w') do |v|
-    v.puts <<EOT
-# frozen_string_literal: true
-module JSON
-  # JSON version
-  VERSION         = '#{PKG_VERSION}'
-  VERSION_ARRAY   = VERSION.split(/\\./).map { |x| x.to_i } # :nodoc:
-  VERSION_MAJOR   = VERSION_ARRAY[0] # :nodoc:
-  VERSION_MINOR   = VERSION_ARRAY[1] # :nodoc:
-  VERSION_BUILD   = VERSION_ARRAY[2] # :nodoc:
-end
-EOT
-  end
-end
 
 task :check_env do
   ENV.key?('JSON') or fail "JSON env var is required"
@@ -246,7 +228,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   task :create_jar => [ :create_parser_jar, :create_generator_jar ]
 
   desc "Build all gems and archives for a new release of the jruby extension."
-  task :build => [ :clean, :version, :jruby_gem ]
+  task :build => [ :clean, :jruby_gem ]
 
   task :release => :build
 else
@@ -330,7 +312,7 @@ else
   end
 
   desc "Build all gems and archives for a new release of json and json_pure."
-  task :build => [ :clean, :version, :package ]
+  task :build => [ :clean, :package ]
 
   task :release => :build
 end
