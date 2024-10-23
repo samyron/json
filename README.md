@@ -231,7 +231,7 @@ the `pp` library's `pp` methods.
 
 ### Release
 
-Update the json.gemspec and json-java.gemspec.
+Update the `lib/json/version.rb` file.
 
 ```
 rbenv shell 2.6.5
