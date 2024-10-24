@@ -7,6 +7,7 @@ else
 end
 
 group :development do
+  gem "ostruct"
   gem "rake"
   gem "rake-compiler"
   gem "test-unit"
