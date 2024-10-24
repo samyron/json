@@ -50,8 +50,7 @@ module JSON
   # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
   # UTF16 big endian characters as \u????, and return it.
   def utf8_to_json(string, script_safe = false) # :nodoc:
-    string = string.dup
-    string.force_encoding(::Encoding::ASCII_8BIT)
+    string = string.b
     if script_safe
       string.gsub!(SCRIPT_SAFE_ESCAPE_PATTERN) { SCRIPT_SAFE_MAP[$&] || $& }
     else
@@ -62,8 +61,7 @@ module JSON
   end
 
   def utf8_to_json_ascii(string, script_safe = false) # :nodoc:
-    string = string.dup
-    string.force_encoding(::Encoding::ASCII_8BIT)
+    string = string.b
     map = script_safe ? SCRIPT_SAFE_MAP : MAP
     string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
     string.gsub!(/(
