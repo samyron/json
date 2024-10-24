@@ -399,9 +399,15 @@ module JSON
           end
 
           def json_transform(state)
+            depth = state.depth += 1
+
+            if empty?
+              state.depth -= 1
+              return '{}'
+            end
+
             delim = ",#{state.object_nl}"
             result = +"{#{state.object_nl}"
-            depth = state.depth += 1
             first = true
             indent = !state.object_nl.empty?
             each { |key, value|
@@ -441,6 +447,13 @@ module JSON
           private
 
           def json_transform(state)
+            depth = state.depth += 1
+
+            if empty?
+              state.depth -= 1
+              return '[]'
+            end
+
             result = '['.dup
             if state.array_nl.empty?
               delim = ","
@@ -448,7 +461,7 @@ module JSON
               result << state.array_nl
               delim = ",#{state.array_nl}"
             end
-            depth = state.depth += 1
+
             first = true
             indent = !state.array_nl.empty?
             each { |value|
