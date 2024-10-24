@@ -50,8 +50,7 @@ module JSON
   # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
   # UTF16 big endian characters as \u????, and return it.
   def utf8_to_json(string, script_safe = false) # :nodoc:
-    string = string.dup
-    string.force_encoding(::Encoding::ASCII_8BIT)
+    string = string.b
     if script_safe
       string.gsub!(SCRIPT_SAFE_ESCAPE_PATTERN) { SCRIPT_SAFE_MAP[$&] || $& }
     else
@@ -62,8 +61,7 @@ module JSON
   end
 
   def utf8_to_json_ascii(string, script_safe = false) # :nodoc:
-    string = string.dup
-    string.force_encoding(::Encoding::ASCII_8BIT)
+    string = string.b
     map = script_safe ? SCRIPT_SAFE_MAP : MAP
     string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
     string.gsub!(/(
@@ -409,16 +407,14 @@ module JSON
 
           def json_transform(state)
             delim = ",#{state.object_nl}"
-            result = "{#{state.object_nl}"
-            result = result.dup if result.frozen? # RUBY_VERSION < 3.0
+            result = +"{#{state.object_nl}"
             depth = state.depth += 1
             first = true
             indent = !state.object_nl.empty?
             each { |key, value|
               result << delim unless first
               result << state.indent * depth if indent
-              result = "#{result}#{key.to_s.to_json(state)}#{state.space_before}:#{state.space}"
-              result = result.dup if result.frozen? # RUBY_VERSION < 3.0
+              result = +"#{result}#{key.to_s.to_json(state)}#{state.space_before}:#{state.space}"
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
                 raise GeneratorError, "#{value.class} not allowed in JSON"
               elsif value.respond_to?(:to_json)
