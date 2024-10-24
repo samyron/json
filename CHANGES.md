@@ -1,5 +1,7 @@
 # Changes
 
+* Bump required_ruby_version to 2.7.
+
 ### 2024-10-24 (2.7.3)
 
 * Numerous performance optimizations in `JSON.generate` and `JSON.dump` (up to 2 times faster).

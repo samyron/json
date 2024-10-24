@@ -333,24 +333,17 @@ module JSON
         end
 
         # Assumes !@ascii_only, !@script_safe
-        if Regexp.method_defined?(:match?)
-          private def fast_serialize_string(string, buf) # :nodoc:
-            buf << '"'
-            string = string.encode(::Encoding::UTF_8) unless string.encoding == ::Encoding::UTF_8
-            raise GeneratorError, "source sequence is illegal/malformed utf-8" unless string.valid_encoding?
+        private def fast_serialize_string(string, buf) # :nodoc:
+          buf << '"'
+          string = string.encode(::Encoding::UTF_8) unless string.encoding == ::Encoding::UTF_8
+          raise GeneratorError, "source sequence is illegal/malformed utf-8" unless string.valid_encoding?
 
-            if /["\\\x0-\x1f]/n.match?(string)
-              buf << string.gsub(/["\\\x0-\x1f]/n, MAP)
-            else
-              buf << string
-            end
-            buf << '"'
+          if /["\\\x0-\x1f]/n.match?(string)
+            buf << string.gsub(/["\\\x0-\x1f]/n, MAP)
+          else
+            buf << string
           end
-        else
-          # Ruby 2.3 compatibility
-          private def fast_serialize_string(string, buf) # :nodoc:
-            buf << string.to_json(self)
-          end
+          buf << '"'
         end
 
         # Return the value returned by method +name+.

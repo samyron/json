@@ -161,11 +161,10 @@ module JSON
         ?u  => nil,
       })
 
-      STR_UMINUS = ''.respond_to?(:-@)
       def parse_string
         if scan(STRING)
           return '' if self[1].empty?
-          string = self[1].gsub(%r((?:\\[\\bfnrt"/]|(?:\\u(?:[A-Fa-f\d]{4}))+|\\[\x20-\xff]))n) do |c|
+          string = self[1].gsub(%r{(?:\\[\\bfnrt"/]|(?:\\u(?:[A-Fa-f\d]{4}))+|\\[\x20-\xff])}n) do |c|
             if u = UNESCAPE_MAP[$&[1]]
               u
             else # \uXXXX
@@ -181,11 +180,7 @@ module JSON
           string.force_encoding(::Encoding::UTF_8)
 
           if @freeze
-            if STR_UMINUS
-              string = -string
-            else
-              string.freeze
-            end
+            string = -string
           end
 
           if @create_additions and @match_string
