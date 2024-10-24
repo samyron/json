@@ -407,16 +407,14 @@ module JSON
 
           def json_transform(state)
             delim = ",#{state.object_nl}"
-            result = "{#{state.object_nl}"
-            result = result.dup if result.frozen? # RUBY_VERSION < 3.0
+            result = +"{#{state.object_nl}"
             depth = state.depth += 1
             first = true
             indent = !state.object_nl.empty?
             each { |key, value|
               result << delim unless first
               result << state.indent * depth if indent
-              result = "#{result}#{key.to_s.to_json(state)}#{state.space_before}:#{state.space}"
-              result = result.dup if result.frozen? # RUBY_VERSION < 3.0
+              result = +"#{result}#{key.to_s.to_json(state)}#{state.space_before}:#{state.space}"
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
                 raise GeneratorError, "#{value.class} not allowed in JSON"
               elsif value.respond_to?(:to_json)
