@@ -4,6 +4,7 @@
 
 ### UNRELEASED (2.7.5)
 
+* Gracefully handle formatting configs being set to `nil` instead of `""`.
 * Workaround another issue caused by conflicting versions of both `json_pure` and `json` being loaded.
 
 ### 2024-10-25 (2.7.4)
