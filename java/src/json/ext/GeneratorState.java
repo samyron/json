@@ -5,6 +5,8 @@
  */
 package json.ext;
 
+import org.jcodings.specific.UTF8Encoding;
+
 import org.jruby.Ruby;
 import org.jruby.RubyBoolean;
 import org.jruby.RubyClass;
@@ -136,6 +138,11 @@ public class GeneratorState extends RubyObject {
         return fromState(context, opts);
     }
 
+    @JRubyMethod(meta=true)
+    public static IRubyObject generate(ThreadContext context, IRubyObject klass, IRubyObject obj, IRubyObject opts) {
+        return fromState(context, opts).generate(context, obj);
+    }
+
     static GeneratorState fromState(ThreadContext context, IRubyObject opts) {
         return fromState(context, RuntimeInfo.forRuntime(context.getRuntime()), opts);
     }
@@ -225,7 +232,12 @@ public class GeneratorState extends RubyObject {
     public IRubyObject generate(ThreadContext context, IRubyObject obj) {
         RubyString result = Generator.generateJson(context, obj, this);
         RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
-        result.force_encoding(context, info.utf8.get());
+        if (result.getEncoding() != UTF8Encoding.INSTANCE) {
+            if (result.isFrozen()) {
+                result = result.strDup(context.getRuntime());
+            }
+            result.force_encoding(context, info.utf8.get());
+        }
         return result;
     }
 
