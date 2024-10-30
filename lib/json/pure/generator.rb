@@ -96,6 +96,10 @@ module JSON
       # This class is used to create State instances, that are use to hold data
       # while generating a JSON text from a Ruby data structure.
       class State
+        def self.generate(obj, opts = nil)
+          new(opts).generate(obj)
+        end
+
         # Creates a State object from _opts_, which ought to be Hash to create
         # a new State instance configured by _opts_, something else to create
         # an unconfigured instance. If _opts_ is a State object, it is just
@@ -130,7 +134,7 @@ module JSON
         # * *allow_nan*: true if NaN, Infinity, and -Infinity should be
         #   generated, otherwise an exception is thrown, if these values are
         #   encountered. This options defaults to false.
-        def initialize(opts = {})
+        def initialize(opts = nil)
           @indent                = ''
           @space                 = ''
           @space_before          = ''
@@ -141,7 +145,7 @@ module JSON
           @script_safe          = false
           @strict                = false
           @buffer_initial_length = 1024
-          configure opts
+          configure(opts || {})
         end
 
         # This string is used to indent levels in the JSON text.
