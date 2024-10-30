@@ -1,9 +1,16 @@
 # Changes
 
+### UNRELEASED
+
+* Emit a deprecation warning when `JSON.load` create custom types without the `create_additions` option being explictly enabled.
+  * Prefer to use `JSON.unsafe_load(string)` or `JSON.load(string, create_additions: true)`.
+* Emit a deprecation warning when serializing valid UTF-8 strings encoded in `ASCII_8BIT` aka `BINARY`.
 * Bump required_ruby_version to 2.7.
+* More performance improvments to `JSON.dump` and `JSON.generate`.
 
-### UNRELEASED (2.7.5)
+### 2024-10-25 (2.7.5)
 
+* Fix a memory leak when `#to_json` methods raise an exception.
 * Gracefully handle formatting configs being set to `nil` instead of `""`.
 * Workaround another issue caused by conflicting versions of both `json_pure` and `json` being loaded.
 
