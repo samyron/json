@@ -143,9 +143,9 @@ module JSON
           raise TypeError,
             "#{source.inspect} is not like a string"
         end
-        if source.encoding != ::Encoding::ASCII_8BIT
+        if source.encoding != ::Encoding::BINARY
           source = source.encode(::Encoding::UTF_8)
-          source.force_encoding(::Encoding::ASCII_8BIT)
+          source.force_encoding(::Encoding::BINARY)
         end
         source
       end
