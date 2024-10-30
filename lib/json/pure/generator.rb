@@ -142,10 +142,12 @@ module JSON
           @array_nl              = ''
           @allow_nan             = false
           @ascii_only            = false
-          @script_safe          = false
-          @strict                = false
+          @depth                 = 0
           @buffer_initial_length = 1024
-          configure(opts || {})
+          @script_safe           = false
+          @strict                = false
+          @max_nesting           = 100
+          configure(opts) if opts
         end
 
         # This string is used to indent levels in the JSON text.
