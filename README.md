@@ -82,50 +82,11 @@ You can also use the `pretty_generate` method (which formats the output more
 verbosely and nicely) or `fast_generate` (which doesn't do any of the security
 checks generate performs, e. g. nesting deepness checks).
 
-There are also the JSON and JSON[] methods which use parse on a String or
-generate a JSON document from an array or hash:
+## Handling arbitrary types
 
-```ruby
-document = JSON 'test'  => 23 # => "{\"test\":23}"
-document = JSON['test' => 23] # => "{\"test\":23}"
-```
-
-and
-
-```ruby
-data = JSON '{"test":23}'  # => {"test"=>23}
-data = JSON['{"test":23}'] # => {"test"=>23}
-```
-
-You can choose to load a set of common additions to ruby core's objects if
-you
-
-```ruby
-require 'json/add/core'
-```
-
-After requiring this you can, e. g., serialise/deserialise Ruby ranges:
-
-```ruby
-JSON JSON(1..10) # => 1..10
-```
-
-To find out how to add JSON support to other or your own classes, read the
-section "More Examples" below.
-
-## Serializing exceptions
-
-The JSON module doesn't extend `Exception` by default. If you convert an `Exception`
-object to JSON, it will by default only include the exception message.
-
-To include the full details, you must either load the `json/add/core` mentioned
-above, or specifically load the exception addition:
-
-```ruby
-require 'json/add/exception'
-```
-
-## More Examples
+> [!CAUTION]
+> You should never use `JSON.unsafe_load` nor `JSON.parse(str, create_additions: true)` to parse untrusted user input,
+> as it can lead to remove code execution vulnerabilities.
 
 To create a JSON document from a ruby data structure, you can call
 `JSON.generate` like that:
@@ -191,7 +152,7 @@ JSON.parse json
 # => [1, 2, {"a"=>3.141}, false, true, nil, 4..10]
 json = JSON.generate [1, 2, {"a"=>3.141}, false, true, nil, 4..10]
 # => "[1,2,{\"a\":3.141},false,true,null,{\"json_class\":\"Range\",\"data\":[4,10,false]}]"
-JSON.parse json, :create_additions => true
+JSON.unsafe_load json
 # => [1, 2, {"a"=>3.141}, false, true, nil, 4..10]
 ```
 
