@@ -7,6 +7,7 @@ else
 end
 
 group :development do
+  gem "ruby_memcheck" if RUBY_PLATFORM =~ /linux/i
   gem "ostruct"
   gem "rake"
   gem "rake-compiler"

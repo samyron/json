@@ -250,6 +250,16 @@ else
     t.options = '-v'
   end
 
+  begin
+    require "ruby_memcheck"
+    RubyMemcheck::TestTask.new(valgrind: [ :set_env_ext, :check_env, :compile, :do_test_ext ]) do |t|
+      t.test_files = FileList['test/json/*_test.rb']
+      t.verbose = true
+      t.options = '-v'
+    end
+  rescue LoadError
+  end
+
   desc "Update the tags file"
   task :tags do
     system 'ctags', *Dir['**/*.{rb,c,h,java}']
