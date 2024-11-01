@@ -24,8 +24,6 @@ typedef unsigned char _Bool;
 # define MAYBE_UNUSED(x) x
 #endif
 
-#define option_given_p(opts, key) (rb_hash_lookup2(opts, key, Qundef) != Qundef)
-
 typedef struct JSON_ParserStruct {
     VALUE Vsource;
     char *source;

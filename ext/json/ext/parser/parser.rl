@@ -90,11 +90,13 @@ static void raise_parse_error(const char *format, const char *start)
 static VALUE mJSON, mExt, cParser, eNestingError, Encoding_UTF_8;
 static VALUE CNaN, CInfinity, CMinusInfinity;
 
-static ID i_json_creatable_p, i_json_create, i_create_id, i_create_additions,
-          i_chr, i_max_nesting, i_allow_nan, i_symbolize_names,
-          i_object_class, i_array_class, i_decimal_class,
-          i_deep_const_get, i_match, i_match_string, i_aset, i_aref,
-          i_leftshift, i_new, i_try_convert, i_freeze, i_uminus, i_encode;
+static ID i_json_creatable_p, i_json_create, i_create_id,
+          i_chr, i_deep_const_get, i_match, i_aset, i_aref,
+          i_leftshift, i_new, i_try_convert, i_uminus, i_encode;
+
+static VALUE sym_max_nesting, sym_allow_nan, sym_symbolize_names, sym_freeze,
+             sym_create_additions, sym_create_id, sym_object_class, sym_array_class,
+             sym_decimal_class, sym_match_string;
 
 static int binary_encindex;
 static int utf8_encindex;
@@ -671,7 +673,7 @@ static VALUE convert_encoding(VALUE source)
 {
   int encindex = RB_ENCODING_GET(source);
 
-  if (encindex == utf8_encindex) {
+  if (RB_LIKELY(encindex == utf8_encindex)) {
     return source;
   }
 
@@ -681,6 +683,32 @@ static VALUE convert_encoding(VALUE source)
   }
 
   return rb_funcall(source, i_encode, 1, Encoding_UTF_8);
+}
+
+static int configure_parser_i(VALUE key, VALUE val, VALUE data)
+{
+    JSON_Parser *json = (JSON_Parser *)data;
+
+         if (key == sym_max_nesting)       { json->max_nesting = RTEST(val) ? FIX2INT(val) : 0; }
+    else if (key == sym_allow_nan)         { json->allow_nan = RTEST(val); }
+    else if (key == sym_symbolize_names)   { json->symbolize_names = RTEST(val); }
+    else if (key == sym_freeze)            { json->freeze = RTEST(val); }
+    else if (key == sym_create_id)         { json->create_id = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_object_class)      { json->object_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_array_class)       { json->array_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_decimal_class)     { json->decimal_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_match_string)      { json->match_string = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_create_additions)  {
+        if (NIL_P(val)) {
+            json->create_additions = true;
+            json->deprecated_create_additions = true;
+        } else {
+            json->create_additions = RTEST(val);
+            json->deprecated_create_additions = false;
+        }
+    }
+
+    return ST_CONTINUE;
 }
 
 static void parser_init(JSON_Parser *json, VALUE source, VALUE opts)
@@ -695,84 +723,22 @@ static void parser_init(JSON_Parser *json, VALUE source, VALUE opts)
     if (!NIL_P(opts)) {
         Check_Type(opts, T_HASH);
         if (RHASH_SIZE(opts) > 0) {
-            VALUE tmp = ID2SYM(i_max_nesting);
-            if (option_given_p(opts, tmp)) {
-                VALUE max_nesting = rb_hash_aref(opts, tmp);
-                if (RTEST(max_nesting)) {
-                    Check_Type(max_nesting, T_FIXNUM);
-                    json->max_nesting = FIX2INT(max_nesting);
-                } else {
-                    json->max_nesting = 0;
-                }
-            } else {
-                json->max_nesting = 100;
-            }
-            tmp = ID2SYM(i_allow_nan);
-            if (option_given_p(opts, tmp)) {
-                json->allow_nan = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-            } else {
-                json->allow_nan = false;
-            }
-            tmp = ID2SYM(i_symbolize_names);
-            if (option_given_p(opts, tmp)) {
-                json->symbolize_names = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-            } else {
-                json->symbolize_names = false;
-            }
-            tmp = ID2SYM(i_freeze);
-            if (option_given_p(opts, tmp)) {
-                json->freeze = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
-            } else {
-                json->freeze = false;
-            }
-            tmp = ID2SYM(i_create_additions);
-            if (option_given_p(opts, tmp)) {
-                tmp = rb_hash_aref(opts, tmp);
-                if (NIL_P(tmp)) {
-                    json->create_additions = true;
-                    json->deprecated_create_additions = true;
-                } else {
-                    json->create_additions = RTEST(tmp);
-                    json->deprecated_create_additions = false;
-                }
-            }
+            // We assume in most cases few keys are set so it's faster to go over
+            // the provided keys than to check all possible keys.
+            rb_hash_foreach(opts, configure_parser_i, (VALUE)json);
 
             if (json->symbolize_names && json->create_additions) {
                 rb_raise(rb_eArgError,
                     "options :symbolize_names and :create_additions cannot be "
                     " used in conjunction");
             }
-            tmp = ID2SYM(i_create_id);
-            if (option_given_p(opts, tmp)) {
-                json->create_id = rb_hash_aref(opts, tmp);
-            } else {
+
+            if (json->create_additions && !json->create_id) {
                 json->create_id = rb_funcall(mJSON, i_create_id, 0);
             }
-            tmp = ID2SYM(i_object_class);
-            if (option_given_p(opts, tmp)) {
-                json->object_class = rb_hash_aref(opts, tmp);
-                if (NIL_P(json->object_class)) json->object_class = Qfalse;
-            }
-            tmp = ID2SYM(i_array_class);
-            if (option_given_p(opts, tmp)) {
-                json->array_class = rb_hash_aref(opts, tmp);
-                if (NIL_P(json->array_class)) json->array_class = Qfalse;
-            }
-
-            tmp = ID2SYM(i_decimal_class);
-            if (option_given_p(opts, tmp)) {
-                json->decimal_class = rb_hash_aref(opts, tmp);
-                if (NIL_P(json->decimal_class)) json->decimal_class = Qfalse;
-            }
-
-            tmp = ID2SYM(i_match_string);
-            if (option_given_p(opts, tmp)) {
-                VALUE match_string = rb_hash_aref(opts, tmp);
-                json->match_string = RTEST(match_string) ? match_string : Qfalse;
-            }
         }
-    }
 
+    }
     source = convert_encoding(StringValue(source));
     StringValue(source);
     json->len = RSTRING_LEN(source);
@@ -972,26 +938,28 @@ void Init_parser(void)
     rb_global_variable(&Encoding_UTF_8);
     Encoding_UTF_8 = rb_const_get(rb_path2class("Encoding"), rb_intern("UTF_8"));
 
+    sym_max_nesting = ID2SYM(rb_intern("max_nesting"));
+    sym_allow_nan = ID2SYM(rb_intern("allow_nan"));
+    sym_symbolize_names = ID2SYM(rb_intern("symbolize_names"));
+    sym_freeze = ID2SYM(rb_intern("freeze"));
+    sym_create_additions = ID2SYM(rb_intern("create_additions"));
+    sym_create_id = ID2SYM(rb_intern("create_id"));
+    sym_object_class = ID2SYM(rb_intern("object_class"));
+    sym_array_class = ID2SYM(rb_intern("array_class"));
+    sym_decimal_class = ID2SYM(rb_intern("decimal_class"));
+    sym_match_string = ID2SYM(rb_intern("match_string"));
+
+    i_create_id = rb_intern("create_id");
     i_json_creatable_p = rb_intern("json_creatable?");
     i_json_create = rb_intern("json_create");
-    i_create_id = rb_intern("create_id");
-    i_create_additions = rb_intern("create_additions");
     i_chr = rb_intern("chr");
-    i_max_nesting = rb_intern("max_nesting");
-    i_allow_nan = rb_intern("allow_nan");
-    i_symbolize_names = rb_intern("symbolize_names");
-    i_object_class = rb_intern("object_class");
-    i_array_class = rb_intern("array_class");
-    i_decimal_class = rb_intern("decimal_class");
     i_match = rb_intern("match");
-    i_match_string = rb_intern("match_string");
     i_deep_const_get = rb_intern("deep_const_get");
     i_aset = rb_intern("[]=");
     i_aref = rb_intern("[]");
     i_leftshift = rb_intern("<<");
     i_new = rb_intern("new");
     i_try_convert = rb_intern("try_convert");
-    i_freeze = rb_intern("freeze");
     i_uminus = rb_intern("-@");
     i_encode = rb_intern("encode");
 
