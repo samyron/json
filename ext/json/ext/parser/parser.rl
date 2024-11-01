@@ -152,9 +152,9 @@ static int utf8_encindex;
 
     action parse_name {
         char *np;
-        json->parsing_name = 1;
+        json->parsing_name = true;
         np = JSON_parse_string(json, fpc, pe, &last_name);
-        json->parsing_name = 0;
+        json->parsing_name = false;
         if (np == NULL) { fhold; fbreak; } else fexec np;
     }
 
@@ -711,29 +711,29 @@ static void parser_init(JSON_Parser *json, VALUE source, VALUE opts)
             if (option_given_p(opts, tmp)) {
                 json->allow_nan = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
             } else {
-                json->allow_nan = 0;
+                json->allow_nan = false;
             }
             tmp = ID2SYM(i_symbolize_names);
             if (option_given_p(opts, tmp)) {
                 json->symbolize_names = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
             } else {
-                json->symbolize_names = 0;
+                json->symbolize_names = false;
             }
             tmp = ID2SYM(i_freeze);
             if (option_given_p(opts, tmp)) {
                 json->freeze = RTEST(rb_hash_aref(opts, tmp)) ? 1 : 0;
             } else {
-                json->freeze = 0;
+                json->freeze = false;
             }
             tmp = ID2SYM(i_create_additions);
             if (option_given_p(opts, tmp)) {
                 tmp = rb_hash_aref(opts, tmp);
                 if (NIL_P(tmp)) {
-                    json->create_additions = 1;
-                    json->deprecated_create_additions = 1;
+                    json->create_additions = true;
+                    json->deprecated_create_additions = true;
                 } else {
                     json->create_additions = RTEST(tmp);
-                    json->deprecated_create_additions = 0;
+                    json->deprecated_create_additions = false;
                 }
             }
 

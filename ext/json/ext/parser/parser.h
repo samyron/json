@@ -38,12 +38,12 @@ typedef struct JSON_ParserStruct {
     VALUE match_string;
     FBuffer fbuffer;
     int max_nesting;
-    char allow_nan;
-    char parsing_name;
-    char symbolize_names;
-    char freeze;
-    char create_additions;
-    char deprecated_create_additions;
+    bool allow_nan;
+    bool parsing_name;
+    bool symbolize_names;
+    bool freeze;
+    bool create_additions;
+    bool deprecated_create_additions;
 } JSON_Parser;
 
 #define GET_PARSER                          \
