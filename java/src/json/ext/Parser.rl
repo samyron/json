@@ -157,6 +157,14 @@ public class Parser extends RubyObject {
         return parser;
     }
 
+    @JRubyMethod(meta=true)
+    public static IRubyObject parse(ThreadContext context, IRubyObject clazz, IRubyObject source, IRubyObject opts) {
+        IRubyObject[] args = new IRubyObject[] {source, opts};
+        Parser parser = (Parser)((RubyClass)clazz).allocate();
+        parser.callInit(args, null);
+        return parser.parse(context);
+    }
+
     @JRubyMethod(required = 1, optional = 1, visibility = Visibility.PRIVATE)
     public IRubyObject initialize(ThreadContext context, IRubyObject[] args) {
         Ruby runtime = context.getRuntime();
