@@ -819,6 +819,9 @@ static VALUE cParser_parse(VALUE self)
     VALUE result = Qnil;
     GET_PARSER;
 
+    char stack_buffer[FBUFFER_STACK_SIZE];
+    fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
+
     %% write init;
     p = json->source;
     pe = p + json->len;
@@ -841,6 +844,9 @@ static VALUE cParser_m_parse(VALUE klass, VALUE source, VALUE opts)
     JSON_Parser parser = {0};
     JSON_Parser *json = &parser;
     parser_init(json, source, opts);
+
+    char stack_buffer[FBUFFER_STACK_SIZE];
+    fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
 
     %% write init;
     p = json->source;

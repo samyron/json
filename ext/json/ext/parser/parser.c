@@ -1919,17 +1919,20 @@ static VALUE cParser_parse(VALUE self)
     VALUE result = Qnil;
     GET_PARSER;
 
+    char stack_buffer[FBUFFER_STACK_SIZE];
+    fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
 
-#line 1924 "parser.c"
+
+#line 1927 "parser.c"
 	{
 	cs = JSON_start;
 	}
 
-#line 823 "parser.rl"
+#line 826 "parser.rl"
     p = json->source;
     pe = p + json->len;
 
-#line 1933 "parser.c"
+#line 1936 "parser.c"
 	{
 	if ( p == pe )
 		goto _test_eof;
@@ -1973,7 +1976,7 @@ st10:
 	if ( ++p == pe )
 		goto _test_eof10;
 case 10:
-#line 1977 "parser.c"
+#line 1980 "parser.c"
 	switch( (*p) ) {
 		case 13: goto st10;
 		case 32: goto st10;
@@ -2062,7 +2065,7 @@ case 9:
 	_out: {}
 	}
 
-#line 826 "parser.rl"
+#line 829 "parser.rl"
 
     if (cs >= JSON_first_final && p == pe) {
         return result;
@@ -2082,17 +2085,20 @@ static VALUE cParser_m_parse(VALUE klass, VALUE source, VALUE opts)
     JSON_Parser *json = &parser;
     parser_init(json, source, opts);
 
+    char stack_buffer[FBUFFER_STACK_SIZE];
+    fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
 
-#line 2087 "parser.c"
+
+#line 2093 "parser.c"
 	{
 	cs = JSON_start;
 	}
 
-#line 846 "parser.rl"
+#line 852 "parser.rl"
     p = json->source;
     pe = p + json->len;
 
-#line 2096 "parser.c"
+#line 2102 "parser.c"
 	{
 	if ( p == pe )
 		goto _test_eof;
@@ -2136,7 +2142,7 @@ st10:
 	if ( ++p == pe )
 		goto _test_eof10;
 case 10:
-#line 2140 "parser.c"
+#line 2146 "parser.c"
 	switch( (*p) ) {
 		case 13: goto st10;
 		case 32: goto st10;
@@ -2225,7 +2231,7 @@ case 9:
 	_out: {}
 	}
 
-#line 849 "parser.rl"
+#line 855 "parser.rl"
 
     if (cs >= JSON_first_final && p == pe) {
         return result;
