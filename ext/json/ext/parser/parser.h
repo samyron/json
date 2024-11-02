@@ -24,6 +24,19 @@ typedef unsigned char _Bool;
 # define MAYBE_UNUSED(x) x
 #endif
 
+// Object names are likely to be repeated, and are frozen.
+// As such we can re-use them if we keep a cache of the ones we've seen so far,
+// and save much more expensive lookups into the global fstring table.
+// This cache implementation is deliberately simple, as we're optimizing for compactness,
+// to be able to fit safely on the stack.
+// As such, binary search into a sorted array gives a good tradeoff between compactness and
+// performance.
+#define JSON_RVALUE_CACHE_CAPA 63
+typedef struct rvalue_cache_struct {
+    int length;
+    VALUE entries[JSON_RVALUE_CACHE_CAPA];
+} rvalue_cache;
+
 typedef struct JSON_ParserStruct {
     VALUE Vsource;
     char *source;
@@ -42,6 +55,7 @@ typedef struct JSON_ParserStruct {
     bool freeze;
     bool create_additions;
     bool deprecated_create_additions;
+    rvalue_cache name_cache;
 } JSON_Parser;
 
 #define GET_PARSER                          \
@@ -61,7 +75,7 @@ static char *JSON_parse_value(JSON_Parser *json, char *p, char *pe, VALUE *resul
 static char *JSON_parse_integer(JSON_Parser *json, char *p, char *pe, VALUE *result);
 static char *JSON_parse_float(JSON_Parser *json, char *p, char *pe, VALUE *result);
 static char *JSON_parse_array(JSON_Parser *json, char *p, char *pe, VALUE *result, int current_nesting);
-static VALUE json_string_unescape(char *string, char *stringEnd, bool intern, bool symbolize);
+static VALUE json_string_unescape(JSON_Parser *json, char *string, char *stringEnd, bool is_name, bool intern, bool symbolize);
 static char *JSON_parse_string(JSON_Parser *json, char *p, char *pe, VALUE *result);
 static VALUE convert_encoding(VALUE source);
 static VALUE cParser_initialize(int argc, VALUE *argv, VALUE self);
