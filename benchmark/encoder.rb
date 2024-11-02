@@ -55,21 +55,30 @@ def benchmark_encoding(benchmark_name, ruby_obj, check_expected: true, except: [
   puts
 end
 
-# On the first two micro benchmarks, the limitting factor is that we have to create a Generator::State object for every
-# call to `JSON.dump`, so we cause 2 allocations per call where alternatives only do one allocation.
-# The performance difference is mostly more time spent in GC because of this extra pressure.
-# If we re-use the same `JSON::State` instance, we're faster than Oj on the array benchmark, and much closer
-# on the Hash one.
+# NB: Notes are based on ruby 3.3.4 (2024-07-09 revision be1089c8ec) +YJIT [arm64-darwin23]
+
+# On the first two micro benchmarks, the limitting factor is the fixed cost of initializing the
+# generator state. Since `JSON.generate` now lazily allocate the `State` object we're now ~10% faster
+# than `Oj.dump`.
 benchmark_encoding "small mixed", [1, "string", { a: 1, b: 2 }, [3, 4, 5]]
 benchmark_encoding "small nested array", [[1,2,3,4,5]]*10
+
+# On small hash specifically, we're just on par with `Oj.dump`. Would be worth investigating why
+# Hash serialization doesn't perform as well as other types.
 benchmark_encoding "small hash", { "username" => "jhawthorn", "id" => 123, "event" => "wrote json serializer" }
 
-# On these benchmarks we perform well. Either on par or very closely faster/slower
-benchmark_encoding "integers", (1_000_000..1_001_000).to_a, except: %i(json_state)
+# On string encoding we're ~20% faster when dealing with mostly ASCII, but ~10% slower when dealing
+# with mostly multi-byte characters. This is a tradeoff.
 benchmark_encoding "mixed utf8", ([("a" * 5000) + "€" + ("a" * 5000)] * 500), except: %i(json_state)
 benchmark_encoding "mostly utf8", ([("€" * 3333)] * 500), except: %i(json_state)
-benchmark_encoding "twitter.json", JSON.load_file("#{__dir__}/data/twitter.json"), except: %i(json_state)
+
+# On these benchmarks we perform well, we're on par or better.
+benchmark_encoding "integers", (1_000_000..1_001_000).to_a, except: %i(json_state)
+benchmark_encoding "activitypub.json", JSON.load_file("#{__dir__}/data/activitypub.json"), except: %i(json_state)
 benchmark_encoding "citm_catalog.json", JSON.load_file("#{__dir__}/data/citm_catalog.json"), except: %i(json_state)
+
+# On twitter.json we're still about 10% slower, this is worth investigating.
+benchmark_encoding "twitter.json", JSON.load_file("#{__dir__}/data/twitter.json"), except: %i(json_state)
 
 # This benchmark spent the overwhelming majority of its time in `ruby_dtoa`. We rely on Ruby's implementation
 # which uses a relatively old version of dtoa.c from David M. Gay.
@@ -82,4 +91,6 @@ benchmark_encoding "citm_catalog.json", JSON.load_file("#{__dir__}/data/citm_cat
 # Oj speed without losing precision.
 benchmark_encoding "canada.json", JSON.load_file("#{__dir__}/data/canada.json"), check_expected: false, except: %i(json_state)
 
+# We're about 10% faster when `to_json` calls are involved, but this wasn't particularly optimized, there might be
+# opportunities here.
 benchmark_encoding "many #to_json calls", [{object: Object.new, int: 12, float: 54.3, class: Float, time: Time.now, date: Date.today}] * 20, except: %i(json_state)
