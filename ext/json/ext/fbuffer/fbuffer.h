@@ -36,8 +36,8 @@ typedef unsigned char _Bool;
 #endif
 
 enum fbuffer_type {
-    HEAP = 0,
-    STACK = 1,
+    FBUFFER_HEAP_ALLOCATED = 0,
+    FBUFFER_STACK_ALLOCATED = 1,
 };
 
 typedef struct FBufferStruct {
@@ -73,7 +73,7 @@ static void fbuffer_stack_init(FBuffer *fb, unsigned long initial_length, char *
 {
     fb->initial_length = (initial_length > 0) ? initial_length : FBUFFER_INITIAL_LENGTH_DEFAULT;
     if (stack_buffer) {
-        fb->type = STACK;
+        fb->type = FBUFFER_STACK_ALLOCATED;
         fb->ptr = stack_buffer;
         fb->capa = stack_buffer_size;
     }
@@ -81,7 +81,7 @@ static void fbuffer_stack_init(FBuffer *fb, unsigned long initial_length, char *
 
 static void fbuffer_free(FBuffer *fb)
 {
-    if (fb->ptr && fb->type == HEAP) {
+    if (fb->ptr && fb->type == FBUFFER_HEAP_ALLOCATED) {
         ruby_xfree(fb->ptr);
     }
 }
@@ -105,10 +105,10 @@ static void fbuffer_do_inc_capa(FBuffer *fb, unsigned long requested)
     for (required = fb->capa; requested > required - fb->len; required <<= 1);
 
     if (required > fb->capa) {
-        if (fb->type == STACK) {
+        if (fb->type == FBUFFER_STACK_ALLOCATED) {
             const char *old_buffer = fb->ptr;
             fb->ptr = ALLOC_N(char, required);
-            fb->type = HEAP;
+            fb->type = FBUFFER_HEAP_ALLOCATED;
             MEMCPY(fb->ptr, old_buffer, char, fb->len);
         } else {
             REALLOC_N(fb->ptr, char, required);
