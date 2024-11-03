@@ -79,7 +79,7 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
     int last_cmp = 0;
 
     while (low <= high) {
-        mid = (high + low) / 2;
+        mid = (high + low) >> 1;
         VALUE entry = cache->entries[mid];
         last_cmp = rstring_cache_cmp(str, length, entry);
 
@@ -131,7 +131,7 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
     int last_cmp = 0;
 
     while (low <= high) {
-        mid = (high + low) / 2;
+        mid = (high + low) >> 1;
         VALUE entry = cache->entries[mid];
         last_cmp = rstring_cache_cmp(str, length, rb_sym2str(entry));
 
