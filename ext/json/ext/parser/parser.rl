@@ -15,6 +15,33 @@ static VALUE sym_max_nesting, sym_allow_nan, sym_symbolize_names, sym_freeze,
 static int binary_encindex;
 static int utf8_encindex;
 
+#ifndef HAVE_RB_GC_MARK_LOCATIONS
+// For TruffleRuby
+void rb_gc_mark_locations(const VALUE *start, const VALUE *end)
+{
+    VALUE *value = start;
+
+    while (value < end) {
+        rb_gc_mark(*value);
+        value++;
+    }
+}
+#endif
+
+#ifndef HAVE_RB_HASH_BULK_INSERT
+// For TruffleRuby
+void rb_hash_bulk_insert(long count, const VALUE *pairs, VALUE hash)
+{
+    long index = 0;
+    while (index < count) {
+        VALUE name = pairs[index++];
+        VALUE value = pairs[index++];
+        rb_hash_aset(hash, name, value);
+    }
+    RB_GC_GUARD(hash);
+}
+#endif
+
 /* name cache */
 
 #include <string.h>
@@ -173,6 +200,110 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
     return rsymbol;
 }
 
+/* rvalue stack */
+
+#define RVALUE_STACK_INITIAL_CAPA 128
+
+enum rvalue_stack_type {
+    RVALUE_STACK_HEAP_ALLOCATED = 0,
+    RVALUE_STACK_STACK_ALLOCATED = 1,
+};
+
+typedef struct rvalue_stack_struct {
+    enum rvalue_stack_type type;
+    long capa;
+    long head;
+    VALUE *ptr;
+} rvalue_stack;
+
+static rvalue_stack *rvalue_stack_spill(rvalue_stack *old_stack, VALUE *handle, rvalue_stack **stack_ref);
+
+static rvalue_stack *rvalue_stack_grow(rvalue_stack *stack, VALUE *handle, rvalue_stack **stack_ref)
+{
+    long required = stack->capa * 2;
+
+    if (stack->type == RVALUE_STACK_STACK_ALLOCATED) {
+        stack = rvalue_stack_spill(stack, handle, stack_ref);
+    } else {
+        REALLOC_N(stack->ptr, VALUE, required);
+        stack->capa = required;
+    }
+    return stack;
+}
+
+static void rvalue_stack_push(rvalue_stack *stack, VALUE value, VALUE *handle, rvalue_stack **stack_ref)
+{
+    if (RB_UNLIKELY(stack->head >= stack->capa)) {
+        stack = rvalue_stack_grow(stack, handle, stack_ref);
+    }
+    stack->ptr[stack->head] = value;
+    stack->head++;
+}
+
+static inline VALUE *rvalue_stack_peek(rvalue_stack *stack, long count)
+{
+    return stack->ptr + (stack->head - count);
+}
+
+static inline void rvalue_stack_pop(rvalue_stack *stack, long count)
+{
+    stack->head -= count;
+}
+
+static void rvalue_stack_mark(void *ptr)
+{
+    rvalue_stack *stack = (rvalue_stack *)ptr;
+    rb_gc_mark_locations(stack->ptr, stack->ptr + stack->head);
+}
+
+static void rvalue_stack_free(void *ptr)
+{
+    rvalue_stack *stack = (rvalue_stack *)ptr;
+    if (stack) {
+        ruby_xfree(stack->ptr);
+        ruby_xfree(stack);
+    }
+}
+
+static size_t rvalue_stack_memsize(const void *ptr)
+{
+    const rvalue_stack *stack = (const rvalue_stack *)ptr;
+    return sizeof(rvalue_stack) + sizeof(VALUE) * stack->capa;
+}
+
+static const rb_data_type_t JSON_Parser_rvalue_stack_type = {
+    "JSON::Ext::Parser/rvalue_stack",
+    {
+        .dmark = rvalue_stack_mark,
+        .dfree = rvalue_stack_free,
+        .dsize = rvalue_stack_memsize,
+    },
+    0, 0,
+    RUBY_TYPED_FREE_IMMEDIATELY,
+};
+
+static rvalue_stack *rvalue_stack_spill(rvalue_stack *old_stack, VALUE *handle, rvalue_stack **stack_ref)
+{
+    rvalue_stack *stack;
+    *handle = TypedData_Make_Struct(0, rvalue_stack, &JSON_Parser_rvalue_stack_type, stack);
+    *stack_ref = stack;
+    MEMCPY(stack, old_stack, rvalue_stack, 1);
+
+    stack->capa = old_stack->capa << 1;
+    stack->ptr = ALLOC_N(VALUE, stack->capa);
+    stack->type = RVALUE_STACK_HEAP_ALLOCATED;
+    MEMCPY(stack->ptr, old_stack->ptr, VALUE, old_stack->head);
+    return stack;
+}
+
+static void rvalue_stack_eagerly_release(VALUE handle)
+{
+    rvalue_stack *stack;
+    TypedData_Get_Struct(handle, rvalue_stack, &JSON_Parser_rvalue_stack_type, stack);
+    RTYPEDDATA_DATA(handle) = NULL;
+    rvalue_stack_free(stack);
+}
+
 /* unicode */
 
 static const signed char digit_values[256] = {
@@ -258,6 +389,8 @@ typedef struct JSON_ParserStruct {
     bool create_additions;
     bool deprecated_create_additions;
     rvalue_cache name_cache;
+    rvalue_stack *stack;
+    VALUE stack_handle;
 } JSON_Parser;
 
 #define GET_PARSER                          \
@@ -336,17 +469,10 @@ static void raise_parse_error(const char *format, const char *start)
     write data;
 
     action parse_value {
-        VALUE v = Qnil;
-        char *np = JSON_parse_value(json, fpc, pe, &v, current_nesting);
+        char *np = JSON_parse_value(json, fpc, pe, result, current_nesting);
         if (np == NULL) {
             fhold; fbreak;
         } else {
-            if (json->object_class) {
-                rb_funcall(*result, i_aset, 2, last_name, v);
-            } else {
-                OBJ_FREEZE(last_name);
-                rb_hash_aset(*result, last_name, v);
-            }
             fexec np;
         }
     }
@@ -354,9 +480,12 @@ static void raise_parse_error(const char *format, const char *start)
     action parse_name {
         char *np;
         json->parsing_name = true;
-        np = JSON_parse_string(json, fpc, pe, &last_name);
+        np = JSON_parse_string(json, fpc, pe, result);
         json->parsing_name = false;
-        if (np == NULL) { fhold; fbreak; } else fexec np;
+        if (np == NULL) { fhold; fbreak; } else {
+            PUSH(*result);
+            fexec np;
+         }
     }
 
     action exit { fhold; fbreak; }
@@ -371,23 +500,47 @@ static void raise_parse_error(const char *format, const char *start)
     ) @exit;
 }%%
 
+#define PUSH(result) rvalue_stack_push(json->stack, result, &json->stack_handle, &json->stack)
+
 static char *JSON_parse_object(JSON_Parser *json, char *p, char *pe, VALUE *result, int current_nesting)
 {
     int cs = EVIL;
-    VALUE last_name = Qnil;
-    VALUE object_class = json->object_class;
 
     if (json->max_nesting && current_nesting > json->max_nesting) {
         rb_raise(eNestingError, "nesting of %d is too deep", current_nesting);
     }
 
-    *result = object_class ?  rb_class_new_instance(0, 0, object_class) :rb_hash_new();
+    long stack_head = json->stack->head;
 
     %% write init;
     %% write exec;
 
     if (cs >= JSON_object_first_final) {
-        if (json->create_additions) {
+        long count = json->stack->head - stack_head;
+
+        if (RB_UNLIKELY(json->object_class)) {
+            VALUE object = rb_class_new_instance(0, 0, json->object_class);
+            long index = 0;
+            VALUE *items = rvalue_stack_peek(json->stack, count);
+            while (index < count) {
+                VALUE name = items[index++];
+                VALUE value = items[index++];
+                rb_funcall(object, i_aset, 2, name, value);
+            }
+            *result = object;
+        } else {
+            VALUE hash;
+#ifdef HAVE_RB_HASH_NEW_CAPA
+            hash = rb_hash_new_capa(count >> 1);
+#else
+            hash = rb_hash_new();
+#endif
+            rb_hash_bulk_insert(count, rvalue_stack_peek(json->stack, count), hash);
+            *result = hash;
+        }
+        rvalue_stack_pop(json->stack, count);
+
+        if (RB_UNLIKELY(json->create_additions)) {
             VALUE klassname;
             if (json->object_class) {
                 klassname = rb_funcall(*result, i_aref, 1, json->create_id);
@@ -409,7 +562,6 @@ static char *JSON_parse_object(JSON_Parser *json, char *p, char *pe, VALUE *resu
         return NULL;
     }
 }
-
 
 %%{
     machine JSON_value;
@@ -442,7 +594,12 @@ static char *JSON_parse_object(JSON_Parser *json, char *p, char *pe, VALUE *resu
     }
     action parse_string {
         char *np = JSON_parse_string(json, fpc, pe, result);
-        if (np == NULL) { fhold; fbreak; } else fexec np;
+        if (np == NULL) {
+            fhold;
+            fbreak;
+        } else {
+            fexec np;
+        }
     }
 
     action parse_number {
@@ -457,9 +614,13 @@ static char *JSON_parse_object(JSON_Parser *json, char *p, char *pe, VALUE *resu
             }
         }
         np = JSON_parse_float(json, fpc, pe, result);
-        if (np != NULL) fexec np;
+        if (np != NULL) {
+            fexec np;
+        }
         np = JSON_parse_integer(json, fpc, pe, result);
-        if (np != NULL) fexec np;
+        if (np != NULL) {
+            fexec np;
+        }
         fhold; fbreak;
     }
 
@@ -502,6 +663,7 @@ static char *JSON_parse_value(JSON_Parser *json, char *p, char *pe, VALUE *resul
     }
 
     if (cs >= JSON_value_first_final) {
+        PUSH(*result);
         return p;
     } else {
         return NULL;
@@ -622,11 +784,6 @@ static char *JSON_parse_float(JSON_Parser *json, char *p, char *pe, VALUE *resul
         if (np == NULL) {
             fhold; fbreak;
         } else {
-            if (json->array_class) {
-                rb_funcall(*result, i_leftshift, 1, v);
-            } else {
-                rb_ary_push(*result, v);
-            }
             fexec np;
         }
     }
@@ -644,17 +801,32 @@ static char *JSON_parse_float(JSON_Parser *json, char *p, char *pe, VALUE *resul
 static char *JSON_parse_array(JSON_Parser *json, char *p, char *pe, VALUE *result, int current_nesting)
 {
     int cs = EVIL;
-    VALUE array_class = json->array_class;
 
     if (json->max_nesting && current_nesting > json->max_nesting) {
         rb_raise(eNestingError, "nesting of %d is too deep", current_nesting);
     }
-    *result = array_class ? rb_class_new_instance(0, 0, array_class) : rb_ary_new();
+    long stack_head = json->stack->head;
 
     %% write init;
     %% write exec;
 
     if(cs >= JSON_array_first_final) {
+        long count = json->stack->head - stack_head;
+
+        if (RB_UNLIKELY(json->array_class)) {
+            VALUE array = rb_class_new_instance(0, 0, json->array_class);
+            VALUE *items = rvalue_stack_peek(json->stack, count);
+            long index;
+            for (index = 0; index < count; index++) {
+                rb_funcall(array, i_leftshift, 1, items[index]);
+            }
+            *result = array;
+        } else {
+            VALUE array = rb_ary_new_from_values(count, rvalue_stack_peek(json->stack, count));
+            *result = array;
+        }
+        rvalue_stack_pop(json->stack, count);
+
         return p + 1;
     } else {
         raise_parse_error("unexpected token at '%s'", p);
@@ -1034,10 +1206,22 @@ static VALUE cParser_parse(VALUE self)
     char stack_buffer[FBUFFER_STACK_SIZE];
     fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
 
+    VALUE rvalue_stack_buffer[RVALUE_STACK_INITIAL_CAPA];
+    rvalue_stack stack = {
+        .type = RVALUE_STACK_STACK_ALLOCATED,
+        .ptr = rvalue_stack_buffer,
+        .capa = RVALUE_STACK_INITIAL_CAPA,
+    };
+    json->stack = &stack;
+
     %% write init;
     p = json->source;
     pe = p + json->len;
     %% write exec;
+
+    if (json->stack_handle) {
+        rvalue_stack_eagerly_release(json->stack_handle);
+    }
 
     if (cs >= JSON_first_final && p == pe) {
         return result;
@@ -1053,17 +1237,29 @@ static VALUE cParser_m_parse(VALUE klass, VALUE source, VALUE opts)
     int cs = EVIL;
     VALUE result = Qnil;
 
-    JSON_Parser parser = {0};
-    JSON_Parser *json = &parser;
+    JSON_Parser _parser = {0};
+    JSON_Parser *json = &_parser;
     parser_init(json, source, opts);
 
     char stack_buffer[FBUFFER_STACK_SIZE];
     fbuffer_stack_init(&json->fbuffer, FBUFFER_INITIAL_LENGTH_DEFAULT, stack_buffer, FBUFFER_STACK_SIZE);
 
+    VALUE rvalue_stack_buffer[RVALUE_STACK_INITIAL_CAPA];
+    rvalue_stack stack = {
+        .type = RVALUE_STACK_STACK_ALLOCATED,
+        .ptr = rvalue_stack_buffer,
+        .capa = RVALUE_STACK_INITIAL_CAPA,
+    };
+    json->stack = &stack;
+
     %% write init;
     p = json->source;
     pe = p + json->len;
     %% write exec;
+
+    if (json->stack_handle) {
+        rvalue_stack_eagerly_release(json->stack_handle);
+    }
 
     if (cs >= JSON_first_final && p == pe) {
         return result;
@@ -1072,19 +1268,6 @@ static VALUE cParser_m_parse(VALUE klass, VALUE source, VALUE opts)
         return Qnil;
     }
 }
-
-#ifndef HAVE_RB_GC_MARK_LOCATIONS
-// For TruffleRuby
-void rb_gc_mark_locations(const VALUE *start, const VALUE *end)
-{
-    VALUE *value = start;
-
-    while (value < end) {
-        rb_gc_mark(*value);
-        value++;
-    }
-}
-#endif
 
 static void JSON_mark(void *ptr)
 {
@@ -1095,6 +1278,8 @@ static void JSON_mark(void *ptr)
     rb_gc_mark(json->array_class);
     rb_gc_mark(json->decimal_class);
     rb_gc_mark(json->match_string);
+    rb_gc_mark(json->stack_handle);
+
     const VALUE *name_cache_entries = &json->name_cache.entries[0];
     rb_gc_mark_locations(name_cache_entries, name_cache_entries + json->name_cache.length);
 }
