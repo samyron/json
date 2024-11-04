@@ -28,24 +28,21 @@ end
 
 # NB: Notes are based on ruby 3.3.4 (2024-07-09 revision be1089c8ec) +YJIT [arm64-darwin23]
 
-# Oj::Parser is very significanly faster (2.70x) on the nested array benchmark
-# thanks to its stack implementation that saves resizing arrays.
-# But we're on par with `Oj.dumo`
+# Oj::Parser is very significanly faster (1.80x) on the nested array benchmark.
 benchmark_parsing "small nested array", JSON.dump([[1,2,3,4,5]]*10)
 
-# Oj::Parser is significanly faster (~1.5x) on the next 4 benchmarks in large part thanks to its string caching.
-
-# Other than that we're either a bit slower or a bit faster than regular `Oj.load`.
+# Oj::Parser is significanly faster (~1.5x) on the next 4 benchmarks in large part because its
+# cache is persisted across calls. That's not something we can do with the current API, we'd
+# need to expose a stateful API as well, but that's no really desirable.
+# Other than that we're faster than regular `Oj.load` by a good margin.
 benchmark_parsing "small hash", JSON.dump({ "username" => "jhawthorn", "id" => 123, "event" => "wrote json serializer" })
 
 benchmark_parsing "test from oj", <<JSON
 {"a":"Alpha","b":true,"c":12345,"d":[true,[false,[-123456789,null],3.9676,["Something else.",false],null]],"e":{"zero":null,"one":1,"two":2,"three":[3],"four":[0,1,2,3,4]},"f":null,"h":{"a":{"b":{"c":{"d":{"e":{"f":{"g":null}}}}}}},"i":[[[[[[[null]]]]]]]}
 JSON
 
-# On these two more realistic benchmarks, still significanlty slower than alternatives.
-# Caching of keys is likely required to be able to match performance.
-# On the twitter and activitypub payloads the difference isn't that big (~10%)
-# but on citm_catalog it's up to a 50% difference.
+# On these macro-benchmarks, we're on par with `Oj::Parser` and significantly
+# faster than `Oj.load`.
 benchmark_parsing "activitypub.json", File.read("#{__dir__}/data/activitypub.json")
 benchmark_parsing "twitter.json", File.read("#{__dir__}/data/twitter.json")
 benchmark_parsing "citm_catalog.json", File.read("#{__dir__}/data/citm_catalog.json")
