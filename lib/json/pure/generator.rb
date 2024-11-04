@@ -307,20 +307,18 @@ module JSON
 
         # Handles @allow_nan, @buffer_initial_length, other ivars must be the default value (see above)
         private def generate_json(obj, buf)
-          klass = obj.class
-          if klass == Hash
+          case obj
+          when Hash
             buf << '{'
             first = true
             obj.each_pair do |k,v|
               buf << ',' unless first
 
               key_str = k.to_s
-              if key_str.is_a?(::String)
-                if key_str.class == ::String
-                  fast_serialize_string(key_str, buf)
-                else
-                  generate_json(key_str, buf)
-                end
+              if key_str.class == String
+                fast_serialize_string(key_str, buf)
+              elsif key_str.is_a?(String)
+                generate_json(key_str, buf)
               else
                 raise TypeError, "#{k.class}#to_s returns an instance of #{key_str.class}, expected a String"
               end
@@ -330,7 +328,7 @@ module JSON
               first = false
             end
             buf << '}'
-          elsif klass == Array
+          when Array
             buf << '['
             first = true
             obj.each do |e|
@@ -339,9 +337,13 @@ module JSON
               first = false
             end
             buf << ']'
-          elsif klass == String
-            fast_serialize_string(obj, buf)
-          elsif klass == Integer
+          when String
+            if obj.class == String
+              fast_serialize_string(obj, buf)
+            else
+              buf << obj.to_json(self)
+            end
+          when Integer
             buf << obj.to_s
           else
             # Note: Float is handled this way since Float#to_s is slow anyway
@@ -432,8 +434,8 @@ module JSON
               result << state.indent * depth if indent
 
               key_str = key.to_s
-              key_json = if key_str.is_a?(::String)
-                key_str = key_str.to_json(state)
+              if key_str.is_a?(String)
+                key_json = key_str.to_json(state)
               else
                 raise TypeError, "#{key.class}#to_s returns an instance of #{key_str.class}, expected a String"
               end
