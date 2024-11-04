@@ -8,7 +8,7 @@ static ID i_json_creatable_p, i_json_create, i_create_id,
           i_chr, i_deep_const_get, i_match, i_aset, i_aref,
           i_leftshift, i_new, i_try_convert, i_uminus, i_encode;
 
-static VALUE sym_max_nesting, sym_allow_nan, sym_symbolize_names, sym_freeze,
+static VALUE sym_max_nesting, sym_allow_nan, sym_allow_trailing_comma, sym_symbolize_names, sym_freeze,
              sym_create_additions, sym_create_id, sym_object_class, sym_array_class,
              sym_decimal_class, sym_match_string;
 
@@ -383,6 +383,7 @@ typedef struct JSON_ParserStruct {
     FBuffer fbuffer;
     int max_nesting;
     bool allow_nan;
+    bool allow_trailing_comma;
     bool parsing_name;
     bool symbolize_names;
     bool freeze;
@@ -477,6 +478,8 @@ static void raise_parse_error(const char *format, const char *start)
         }
     }
 
+    action allow_trailing_comma { json->allow_trailing_comma }
+
     action parse_name {
         char *np;
         json->parsing_name = true;
@@ -495,7 +498,7 @@ static void raise_parse_error(const char *format, const char *start)
 
     main := (
       begin_object
-      (pair (next_pair)*)? ignore*
+      (pair (next_pair)*((ignore* value_separator) when allow_trailing_comma)?)? ignore*
       end_object
     ) @exit;
 }%%
@@ -788,13 +791,15 @@ static char *JSON_parse_float(JSON_Parser *json, char *p, char *pe, VALUE *resul
         }
     }
 
+    action allow_trailing_comma { json->allow_trailing_comma }
+
     action exit { fhold; fbreak; }
 
     next_element  = value_separator ignore* begin_value >parse_value;
 
     main := begin_array ignore*
           ((begin_value >parse_value ignore*)
-           (ignore* next_element ignore*)*)?
+          (ignore* next_element ignore*)*((value_separator ignore*) when allow_trailing_comma)?)?
           end_array @exit;
 }%%
 
@@ -1073,16 +1078,17 @@ static int configure_parser_i(VALUE key, VALUE val, VALUE data)
 {
     JSON_Parser *json = (JSON_Parser *)data;
 
-         if (key == sym_max_nesting)       { json->max_nesting = RTEST(val) ? FIX2INT(val) : 0; }
-    else if (key == sym_allow_nan)         { json->allow_nan = RTEST(val); }
-    else if (key == sym_symbolize_names)   { json->symbolize_names = RTEST(val); }
-    else if (key == sym_freeze)            { json->freeze = RTEST(val); }
-    else if (key == sym_create_id)         { json->create_id = RTEST(val) ? val : Qfalse; }
-    else if (key == sym_object_class)      { json->object_class = RTEST(val) ? val : Qfalse; }
-    else if (key == sym_array_class)       { json->array_class = RTEST(val) ? val : Qfalse; }
-    else if (key == sym_decimal_class)     { json->decimal_class = RTEST(val) ? val : Qfalse; }
-    else if (key == sym_match_string)      { json->match_string = RTEST(val) ? val : Qfalse; }
-    else if (key == sym_create_additions)  {
+         if (key == sym_max_nesting)          { json->max_nesting = RTEST(val) ? FIX2INT(val) : 0; }
+    else if (key == sym_allow_nan)            { json->allow_nan = RTEST(val); }
+    else if (key == sym_allow_trailing_comma) { json->allow_trailing_comma = RTEST(val); }
+    else if (key == sym_symbolize_names)      { json->symbolize_names = RTEST(val); }
+    else if (key == sym_freeze)               { json->freeze = RTEST(val); }
+    else if (key == sym_create_id)            { json->create_id = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_object_class)         { json->object_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_array_class)          { json->array_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_decimal_class)        { json->decimal_class = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_match_string)         { json->match_string = RTEST(val) ? val : Qfalse; }
+    else if (key == sym_create_additions)     {
         if (NIL_P(val)) {
             json->create_additions = true;
             json->deprecated_create_additions = true;
@@ -1358,6 +1364,7 @@ void Init_parser(void)
 
     sym_max_nesting = ID2SYM(rb_intern("max_nesting"));
     sym_allow_nan = ID2SYM(rb_intern("allow_nan"));
+    sym_allow_trailing_comma = ID2SYM(rb_intern("allow_trailing_comma"));
     sym_symbolize_names = ID2SYM(rb_intern("symbolize_names"));
     sym_freeze = ID2SYM(rb_intern("freeze"));
     sym_create_additions = ID2SYM(rb_intern("create_additions"));

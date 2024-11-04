@@ -52,6 +52,7 @@ public class Parser extends RubyObject {
     private boolean deprecatedCreateAdditions;
     private int maxNesting;
     private boolean allowNaN;
+    private boolean allowTrailingComma;
     private boolean symbolizeNames;
     private boolean freeze;
     private RubyClass objectClass;
@@ -122,6 +123,11 @@ public class Parser extends RubyObject {
      * <code>Infinity</code> and <code>-Infinity</code> in defiance of RFC 4627
      * to be parsed by the Parser. This option defaults to <code>false</code>.
      *
+     * <dt><code>:allow_trailing_comma</code>
+     * <dd>If set to <code>true</code>, allow arrays and objects with a trailing
+     * comma in defiance of RFC 4627 to be parsed by the Parser.
+     * This option defaults to <code>false</code>.
+     *
      * <dt><code>:symbolize_names</code>
      * <dd>If set to <code>true</code>, returns symbols for the names (keys) in
      * a JSON object. Otherwise strings are returned, which is also the default.
@@ -175,6 +181,7 @@ public class Parser extends RubyObject {
         OptionsReader opts   = new OptionsReader(context, args.length > 1 ? args[1] : null);
         this.maxNesting      = opts.getInt("max_nesting", DEFAULT_MAX_NESTING);
         this.allowNaN        = opts.getBool("allow_nan", false);
+        this.allowTrailingComma = opts.getBool("allow_trailing_comma", false);
         this.symbolizeNames  = opts.getBool("symbolize_names", false);
         this.freeze          = opts.getBool("freeze", false);
         this.createId        = opts.getString("create_id", getCreateId(context));
@@ -695,6 +702,8 @@ public class Parser extends RubyObject {
 
             write data;
 
+            action allow_trailing_comma { parser.allowTrailingComma }
+
             action parse_value {
                 parseValue(res, fpc, pe);
                 if (res.result == null) {
@@ -723,7 +732,7 @@ public class Parser extends RubyObject {
                         ignore* )
                       ( ignore*
                         next_element
-                        ignore* )* )?
+                        ignore* )* ( (value_separator ignore*) when allow_trailing_comma )? )?
                     ignore*
                     end_array @exit;
         }%%
@@ -759,6 +768,8 @@ public class Parser extends RubyObject {
             include JSON_common;
 
             write data;
+
+            action allow_trailing_comma { parser.allowTrailingComma }
 
             action parse_value {
                 parseValue(res, fpc, pe);
@@ -801,7 +812,9 @@ public class Parser extends RubyObject {
             next_pair = ignore* value_separator pair;
 
             main := (
-              begin_object (pair (next_pair)*)? ignore* end_object
+                begin_object
+                (pair (next_pair)*((ignore* value_separator) when allow_trailing_comma)?)? ignore*
+                end_object
             ) @exit;
         }%%
 
