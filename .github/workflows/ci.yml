@@ -50,7 +50,7 @@ jobs:
 
       - run: rake compile
 
-      - run: rake test
+      - run: rake test JSON_COMPACT=1
 
       - run: rake build
 
@@ -78,4 +78,4 @@ jobs:
 
       - run: rake compile
 
-      - run: rake valgrind
+      - run: rake valgrind JSON_COMPACT=1
