@@ -32,9 +32,7 @@ module JSON
       JSON.generate(object, opts)
     end
 
-    # Returns the JSON parser class that is used by JSON. This is either
-    # JSON::Ext::Parser or JSON::Pure::Parser:
-    #   JSON.parser # => JSON::Ext::Parser
+    # Returns the JSON parser class that is used by JSON.
     attr_reader :parser
 
     # Set the JSON parser class _parser_ to be used by JSON.
@@ -97,14 +95,10 @@ module JSON
       )
     end
 
-    # Returns the JSON generator module that is used by JSON. This is
-    # either JSON::Ext::Generator or JSON::Pure::Generator:
-    #   JSON.generator # => JSON::Ext::Generator
+    # Returns the JSON generator module that is used by JSON.
     attr_reader :generator
 
-    # Sets or Returns the JSON generator state class that is used by JSON. This is
-    # either JSON::Ext::Generator::State or JSON::Pure::Generator::State:
-    #   JSON.state # => JSON::Ext::Generator::State
+    # Sets or Returns the JSON generator state class that is used by JSON.
     attr_accessor :state
   end
 

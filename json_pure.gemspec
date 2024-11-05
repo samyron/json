@@ -23,28 +23,7 @@ Gem::Specification.new do |s|
     "LEGAL",
     "README.md",
     "json_pure.gemspec",
-    "lib/json.rb",
-    "lib/json/add/bigdecimal.rb",
-    "lib/json/add/complex.rb",
-    "lib/json/add/core.rb",
-    "lib/json/add/date.rb",
-    "lib/json/add/date_time.rb",
-    "lib/json/add/exception.rb",
-    "lib/json/add/ostruct.rb",
-    "lib/json/add/range.rb",
-    "lib/json/add/rational.rb",
-    "lib/json/add/regexp.rb",
-    "lib/json/add/set.rb",
-    "lib/json/add/struct.rb",
-    "lib/json/add/symbol.rb",
-    "lib/json/add/time.rb",
-    "lib/json/common.rb",
-    "lib/json/ext.rb",
-    "lib/json/generic_object.rb",
     "lib/json/pure.rb",
-    "lib/json/pure/generator.rb",
-    "lib/json/pure/parser.rb",
-    "lib/json/version.rb",
   ]
   s.homepage = "https://ruby.github.io/json"
   s.metadata = {
@@ -55,6 +34,8 @@ Gem::Specification.new do |s|
     'source_code_uri'   => 'https://github.com/ruby/json',
     'wiki_uri'          => 'https://github.com/ruby/json/wiki'
   }
+
+  s.add_dependency "json"
 
   s.required_ruby_version = Gem::Requirement.new(">= 2.7")
 end
