@@ -40,7 +40,7 @@ class JSONParserTest < Test::Unit::TestCase
     }
     assert_equal(Encoding::UTF_8, e.message.encoding, bug10705)
     assert_include(e.message, json, bug10705)
-  end if defined?(JSON::Ext::Parser)
+  end
 
   def test_parsing
     parser = JSON::Parser.new('"test"')
@@ -619,7 +619,7 @@ class JSONParserTest < Test::Unit::TestCase
     error = assert_raise(JSON::ParserError) do
       JSON.parse('{"input":{"firstName":"Bob","lastName":"Mob","email":"bob@example.com"}')
     end
-    if RUBY_ENGINE == "ruby" && defined?(JSON::Ext)
+    if RUBY_ENGINE == "ruby"
       assert_equal %(unexpected token at '{"input":{"firstName":"Bob","las'), error.message
     end
   end

@@ -1,10 +1,6 @@
 source 'https://rubygems.org'
 
-if ENV['JSON'] == 'pure'
-  gemspec name: 'json_pure'
-else
-  gemspec name: 'json'
-end
+gemspec name: 'json'
 
 group :development do
   gem "ruby_memcheck" if RUBY_PLATFORM =~ /linux/i

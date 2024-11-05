@@ -56,12 +56,8 @@ else
   RAGEL_DOTGEN      = %w[rlgen-dot rlgen-cd ragel].find(&which)
 end
 
-desc "Installing library (pure)"
-task :install_pure do
-  ruby 'install.rb'
-end
-
-task :install_ext_really do
+desc "Installing library (extension)"
+task :install => [ :compile ] do
   sitearchdir = CONFIG["sitearchdir"]
   cd 'ext' do
     for file in Dir["json/ext/*.#{CONFIG['DLEXT']}"]
@@ -72,30 +68,6 @@ task :install_ext_really do
     warn " *** Installed EXT ruby library."
   end
 end
-
-desc "Installing library (extension)"
-task :install_ext => [ :compile, :install_pure, :install_ext_really ]
-
-desc "Installing library (extension)"
-task :install => :install_ext
-
-task :check_env do
-  ENV.key?('JSON') or fail "JSON env var is required"
-end
-
-desc "Testing library (pure ruby)"
-task :test_pure => [ :set_env_pure, :check_env, :do_test_pure ]
-task(:set_env_pure) { ENV['JSON'] = 'pure' }
-
-UndocumentedTestTask.new do |t|
-  t.name = 'do_test_pure'
-  t.test_files = FileList['test/json/*_test.rb']
-  t.verbose = true
-  t.options = '-v'
-end
-
-desc "Testing library (pure ruby and extension)"
-task :test => [ :test_pure, :test_ext ]
 
 namespace :gems do
   desc 'Install all development gems'
@@ -177,16 +149,14 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
     sh "gem build -o pkg/json-#{PKG_VERSION}-java.gem json.gemspec"
   end
 
-  desc "Testing library (jruby)"
-  task :test_ext => [ :set_env_ext, :create_jar, :check_env, :do_test_ext ]
-  task(:set_env_ext) { ENV['JSON'] = 'ext' }
-
   UndocumentedTestTask.new do |t|
-    t.name = 'do_test_ext'
+    t.name = :test
     t.test_files = FileList['test/json/*_test.rb']
     t.verbose = true
     t.options = '-v'
   end
+  desc "Testing library (jruby)"
+  task :test => [:create_jar ]
 
   file JRUBY_PARSER_JAR => :compile do
     cd 'java/src' do
@@ -239,20 +209,19 @@ else
     task :compile => [ :ragel, EXT_PARSER_DL, EXT_GENERATOR_DL ]
   end
 
-  desc "Testing library (extension)"
-  task :test_ext => [ :set_env_ext, :check_env, :compile, :do_test_ext ]
-  task(:set_env_ext) { ENV['JSON'] = 'ext' }
-
   UndocumentedTestTask.new do |t|
-    t.name = 'do_test_ext'
+    t.name = :test
     t.test_files = FileList['test/json/*_test.rb']
     t.verbose = true
     t.options = '-v'
   end
 
+  desc "Testing library (extension)"
+  task :test => [ :compile ]
+
   begin
     require "ruby_memcheck"
-    RubyMemcheck::TestTask.new(valgrind: [ :set_env_ext, :check_env, :compile, :do_test_ext ]) do |t|
+    RubyMemcheck::TestTask.new(valgrind: [ :compile, :test ]) do |t|
       t.test_files = FileList['test/json/*_test.rb']
       t.verbose = true
       t.options = '-v'

@@ -1,98 +1,98 @@
 # frozen_string_literal: true
 module JSON
-  MAP = {
-    "\x0" => '\u0000',
-    "\x1" => '\u0001',
-    "\x2" => '\u0002',
-    "\x3" => '\u0003',
-    "\x4" => '\u0004',
-    "\x5" => '\u0005',
-    "\x6" => '\u0006',
-    "\x7" => '\u0007',
-    "\b"  =>  '\b',
-    "\t"  =>  '\t',
-    "\n"  =>  '\n',
-    "\xb" => '\u000b',
-    "\f"  =>  '\f',
-    "\r"  =>  '\r',
-    "\xe" => '\u000e',
-    "\xf" => '\u000f',
-    "\x10" => '\u0010',
-    "\x11" => '\u0011',
-    "\x12" => '\u0012',
-    "\x13" => '\u0013',
-    "\x14" => '\u0014',
-    "\x15" => '\u0015',
-    "\x16" => '\u0016',
-    "\x17" => '\u0017',
-    "\x18" => '\u0018',
-    "\x19" => '\u0019',
-    "\x1a" => '\u001a',
-    "\x1b" => '\u001b',
-    "\x1c" => '\u001c',
-    "\x1d" => '\u001d',
-    "\x1e" => '\u001e',
-    "\x1f" => '\u001f',
-    '"'   =>  '\"',
-    '\\'  =>  '\\\\',
-  }.freeze # :nodoc:
-
-  ESCAPE_PATTERN = /[\/"\\\x0-\x1f]/n # :nodoc:
-
-  SCRIPT_SAFE_MAP = MAP.merge(
-    '/'  =>  '\\/',
-    "\u2028".b => '\u2028',
-    "\u2029".b => '\u2029',
-  ).freeze
-
-  SCRIPT_SAFE_ESCAPE_PATTERN = Regexp.union(ESCAPE_PATTERN, "\u2028".b, "\u2029".b)
-
-  # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
-  # UTF16 big endian characters as \u????, and return it.
-  def utf8_to_json(string, script_safe = false) # :nodoc:
-    string = string.b
-    if script_safe
-      string.gsub!(SCRIPT_SAFE_ESCAPE_PATTERN) { SCRIPT_SAFE_MAP[$&] || $& }
-    else
-      string.gsub!(ESCAPE_PATTERN) { MAP[$&] || $& }
-    end
-    string.force_encoding(::Encoding::UTF_8)
-    string
-  end
-
-  def utf8_to_json_ascii(string, script_safe = false) # :nodoc:
-    string = string.b
-    map = script_safe ? SCRIPT_SAFE_MAP : MAP
-    string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
-    string.gsub!(/(
-      (?:
-       [\xc2-\xdf][\x80-\xbf]    |
-       [\xe0-\xef][\x80-\xbf]{2} |
-       [\xf0-\xf4][\x80-\xbf]{3}
-      )+ |
-      [\x80-\xc1\xf5-\xff]       # invalid
-    )/nx) { |c|
-      c.size == 1 and raise GeneratorError, "invalid utf8 byte: '#{c}'"
-      s = c.encode(::Encoding::UTF_16BE, ::Encoding::UTF_8).unpack('H*')[0]
-      s.force_encoding(::Encoding::BINARY)
-      s.gsub!(/.{4}/n, '\\\\u\&')
-      s.force_encoding(::Encoding::UTF_8)
-    }
-    string.force_encoding(::Encoding::UTF_8)
-    string
-  rescue => e
-    raise GeneratorError.wrap(e)
-  end
-
-  def valid_utf8?(string)
-    encoding = string.encoding
-    (encoding == Encoding::UTF_8 || encoding == Encoding::ASCII) &&
-      string.valid_encoding?
-  end
-  module_function :utf8_to_json, :utf8_to_json_ascii, :valid_utf8?
-
-  module Pure
+  module TruffleRuby
     module Generator
+      MAP = {
+        "\x0" => '\u0000',
+        "\x1" => '\u0001',
+        "\x2" => '\u0002',
+        "\x3" => '\u0003',
+        "\x4" => '\u0004',
+        "\x5" => '\u0005',
+        "\x6" => '\u0006',
+        "\x7" => '\u0007',
+        "\b"  =>  '\b',
+        "\t"  =>  '\t',
+        "\n"  =>  '\n',
+        "\xb" => '\u000b',
+        "\f"  =>  '\f',
+        "\r"  =>  '\r',
+        "\xe" => '\u000e',
+        "\xf" => '\u000f',
+        "\x10" => '\u0010',
+        "\x11" => '\u0011',
+        "\x12" => '\u0012',
+        "\x13" => '\u0013',
+        "\x14" => '\u0014',
+        "\x15" => '\u0015',
+        "\x16" => '\u0016',
+        "\x17" => '\u0017',
+        "\x18" => '\u0018',
+        "\x19" => '\u0019',
+        "\x1a" => '\u001a',
+        "\x1b" => '\u001b',
+        "\x1c" => '\u001c',
+        "\x1d" => '\u001d',
+        "\x1e" => '\u001e',
+        "\x1f" => '\u001f',
+        '"'   =>  '\"',
+        '\\'  =>  '\\\\',
+      }.freeze # :nodoc:
+
+      ESCAPE_PATTERN = /[\/"\\\x0-\x1f]/n # :nodoc:
+
+      SCRIPT_SAFE_MAP = MAP.merge(
+        '/'  =>  '\\/',
+        "\u2028".b => '\u2028',
+        "\u2029".b => '\u2029',
+      ).freeze
+
+      SCRIPT_SAFE_ESCAPE_PATTERN = Regexp.union(ESCAPE_PATTERN, "\u2028".b, "\u2029".b)
+
+      # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
+      # UTF16 big endian characters as \u????, and return it.
+      def utf8_to_json(string, script_safe = false) # :nodoc:
+        string = string.b
+        if script_safe
+          string.gsub!(SCRIPT_SAFE_ESCAPE_PATTERN) { SCRIPT_SAFE_MAP[$&] || $& }
+        else
+          string.gsub!(ESCAPE_PATTERN) { MAP[$&] || $& }
+        end
+        string.force_encoding(::Encoding::UTF_8)
+        string
+      end
+
+      def utf8_to_json_ascii(string, script_safe = false) # :nodoc:
+        string = string.b
+        map = script_safe ? SCRIPT_SAFE_MAP : MAP
+        string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
+        string.gsub!(/(
+          (?:
+           [\xc2-\xdf][\x80-\xbf]    |
+           [\xe0-\xef][\x80-\xbf]{2} |
+           [\xf0-\xf4][\x80-\xbf]{3}
+          )+ |
+          [\x80-\xc1\xf5-\xff]       # invalid
+        )/nx) { |c|
+          c.size == 1 and raise GeneratorError, "invalid utf8 byte: '#{c}'"
+          s = c.encode(::Encoding::UTF_16BE, ::Encoding::UTF_8).unpack('H*')[0]
+          s.force_encoding(::Encoding::BINARY)
+          s.gsub!(/.{4}/n, '\\\\u\&')
+          s.force_encoding(::Encoding::UTF_8)
+        }
+        string.force_encoding(::Encoding::UTF_8)
+        string
+      rescue => e
+        raise GeneratorError.wrap(e)
+      end
+
+      def valid_utf8?(string)
+        encoding = string.encoding
+        (encoding == Encoding::UTF_8 || encoding == Encoding::ASCII) &&
+          string.valid_encoding?
+      end
+      module_function :utf8_to_json, :utf8_to_json_ascii, :valid_utf8?
+
       # This class is used to create State instances, that are use to hold data
       # while generating a JSON text from a Ruby data structure.
       class State
@@ -300,7 +300,7 @@ module JSON
           else
             result = obj.to_json(self)
           end
-          JSON.valid_utf8?(result) or raise GeneratorError,
+          JSON::TruffleRuby::Generator.valid_utf8?(result) or raise GeneratorError,
             "source sequence #{result.inspect} is illegal/malformed utf-8"
           result
         end
@@ -559,9 +559,9 @@ module JSON
               string = encode(::Encoding::UTF_8)
             end
             if state.ascii_only?
-              %("#{JSON.utf8_to_json_ascii(string, state.script_safe)}")
+              %("#{JSON::TruffleRuby::Generator.utf8_to_json_ascii(string, state.script_safe)}")
             else
-              %("#{JSON.utf8_to_json(string, state.script_safe)}")
+              %("#{JSON::TruffleRuby::Generator.utf8_to_json(string, state.script_safe)}")
             end
           rescue Encoding::UndefinedConversionError => error
             raise ::JSON::GeneratorError, error.message
