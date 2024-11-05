@@ -284,13 +284,11 @@ else
   desc "Create the gem packages"
   task :package do
     sh "gem build json.gemspec"
-    sh "gem build json_pure.gemspec"
     mkdir_p 'pkg'
     mv "json-#{PKG_VERSION}.gem", 'pkg'
-    mv "json_pure-#{PKG_VERSION}.gem", 'pkg'
   end
 
-  desc "Build all gems and archives for a new release of json and json_pure."
+  desc "Build all gems and archives for a new release of json"
   task :build => [ :clean, :package ]
 
   task :release => :build

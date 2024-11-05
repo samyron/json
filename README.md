@@ -21,10 +21,6 @@ endpoint.
 
 ## Installation
 
-It's recommended to use the extension variant of JSON, because it's faster than
-the pure ruby variant. If you cannot build it on your system, you can settle
-for the latter.
-
 Install the gem and add to the application's Gemfile by executing:
 
     $ bundle add json
@@ -33,32 +29,12 @@ If bundler is not being used to manage dependencies, install the gem by executin
 
     $ gem install json
 
-
-There is also a pure ruby json only variant of the gem, that can be installed
-with:
-
-    $ gem install json_pure
-
 ## Usage
 
 To use JSON you can
 
 ```ruby
 require 'json'
-```
-
-to load the installed variant (either the extension `'json'` or the pure
-variant `'json_pure'`). If you have installed the extension variant, you can
-pick either the extension variant or the pure variant by typing
-
-```ruby
-require 'json/ext'
-```
-
-or
-
-```ruby
-require 'json/pure'
 ```
 
 Now you can parse a JSON document into a ruby data structure by calling

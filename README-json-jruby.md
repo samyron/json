@@ -3,7 +3,6 @@ JSON-JRuby
 
 JSON-JRuby is a port of Florian Frank's native
 [`json` library](http://json.rubyforge.org/) to JRuby.
-It aims to be a perfect drop-in replacement for `json_pure`.
 
 
 Development version
