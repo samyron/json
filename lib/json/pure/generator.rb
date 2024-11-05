@@ -354,7 +354,13 @@ module JSON
         # Assumes !@ascii_only, !@script_safe
         private def fast_serialize_string(string, buf) # :nodoc:
           buf << '"'
-          string = string.encode(::Encoding::UTF_8) unless string.encoding == ::Encoding::UTF_8
+          unless string.encoding == ::Encoding::UTF_8
+            begin
+              string = string.encode(::Encoding::UTF_8)
+            rescue Encoding::UndefinedConversionError => error
+              raise GeneratorError, error.message
+            end
+          end
           raise GeneratorError, "source sequence is illegal/malformed utf-8" unless string.valid_encoding?
 
           if /["\\\x0-\x1f]/n.match?(string)
@@ -557,6 +563,8 @@ module JSON
             else
               %("#{JSON.utf8_to_json(string, state.script_safe)}")
             end
+          rescue Encoding::UndefinedConversionError => error
+            raise ::JSON::GeneratorError, error.message
           end
 
           # Module that holds the extending methods if, the String module is
