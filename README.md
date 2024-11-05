@@ -56,7 +56,7 @@ checks generate performs, e. g. nesting deepness checks).
 
 > [!CAUTION]
 > You should never use `JSON.unsafe_load` nor `JSON.parse(str, create_additions: true)` to parse untrusted user input,
-> as it can lead to remove code execution vulnerabilities.
+> as it can lead to remote code execution vulnerabilities.
 
 To create a JSON document from a ruby data structure, you can call
 `JSON.generate` like that:
