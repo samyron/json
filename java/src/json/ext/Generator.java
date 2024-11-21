@@ -5,7 +5,6 @@
  */
 package json.ext;
 
-import org.jcodings.Encoding;
 import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -15,7 +14,6 @@ import org.jruby.RubyBoolean;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
-import org.jruby.RubyIO;
 import org.jruby.RubyString;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
@@ -29,7 +27,8 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
+
+import static java.nio.charset.StandardCharsets.*;
 
 public final class Generator {
 
@@ -44,12 +43,12 @@ public final class Generator {
      */
     static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object, Handler<? super T> handler) {
         Session session = new Session(null);
-        return session.infect(handler.generateNew(context, session, object));
+        return handler.generateNew(context, session, object);
     }
 
     static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object, Handler<? super T> handler, IRubyObject arg0) {
         Session session = new Session(arg0);
-        return session.infect(handler.generateNew(context, session, object));
+        return handler.generateNew(context, session, object);
     }
 
     /**
@@ -93,21 +92,21 @@ public final class Generator {
     @SuppressWarnings("unchecked")
     private static <T extends IRubyObject> Handler<? super T> getHandlerFor(Ruby runtime, T object) {
         switch (((RubyBasicObject) object).getNativeClassIndex()) {
-            case NIL    : return (Handler) NIL_HANDLER;
-            case TRUE   : return (Handler) TRUE_HANDLER;
-            case FALSE  : return (Handler) FALSE_HANDLER;
-            case FLOAT  : return (Handler) FLOAT_HANDLER;
-            case FIXNUM : return (Handler) FIXNUM_HANDLER;
-            case BIGNUM : return (Handler) BIGNUM_HANDLER;
+            case NIL    : return NIL_HANDLER;
+            case TRUE   : return (Handler<T>) TRUE_HANDLER;
+            case FALSE  : return (Handler<T>) FALSE_HANDLER;
+            case FLOAT  : return (Handler<T>) FLOAT_HANDLER;
+            case FIXNUM : return (Handler<T>) FIXNUM_HANDLER;
+            case BIGNUM : return (Handler<T>) BIGNUM_HANDLER;
             case STRING :
-                if (((RubyBasicObject) object).getMetaClass() != runtime.getString()) break;
-                return (Handler) STRING_HANDLER;
+                if (Helpers.metaclass(object) != runtime.getString()) break;
+                return (Handler<T>) STRING_HANDLER;
             case ARRAY  :
-                if (((RubyBasicObject) object).getMetaClass() != runtime.getArray()) break;
-                return (Handler) ARRAY_HANDLER;
+                if (Helpers.metaclass(object) != runtime.getArray()) break;
+                return (Handler<T>) ARRAY_HANDLER;
             case HASH   :
-                if (((RubyBasicObject) object).getMetaClass() != runtime.getHash()) break;
-                return (Handler) HASH_HANDLER;
+                if (Helpers.metaclass(object) != runtime.getHash()) break;
+                return (Handler<T>) HASH_HANDLER;
         }
         return GENERIC_HANDLER;
     }
@@ -131,9 +130,6 @@ public final class Generator {
         private IRubyObject possibleState;
         private RuntimeInfo info;
         private StringEncoder stringEncoder;
-
-        private boolean tainted = false;
-        private boolean untrusted = false;
 
         Session(GeneratorState state) {
             this.state = state;
@@ -162,17 +158,6 @@ public final class Generator {
                 stringEncoder = new StringEncoder(state.asciiOnly(), state.scriptSafe());
             }
             return stringEncoder;
-        }
-
-        public void infectBy(IRubyObject object) {
-            if (object.isTaint()) tainted = true;
-            if (object.isUntrusted()) untrusted = true;
-        }
-
-        public <T extends IRubyObject> T infect(T object) {
-            if (tainted) object.setTaint(true);
-            if (untrusted) object.setUntrusted(true);
-            return object;
         }
     }
 
@@ -212,10 +197,10 @@ public final class Generator {
      */
     private static class KeywordHandler<T extends IRubyObject>
             extends Handler<T> {
-        private byte[] keyword;
+        private final byte[] keyword;
 
         private KeywordHandler(String keyword) {
-            this.keyword = keyword.getBytes(StandardCharsets.UTF_8);
+            this.keyword = keyword.getBytes(UTF_8);
         }
 
         @Override
@@ -242,7 +227,7 @@ public final class Generator {
             @Override
             void generate(ThreadContext context, Session session, RubyBignum object, OutputStream buffer) throws IOException {
                 BigInteger bigInt = object.getValue();
-                buffer.write(bigInt.toString().getBytes(StandardCharsets.UTF_8));
+                buffer.write(bigInt.toString().getBytes(UTF_8));
             }
         };
 
@@ -266,15 +251,15 @@ public final class Generator {
                     }
                 }
 
-                buffer.write(Double.toString(value).getBytes(StandardCharsets.UTF_8));
+                buffer.write(Double.toString(value).getBytes(UTF_8));
             }
         };
 
     private static final byte[] EMPTY_ARRAY_BYTES = "[]".getBytes();
-    static final Handler<RubyArray> ARRAY_HANDLER =
-        new Handler<RubyArray>() {
+    static final Handler<RubyArray<IRubyObject>> ARRAY_HANDLER =
+        new Handler<RubyArray<IRubyObject>>() {
             @Override
-            int guessSize(ThreadContext context, Session session, RubyArray object) {
+            int guessSize(ThreadContext context, Session session, RubyArray<IRubyObject> object) {
                 GeneratorState state = session.getState(context);
                 int depth = state.getDepth();
                 int perItem =
@@ -285,9 +270,9 @@ public final class Generator {
             }
 
             @Override
-            void generate(ThreadContext context, Session session, RubyArray object, OutputStream buffer) throws IOException {
+            void generate(ThreadContext context, Session session, RubyArray<IRubyObject> object, OutputStream buffer) throws IOException {
                 GeneratorState state = session.getState(context);
-                int depth = state.increaseDepth();
+                int depth = state.increaseDepth(context);
 
                 if (object.isEmpty()) {
                     buffer.write(EMPTY_ARRAY_BYTES);
@@ -306,27 +291,24 @@ public final class Generator {
                 System.arraycopy(arrayNl.unsafeBytes(), arrayNl.begin(), delim, 1,
                         arrayNl.length());
 
-                session.infectBy(object);
-
                 buffer.write((byte)'[');
                 buffer.write(arrayNl.bytes());
                 boolean firstItem = true;
 
                 for (int i = 0, t = object.getLength(); i < t; i++) {
                     IRubyObject element = object.eltInternal(i);
-                    session.infectBy(element);
                     if (firstItem) {
                         firstItem = false;
                     } else {
                         buffer.write(delim);
                     }
                     buffer.write(shift);
-                    Handler<IRubyObject> handler = (Handler<IRubyObject>) getHandlerFor(runtime, element);
+                    Handler<? super IRubyObject> handler = getHandlerFor(runtime, element);
                     handler.generate(context, session, element, buffer);
                 }
 
                 state.decreaseDepth();
-                if (arrayNl.length() != 0) {
+                if (!arrayNl.isEmpty()) {
                     buffer.write(arrayNl.bytes());
                     buffer.write(shift, 0, state.getDepth() * indentUnit.length());
                 }
@@ -352,7 +334,7 @@ public final class Generator {
             @Override
             void generate(ThreadContext context, final Session session, RubyHash object, final OutputStream buffer) throws IOException {
                 final GeneratorState state = session.getState(context);
-                final int depth = state.increaseDepth();
+                final int depth = state.increaseDepth(context);
 
                 if (object.isEmpty()) {
                     buffer.write(EMPTY_HASH_BYTES);
@@ -360,54 +342,53 @@ public final class Generator {
                     return;
                 }
 
-                final Ruby runtime = context.runtime;
-
                 final ByteList objectNl = state.getObjectNl();
+                byte[] objectNLBytes = objectNl.unsafeBytes();
                 final byte[] indent = Utils.repeat(state.getIndent(), depth);
                 final ByteList spaceBefore = state.getSpaceBefore();
                 final ByteList space = state.getSpace();
 
                 buffer.write((byte)'{');
-                buffer.write(objectNl.bytes());
+                buffer.write(objectNLBytes);
 
                 final boolean[] firstPair = new boolean[]{true};
-                object.visitAll(new RubyHash.Visitor() {
+                object.visitAll(context, new RubyHash.VisitorWithState<boolean[]>() {
                     @Override
-                    public void visit(IRubyObject key, IRubyObject value) {
+                    public void visit(ThreadContext context, RubyHash self, IRubyObject key, IRubyObject value, int index, boolean[] firstPair) {
                         try {
                             if (firstPair[0]) {
                                 firstPair[0] = false;
                             } else {
                                 buffer.write((byte) ',');
-                                buffer.write(objectNl.bytes());
+                                buffer.write(objectNLBytes);
                             }
-                            if (objectNl.length() != 0) buffer.write(indent);
+                            if (!objectNl.isEmpty()) buffer.write(indent);
+
+                            Ruby runtime = context.runtime;
 
                             IRubyObject keyStr = key.callMethod(context, "to_s");
                             if (keyStr.getMetaClass() == runtime.getString()) {
                                 STRING_HANDLER.generate(context, session, (RubyString) keyStr, buffer);
                             } else {
                                 Utils.ensureString(keyStr);
-                                Handler<IRubyObject> keyHandler = (Handler<IRubyObject>) getHandlerFor(runtime, keyStr);
+                                Handler<? super IRubyObject> keyHandler = getHandlerFor(runtime, keyStr);
                                 keyHandler.generate(context, session, keyStr, buffer);
                             }
-                            session.infectBy(key);
 
-                            buffer.write(spaceBefore.bytes());
+                            buffer.write(spaceBefore.unsafeBytes());
                             buffer.write((byte) ':');
-                            buffer.write(space.bytes());
+                            buffer.write(space.unsafeBytes());
 
-                            Handler<IRubyObject> valueHandler = (Handler<IRubyObject>) getHandlerFor(runtime, value);
+                            Handler<? super IRubyObject> valueHandler = getHandlerFor(runtime, value);
                             valueHandler.generate(context, session, value, buffer);
-                            session.infectBy(value);
                         } catch (Throwable t) {
                             Helpers.throwException(t);
                         }
                     }
-                });
+                }, firstPair);
                 state.decreaseDepth();
-                if (!firstPair[0] && objectNl.length() != 0) {
-                    buffer.write(objectNl.bytes());
+                if (!firstPair[0] && !objectNl.isEmpty()) {
+                    buffer.write(objectNLBytes);
                 }
                 buffer.write(Utils.repeat(state.getIndent(), state.getDepth()));
                 buffer.write((byte)'}');
@@ -445,11 +426,11 @@ public final class Generator {
         };
 
     static final Handler<RubyBoolean> TRUE_HANDLER =
-        new KeywordHandler<RubyBoolean>("true");
+            new KeywordHandler<>("true");
     static final Handler<RubyBoolean> FALSE_HANDLER =
-        new KeywordHandler<RubyBoolean>("false");
+            new KeywordHandler<>("false");
     static final Handler<IRubyObject> NIL_HANDLER =
-        new KeywordHandler<IRubyObject>("null");
+            new KeywordHandler<>("null");
 
     /**
      * The default handler (<code>Object#to_json</code>): coerces the object

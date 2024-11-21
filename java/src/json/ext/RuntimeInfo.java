@@ -6,7 +6,6 @@
 package json.ext;
 
 import java.lang.ref.WeakReference;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 import org.jruby.Ruby;
@@ -20,7 +19,7 @@ import org.jruby.runtime.builtin.IRubyObject;
 final class RuntimeInfo {
     // since the vast majority of cases runs just one runtime,
     // we optimize for that
-    private static WeakReference<Ruby> runtime1 = new WeakReference<Ruby>(null);
+    private static WeakReference<Ruby> runtime1 = new WeakReference<>(null);
     private static RuntimeInfo info1;
     // store remaining runtimes here (does not include runtime1)
     private static Map<Ruby, RuntimeInfo> runtimes;
@@ -39,22 +38,18 @@ final class RuntimeInfo {
 
     final WeakReference<RubyEncoding> utf8;
     final WeakReference<RubyEncoding> ascii8bit;
-    // other encodings
-    private final Map<String, WeakReference<RubyEncoding>> encodings;
 
     private RuntimeInfo(Ruby runtime) {
         RubyClass encodingClass = runtime.getEncoding();
         if (encodingClass == null) { // 1.8 mode
             utf8 = ascii8bit = null;
-            encodings = null;
         } else {
             ThreadContext context = runtime.getCurrentContext();
 
-            utf8 = new WeakReference<RubyEncoding>((RubyEncoding)RubyEncoding.find(context,
+            utf8 = new WeakReference<>((RubyEncoding) RubyEncoding.find(context,
                     encodingClass, runtime.newString("utf-8")));
-            ascii8bit = new WeakReference<RubyEncoding>((RubyEncoding)RubyEncoding.find(context,
+            ascii8bit = new WeakReference<>((RubyEncoding) RubyEncoding.find(context,
                     encodingClass, runtime.newString("ascii-8bit")));
-            encodings = new HashMap<String, WeakReference<RubyEncoding>>();
         }
     }
 
@@ -63,12 +58,12 @@ final class RuntimeInfo {
             if (runtime1.get() == runtime) {
                 return info1;
             } else if (runtime1.get() == null) {
-                runtime1 = new WeakReference<Ruby>(runtime);
+                runtime1 = new WeakReference<>(runtime);
                 info1 = new RuntimeInfo(runtime);
                 return info1;
             } else {
                 if (runtimes == null) {
-                    runtimes = new WeakHashMap<Ruby, RuntimeInfo>(1);
+                    runtimes = new WeakHashMap<>(1);
                 }
                 RuntimeInfo cache = runtimes.get(runtime);
                 if (cache == null) {
@@ -90,26 +85,13 @@ final class RuntimeInfo {
         }
     }
 
-    public RubyEncoding getEncoding(ThreadContext context, String name) {
-        synchronized (encodings) {
-            WeakReference<RubyEncoding> encoding = encodings.get(name);
-            if (encoding == null) {
-                Ruby runtime = context.getRuntime();
-                encoding = new WeakReference<RubyEncoding>((RubyEncoding)RubyEncoding.find(context,
-                        runtime.getEncoding(), runtime.newString(name)));
-                encodings.put(name, encoding);
-            }
-            return encoding.get();
-        }
-    }
-
     public GeneratorState getSafeStatePrototype(ThreadContext context) {
         if (safeStatePrototype == null) {
             IRubyObject value = jsonModule.get().getConstant("SAFE_STATE_PROTOTYPE");
             if (!(value instanceof GeneratorState)) {
-                throw context.getRuntime().newTypeError(value, generatorStateClass.get());
+                throw context.runtime.newTypeError(value, generatorStateClass.get());
             }
-            safeStatePrototype = new WeakReference<GeneratorState>((GeneratorState)value);
+            safeStatePrototype = new WeakReference<>((GeneratorState) value);
         }
         return safeStatePrototype.get();
     }

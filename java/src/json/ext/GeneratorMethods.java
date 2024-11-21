@@ -12,7 +12,6 @@ import org.jruby.RubyBoolean;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
-import org.jruby.RubyInteger;
 import org.jruby.RubyModule;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
@@ -30,8 +29,8 @@ import org.jruby.util.ByteList;
 class GeneratorMethods {
     /**
      * Populates the given module with all modules and their methods
-     * @param info
-     * @param generatorMethodsModule The module to populate
+     * @param info The current RuntimeInfo
+     * @param module The module to populate
      * (normally <code>JSON::Generator::GeneratorMethods</code>)
      */
     static void populate(RuntimeInfo info, RubyModule module) {
@@ -45,19 +44,18 @@ class GeneratorMethods {
         defineMethods(module, "String",     RbString.class);
         defineMethods(module, "TrueClass",  RbTrue.class);
 
-        info.stringExtendModule = new WeakReference<RubyModule>(module.defineModuleUnder("String")
-                                            .defineModuleUnder("Extend"));
+        info.stringExtendModule = new WeakReference<>(module.defineModuleUnder("String").defineModuleUnder("Extend"));
         info.stringExtendModule.get().defineAnnotatedMethods(StringExtend.class);
     }
 
     /**
      * Convenience method for defining methods on a submodule.
-     * @param parentModule
-     * @param submoduleName
-     * @param klass
+     * @param parentModule the parent module
+     * @param submoduleName the submodule
+     * @param klass the class from which to define methods
      */
     private static void defineMethods(RubyModule parentModule,
-            String submoduleName, Class klass) {
+            String submoduleName, Class<?> klass) {
         RubyModule submodule = parentModule.defineModuleUnder(submoduleName);
         submodule.defineAnnotatedMethods(klass);
     }
@@ -77,12 +75,12 @@ class GeneratorMethods {
     public static class RbArray {
         @JRubyMethod
         public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
-            return Generator.generateJson(context, (RubyArray)vSelf, Generator.ARRAY_HANDLER);
+            return Generator.generateJson(context, (RubyArray<IRubyObject>)vSelf, Generator.ARRAY_HANDLER);
         }
 
         @JRubyMethod
         public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
-            return Generator.generateJson(context, (RubyArray)vSelf, Generator.ARRAY_HANDLER, arg0);
+            return Generator.generateJson(context, (RubyArray<IRubyObject>)vSelf, Generator.ARRAY_HANDLER, arg0);
         }
     }
 
@@ -154,7 +152,7 @@ class GeneratorMethods {
 
         private static RubyHash toJsonRawObject(ThreadContext context,
                                                 RubyString self) {
-            Ruby runtime = context.getRuntime();
+            Ruby runtime = context.runtime;
             RubyHash result = RubyHash.newHash(runtime);
 
             IRubyObject createId = RuntimeInfo.forRuntime(runtime)
@@ -174,7 +172,7 @@ class GeneratorMethods {
 
         @JRubyMethod(module=true)
         public static IRubyObject included(ThreadContext context, IRubyObject vSelf, IRubyObject module) {
-            RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
+            RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
             return module.callMethod(context, "extend", info.stringExtendModule.get());
         }
     }
@@ -190,7 +188,7 @@ class GeneratorMethods {
         @JRubyMethod
         public static IRubyObject json_create(ThreadContext context,
                 IRubyObject vSelf, IRubyObject vHash) {
-            Ruby runtime = context.getRuntime();
+            Ruby runtime = context.runtime;
             RubyHash o = vHash.convertToHash();
             IRubyObject rawData = o.fastARef(runtime.newString("raw"));
             if (rawData == null) {

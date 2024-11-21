@@ -71,11 +71,7 @@ public class Parser extends RubyObject {
     private static final String CONST_INFINITY = "Infinity";
     private static final String CONST_MINUS_INFINITY = "MinusInfinity";
 
-    static final ObjectAllocator ALLOCATOR = new ObjectAllocator() {
-        public IRubyObject allocate(Ruby runtime, RubyClass klazz) {
-            return new Parser(runtime, klazz);
-        }
-    };
+    static final ObjectAllocator ALLOCATOR = Parser::new;
 
     /**
      * Multiple-value return for internal parser methods.
@@ -119,7 +115,7 @@ public class Parser extends RubyObject {
      * <dd>The maximum depth of nesting allowed in the parsed data
      * structures. Disable depth checking with <code>:max_nesting => false|nil|0</code>,
      * it defaults to 100.
-     *
+     * <p>
      * <dt><code>:allow_nan</code>
      * <dd>If set to <code>true</code>, allow <code>NaN</code>,
      * <code>Infinity</code> and <code>-Infinity</code> in defiance of RFC 4627
@@ -253,34 +249,6 @@ public class Parser extends RubyObject {
     }
 
     /**
-     * Checks the first four bytes of the given ByteList to infer its encoding,
-     * using the principle demonstrated on section 3 of RFC 4627 (JSON).
-     */
-    private static String sniffByteList(ByteList bl) {
-        if (bl.length() < 4) return null;
-        if (bl.get(0) == 0 && bl.get(2) == 0) {
-            return bl.get(1) == 0 ? "utf-32be" : "utf-16be";
-        }
-        if (bl.get(1) == 0 && bl.get(3) == 0) {
-            return bl.get(2) == 0 ? "utf-32le" : "utf-16le";
-        }
-        return null;
-    }
-
-    /**
-     * Assumes the given (binary) RubyString to be in the given encoding, then
-     * converts it to UTF-8.
-     */
-    private RubyString reinterpretEncoding(ThreadContext context,
-            RubyString str, String sniffedEncoding) {
-        RubyEncoding actualEncoding = info.getEncoding(context, sniffedEncoding);
-        RubyEncoding targetEncoding = info.utf8.get();
-        RubyString dup = (RubyString)str.dup();
-        dup.force_encoding(context, actualEncoding);
-        return (RubyString)dup.encode_bang(context, targetEncoding);
-    }
-
-    /**
      * <code>Parser#parse()</code>
      *
      * <p>Parses the current JSON text <code>source</code> and returns the
@@ -351,11 +319,6 @@ public class Parser extends RubyObject {
         private final byte[] data;
         private final StringDecoder decoder;
         private int currentNesting = 0;
-        private final DoubleConverter dc;
-
-        // initialization value for all state variables.
-        // no idea about the origins of this value, ask Flori ;)
-        private static final int EVIL = 0x666;
 
         private ParserSession(Parser parser, ThreadContext context, RuntimeInfo info) {
             this.parser = parser;
@@ -364,7 +327,6 @@ public class Parser extends RubyObject {
             this.data = byteList.unsafeBytes();
             this.view = new ByteList(data, false);
             this.decoder = new StringDecoder();
-            this.dc = new DoubleConverter();
         }
 
         private RaiseException unexpectedToken(ThreadContext context, int absStart, int absEnd) {
@@ -497,7 +459,7 @@ static final int JSON_value_en_main = 1;
 
 
         void parseValue(ThreadContext context, ParserResult res, int p, int pe) {
-            int cs = EVIL;
+            int cs;
             IRubyObject result = null;
 
             
@@ -848,18 +810,17 @@ static final int JSON_integer_en_main = 1;
 
 
         void parseInteger(ThreadContext context, ParserResult res, int p, int pe) {
-            int new_p = parseIntegerInternal(context, p, pe);
+            int new_p = parseIntegerInternal(p, pe);
             if (new_p == -1) {
                 res.update(null, p);
                 return;
             }
             RubyInteger number = createInteger(context, p, new_p);
             res.update(number, new_p + 1);
-            return;
         }
 
-        int parseIntegerInternal(ThreadContext context, int p, int pe) {
-            int cs = EVIL;
+        int parseIntegerInternal(int p, int pe) {
+            int cs;
 
             
 // line 866 "Parser.java"
@@ -1103,7 +1064,7 @@ static final int JSON_float_en_main = 1;
 
 
         void parseFloat(ThreadContext context, ParserResult res, int p, int pe) {
-            int new_p = parseFloatInternal(context, p, pe);
+            int new_p = parseFloatInternal(p, pe);
             if (new_p == -1) {
                 res.update(null, p);
                 return;
@@ -1114,8 +1075,8 @@ static final int JSON_float_en_main = 1;
             res.update(number, new_p + 1);
         }
 
-        int parseFloatInternal(ThreadContext context, int p, int pe) {
-            int cs = EVIL;
+        int parseFloatInternal(int p, int pe) {
+            int cs;
 
             
 // line 1122 "Parser.java"
@@ -1349,7 +1310,7 @@ static final int JSON_string_en_main = 1;
 
 
         void parseString(ThreadContext context, ParserResult res, int p, int pe) {
-            int cs = EVIL;
+            int cs;
             IRubyObject result = null;
 
             
@@ -1694,7 +1655,7 @@ static final int JSON_array_en_main = 1;
 
 
         void parseArray(ThreadContext context, ParserResult res, int p, int pe) {
-            int cs = EVIL;
+            int cs;
 
             if (parser.maxNesting > 0 && currentNesting > parser.maxNesting) {
                 throw newException(context, Utils.M_NESTING_ERROR,
@@ -2064,7 +2025,7 @@ static final int JSON_object_en_main = 1;
 
 
         void parseObject(ThreadContext context, ParserResult res, int p, int pe) {
-            int cs = EVIL;
+            int cs;
             IRubyObject lastName = null;
             boolean objectDefault = true;
 
@@ -2409,7 +2370,7 @@ static final int JSON_en_main = 1;
 
 
         public IRubyObject parseImplementation(ThreadContext context) {
-            int cs = EVIL;
+            int cs;
             int p, pe;
             IRubyObject result = null;
             ParserResult res = new ParserResult();
@@ -2575,10 +2536,6 @@ case 5:
 
         private RaiseException newException(ThreadContext context, String className, RubyString message) {
             return Utils.newException(context, className, message);
-        }
-
-        private RaiseException newException(ThreadContext context, String className, String messageBegin, ByteList messageEnd) {
-            return newException(context, className, context.runtime.newString(messageBegin).cat(messageEnd));
         }
 
         RubyHash.VisitorWithState<IRubyObject[]> MATCH_VISITOR = new RubyHash.VisitorWithState<IRubyObject[]>() {

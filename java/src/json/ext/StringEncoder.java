@@ -23,7 +23,7 @@ final class StringEncoder extends ByteListTranscoder {
     // Escaped characters will reuse this array, to avoid new allocations
     // or appending them byte-by-byte
     private final byte[] aux =
-        new byte[] {/* First unicode character */
+        new byte[] {/* First Unicode character */
                     '\\', 'u', 0, 0, 0, 0,
                     /* Second unicode character (for surrogate pairs) */
                     '\\', 'u', 0, 0, 0, 0,

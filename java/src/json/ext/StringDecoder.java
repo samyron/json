@@ -23,7 +23,7 @@ final class StringDecoder extends ByteListTranscoder {
      */
     private int surrogatePairStart = -1;
 
-    // Array used for writing multi-byte characters into the buffer at once
+    // Array used for writing multibyte characters into the buffer at once
     private final byte[] aux = new byte[4];
 
     ByteList decode(ThreadContext context, ByteList src, int start, int end) {
@@ -162,6 +162,6 @@ final class StringDecoder extends ByteListTranscoder {
         int start = surrogatePairStart != -1 ? surrogatePairStart : charStart;
         message.append(src, start, srcEnd - start);
         return Utils.newException(context, Utils.M_PARSER_ERROR,
-                                  context.getRuntime().newString(message));
+                                  context.runtime.newString(message));
     }
 }
