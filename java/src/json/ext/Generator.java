@@ -22,11 +22,13 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.exceptions.RaiseException;
+import org.jruby.util.ConvertBytes;
 import org.jruby.util.IOOutputStream;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 
 public final class Generator {
@@ -220,25 +222,25 @@ public final class Generator {
      */
     private static class KeywordHandler<T extends IRubyObject>
             extends Handler<T> {
-        private String keyword;
+        private byte[] keyword;
 
         private KeywordHandler(String keyword) {
-            this.keyword = keyword;
+            this.keyword = keyword.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
         int guessSize(Session session, T object) {
-            return keyword.length();
+            return keyword.length;
         }
 
         @Override
         RubyString generateNew(Session session, T object) {
-            return RubyString.newString(session.getRuntime(), keyword);
+            return RubyString.newStringShared(session.getRuntime(), keyword);
         }
 
         @Override
         void generate(Session session, T object, OutputStream buffer) throws IOException {
-            buffer.write(keyword.getBytes(StandardCharsets.UTF_8));
+            buffer.write(keyword);
         }
     }
 
@@ -249,11 +251,8 @@ public final class Generator {
         new Handler<RubyBignum>() {
             @Override
             void generate(Session session, RubyBignum object, OutputStream buffer) throws IOException {
-                // JRUBY-4751: RubyBignum.to_s() returns generic object
-                // representation (fixed in 1.5, but we maintain backwards
-                // compatibility; call to_s(IRubyObject[]) then
-                ByteList bytes = ((RubyString) object.to_s(IRubyObject.NULL_ARRAY)).getByteList();
-                buffer.write(bytes.unsafeBytes(), bytes.begin(), bytes.length());
+                BigInteger bigInt = object.getValue();
+                buffer.write(bigInt.toString().getBytes(StandardCharsets.UTF_8));
             }
         };
 
@@ -261,8 +260,7 @@ public final class Generator {
         new Handler<RubyFixnum>() {
             @Override
             void generate(Session session, RubyFixnum object, OutputStream buffer) throws IOException {
-                ByteList bytes = object.to_s().getByteList();
-                buffer.write(bytes.unsafeBytes(), bytes.begin(), bytes.length());
+                buffer.write(ConvertBytes.longToCharBytes(object.getLongValue()));
             }
         };
 
@@ -270,15 +268,13 @@ public final class Generator {
         new Handler<RubyFloat>() {
             @Override
             void generate(Session session, RubyFloat object, OutputStream buffer) throws IOException {
-                if (object.isInfinite() || object.isNaN()) {
+                double value = object.getValue();
+
+                if (Double.isInfinite(value) || Double.isNaN(value)) {
                     if (!session.getState().allowNaN()) {
-                        throw Utils.newException(session.getContext(),
-                                Utils.M_GENERATOR_ERROR,
-                                object + " not allowed in JSON");
+                        throw Utils.newException(session.getContext(), Utils.M_GENERATOR_ERROR, object + " not allowed in JSON");
                     }
                 }
-
-                double value = RubyFloat.num2dbl(object);
 
                 buffer.write(Double.toString(value).getBytes(StandardCharsets.UTF_8));
             }
