@@ -23,7 +23,8 @@ public class GeneratorService implements BasicLibraryService {
         runtime.getLoadService().require("json/common");
         RuntimeInfo info = RuntimeInfo.initRuntime(runtime);
 
-        info.jsonModule = new WeakReference<RubyModule>(runtime.defineModule("JSON"));
+        RubyModule jsonModule = runtime.defineModule("JSON");
+        info.jsonModule = new WeakReference<RubyModule>(jsonModule);
         RubyModule jsonExtModule = info.jsonModule.get().defineModuleUnder("Ext");
         RubyModule generatorModule = jsonExtModule.defineModuleUnder("Generator");
 
