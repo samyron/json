@@ -156,8 +156,7 @@ public class GeneratorState extends RubyObject {
 
             // if the given parameter is a Hash, pass it to the instantiator
             if (context.getRuntime().getHash().isInstance(opts)) {
-                return (GeneratorState)klass.newInstance(context,
-                        new IRubyObject[] {opts}, Block.NULL_BLOCK);
+                return (GeneratorState)klass.newInstance(context, opts, Block.NULL_BLOCK);
             }
         }
 
@@ -194,9 +193,15 @@ public class GeneratorState extends RubyObject {
      * <dd>set to <code>true</code> if U+2028, U+2029 and forward slashes should be escaped
      * in the json output to make it safe to include in a JavaScript tag (default: <code>false</code>)
      */
-    @JRubyMethod(optional=1, visibility=Visibility.PRIVATE)
-    public IRubyObject initialize(ThreadContext context, IRubyObject[] args) {
-        _configure(context, args.length > 0 ? args[0] : null);
+    @JRubyMethod(visibility=Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context) {
+        _configure(context, null);
+        return this;
+    }
+
+    @JRubyMethod(visibility=Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context, IRubyObject arg0) {
+        _configure(context, arg0);
         return this;
     }
 

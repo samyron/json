@@ -66,9 +66,7 @@ final class Utils {
                                        String className, RubyString message) {
         RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
         RubyClass klazz = info.jsonModule.get().getClass(className);
-        RubyException excptn =
-            (RubyException)klazz.newInstance(context,
-                new IRubyObject[] {message}, Block.NULL_BLOCK);
+        RubyException excptn = (RubyException)klazz.newInstance(context, message, Block.NULL_BLOCK);
         return new RaiseException(excptn);
     }
 

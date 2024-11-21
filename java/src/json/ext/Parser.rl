@@ -18,13 +18,13 @@ import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.JumpException;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.Block;
+import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ObjectAllocator;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.Visibility;
 import org.jruby.runtime.builtin.IRubyObject;
 import org.jruby.util.ByteList;
 import org.jruby.util.ConvertBytes;
-import org.jruby.util.ConvertDouble;
 
 import java.util.function.BiFunction;
 
@@ -154,31 +154,44 @@ public class Parser extends RubyObject {
      * </dl>
      */
 
-    @JRubyMethod(name = "new", required = 1, optional = 1, meta = true)
-    public static IRubyObject newInstance(IRubyObject clazz, IRubyObject[] args, Block block) {
+    @JRubyMethod(name = "new", meta = true)
+    public static IRubyObject newInstance(IRubyObject clazz, IRubyObject arg0, Block block) {
         Parser parser = (Parser)((RubyClass)clazz).allocate();
 
-        parser.callInit(args, block);
+        parser.callInit(arg0, block);
+
+        return parser;
+    }
+
+    @JRubyMethod(name = "new", meta = true)
+    public static IRubyObject newInstance(IRubyObject clazz, IRubyObject arg0, IRubyObject arg1, Block block) {
+        Parser parser = (Parser)((RubyClass)clazz).allocate();
+
+        parser.callInit(arg0, arg1, block);
 
         return parser;
     }
 
     @JRubyMethod(meta=true)
     public static IRubyObject parse(ThreadContext context, IRubyObject clazz, IRubyObject source, IRubyObject opts) {
-        IRubyObject[] args = new IRubyObject[] {source, opts};
         Parser parser = (Parser)((RubyClass)clazz).allocate();
-        parser.callInit(args, null);
+        parser.callInit(source, opts, null);
         return parser.parse(context);
     }
 
-    @JRubyMethod(required = 1, optional = 1, visibility = Visibility.PRIVATE)
-    public IRubyObject initialize(ThreadContext context, IRubyObject[] args) {
+    @JRubyMethod(visibility = Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context, IRubyObject arg0) {
+        return initialize(context, arg0, null);
+    }
+
+    @JRubyMethod(visibility = Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context, IRubyObject arg0, IRubyObject arg1) {
         Ruby runtime = context.runtime;
         if (this.vSource != null) {
             throw runtime.newTypeError("already initialized instance");
-         }
+        }
 
-        OptionsReader opts   = new OptionsReader(context, args.length > 1 ? args[1] : null);
+        OptionsReader opts   = new OptionsReader(context, arg1);
         this.maxNesting      = opts.getInt("max_nesting", DEFAULT_MAX_NESTING);
         this.allowNaN        = opts.getBool("allow_nan", false);
         this.allowTrailingComma = opts.getBool("allow_trailing_comma", false);
@@ -213,12 +226,9 @@ public class Parser extends RubyObject {
         }
 
         if(symbolizeNames && createAdditions) {
-          throw runtime.newArgumentError(
-            "options :symbolize_names and :create_additions cannot be " +
-            " used in conjunction"
-          );
+          throw runtime.newArgumentError("options :symbolize_names and :create_additions cannot be used in conjunction");
         }
-        this.vSource = args[0].convertToString();
+        this.vSource = arg0.convertToString();
         this.vSource = convertEncoding(context, vSource);
 
         return this;
@@ -650,15 +660,7 @@ public class Parser extends RubyObject {
                 if (matchString != null) {
                     final IRubyObject[] memoArray = { result, null };
                     try {
-                      matchString.visitAll(new RubyHash.Visitor() {
-                          @Override
-                          public void visit(IRubyObject pattern, IRubyObject klass) {
-                              if (pattern.callMethod(context, "===", memoArray[0]).isTrue()) {
-                                  memoArray[1] = klass;
-                                  throw JumpException.SPECIAL_JUMP;
-                              }
-                          }
-                      });
+                      matchString.visitAll(context, MATCH_VISITOR, memoArray);
                     } catch (JumpException e) { }
                     if (memoArray[1] != null) {
                         RubyClass klass = (RubyClass) memoArray[1];
@@ -774,7 +776,7 @@ public class Parser extends RubyObject {
                     if (parser.objectClass == context.runtime.getHash()) {
                         ((RubyHash)result).op_aset(context, lastName, res.result);
                     } else {
-                        result.callMethod(context, "[]=", new IRubyObject[] { lastName, res.result });
+                        Helpers.invoke(context, result, "[]=", lastName, res.result);
                     }
                     fexec res.p;
                 }
@@ -943,5 +945,15 @@ public class Parser extends RubyObject {
         private RaiseException newException(ThreadContext context, String className, String messageBegin, ByteList messageEnd) {
             return newException(context, className, context.runtime.newString(messageBegin).cat(messageEnd));
         }
+
+        RubyHash.VisitorWithState<IRubyObject[]> MATCH_VISITOR = new RubyHash.VisitorWithState<IRubyObject[]>() {
+            @Override
+            public void visit(ThreadContext context, RubyHash self, IRubyObject pattern, IRubyObject klass, int index, IRubyObject[] state) {
+                if (pattern.callMethod(context, "===", state[0]).isTrue()) {
+                    state[1] = klass;
+                    throw JumpException.SPECIAL_JUMP;
+                }
+            }
+        };
     }
 }
