@@ -24,11 +24,15 @@ import org.jruby.util.ByteList;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.util.IOOutputStream;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 public final class Generator {
+
+    private static final int IO_BUFFER_SIZE = 8192;
+
     private Generator() {
         throw new RuntimeException();
     }
@@ -67,7 +71,8 @@ public final class Generator {
             return handler.generateNew(session, object);
         }
 
-        handler.generateToBuffer(session, object, new IOOutputStream(io));
+        BufferedOutputStream buffer = new BufferedOutputStream(new IOOutputStream(io), IO_BUFFER_SIZE);
+        handler.generateToBuffer(session, object, buffer);
         return io;
     }
 
