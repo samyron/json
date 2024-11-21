@@ -44,8 +44,8 @@ class GeneratorMethods {
         defineMethods(module, "String",     RbString.class);
         defineMethods(module, "TrueClass",  RbTrue.class);
 
-        info.stringExtendModule = new WeakReference<>(module.defineModuleUnder("String").defineModuleUnder("Extend"));
-        info.stringExtendModule.get().defineAnnotatedMethods(StringExtend.class);
+        RubyModule stringExtend = module.defineModuleUnder("String").defineModuleUnder("Extend");
+        stringExtend.defineAnnotatedMethods(StringExtend.class);
     }
 
     /**
@@ -171,9 +171,9 @@ class GeneratorMethods {
         }
 
         @JRubyMethod(module=true)
-        public static IRubyObject included(ThreadContext context, IRubyObject vSelf, IRubyObject module) {
+        public static IRubyObject included(ThreadContext context, IRubyObject extendModule, IRubyObject module) {
             RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
-            return module.callMethod(context, "extend", info.stringExtendModule.get());
+            return module.callMethod(context, "extend", ((RubyModule) extendModule).getConstant("Extend"));
         }
     }
 

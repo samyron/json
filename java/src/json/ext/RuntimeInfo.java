@@ -28,8 +28,6 @@ final class RuntimeInfo {
     // the Ruby runtime object, which would cause memory leaks in the runtimes map above.
     /** JSON */
     WeakReference<RubyModule> jsonModule;
-    /** JSON::Ext::Generator::GeneratorMethods::String::Extend */
-    WeakReference<RubyModule> stringExtendModule;
     /** JSON::Ext::Generator::State */
     WeakReference<RubyClass> generatorStateClass;
     /** JSON::SAFE_STATE_PROTOTYPE */
