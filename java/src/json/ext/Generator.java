@@ -40,10 +40,13 @@ public final class Generator {
     /**
      * Encodes the given object as a JSON string, using the given handler.
      */
-    static <T extends IRubyObject> RubyString
-            generateJson(ThreadContext context, T object,
-                         Handler<? super T> handler, IRubyObject[] args) {
-        Session session = new Session(context, args.length > 0 ? args[0] : null);
+    static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object, Handler<? super T> handler) {
+        Session session = new Session(context, null);
+        return session.infect(handler.generateNew(session, object));
+    }
+
+    static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object, Handler<? super T> handler, IRubyObject arg0) {
+        Session session = new Session(context, arg0);
         return session.infect(handler.generateNew(session, object));
     }
 
@@ -51,10 +54,14 @@ public final class Generator {
      * Encodes the given object as a JSON string, detecting the appropriate handler
      * for the given object.
      */
-    static <T extends IRubyObject> RubyString
-            generateJson(ThreadContext context, T object, IRubyObject[] args) {
+    static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object) {
         Handler<? super T> handler = getHandlerFor(context.runtime, object);
-        return generateJson(context, object, handler, args);
+        return generateJson(context, object, handler);
+    }
+
+    static <T extends IRubyObject> RubyString generateJson(ThreadContext context, T object, IRubyObject arg0) {
+        Handler<? super T> handler = getHandlerFor(context.runtime, object);
+        return generateJson(context, object, handler, arg0);
     }
 
     /**
