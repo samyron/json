@@ -5,6 +5,7 @@
  */
 package json.ext;
 
+import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyHash;
@@ -83,9 +84,8 @@ final class OptionsReader {
         if (value == null || !value.isTrue()) return defaultValue;
 
         RubyString str = value.convertToString();
-        RuntimeInfo info = getRuntimeInfo();
-        if (str.encoding(context) != info.utf8.get()) {
-            str = (RubyString)str.encode(context, info.utf8.get());
+        if (str.getEncoding() != UTF8Encoding.INSTANCE) {
+            str = (RubyString)str.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
         }
         return str;
     }

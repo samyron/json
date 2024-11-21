@@ -240,7 +240,8 @@ public class GeneratorState extends RubyObject {
             if (resultString.isFrozen()) {
                 resultString = resultString.strDup(context.runtime);
             }
-            resultString.force_encoding(context, info.utf8.get());
+            resultString.setEncoding(UTF8Encoding.INSTANCE);
+            resultString.clearCodeRange();
         }
 
         return resultString;
@@ -451,9 +452,8 @@ public class GeneratorState extends RubyObject {
 
     private ByteList prepareByteList(ThreadContext context, IRubyObject value) {
         RubyString str = value.convertToString();
-        RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
-        if (str.encoding(context) != info.utf8.get()) {
-            str = (RubyString)str.encode(context, info.utf8.get());
+        if (str.getEncoding() != UTF8Encoding.INSTANCE) {
+            str = (RubyString)str.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
         }
         return str.getByteList().dup();
     }

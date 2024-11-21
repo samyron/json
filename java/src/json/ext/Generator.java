@@ -407,20 +407,18 @@ public final class Generator {
 
             @Override
             void generate(ThreadContext context, Session session, RubyString object, OutputStream buffer) throws IOException {
-                RuntimeInfo info = session.getInfo(context);
                 RubyString src;
 
                 try {
-                    if (object.encoding(context) != info.utf8.get()) {
-                        src = (RubyString)object.encode(context, info.utf8.get());
+                    if (object.getEncoding() != UTF8Encoding.INSTANCE) {
+                        src = (RubyString)object.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
                     } else {
                         src = object;
                     }
 
                     session.getStringEncoder(context).encode(context, src.getByteList(), buffer);
                 } catch (RaiseException re) {
-                  throw Utils.newException(context, Utils.M_GENERATOR_ERROR,
-                   re.getMessage());
+                  throw Utils.newException(context, Utils.M_GENERATOR_ERROR, re.getMessage());
                 }
             }
         };

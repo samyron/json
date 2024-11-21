@@ -5,10 +5,12 @@
  */
 package json.ext;
 
+import org.jcodings.Encoding;
+import org.jcodings.specific.ASCIIEncoding;
+import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyClass;
-import org.jruby.RubyEncoding;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
 import org.jruby.RubyInteger;
@@ -236,12 +238,13 @@ public class Parser extends RubyObject {
      * Returns the source string if no conversion is needed.
      */
     private RubyString convertEncoding(ThreadContext context, RubyString source) {
-      RubyEncoding encoding = (RubyEncoding)source.encoding(context);
-      if (encoding == info.ascii8bit.get()) {
+      Encoding encoding = source.getEncoding();
+      if (encoding == ASCIIEncoding.INSTANCE) {
           source = (RubyString) source.dup();
-          source.force_encoding(context, info.utf8.get());
-      } else {
-        source = (RubyString) source.encode(context, info.utf8.get());
+          source.setEncoding(UTF8Encoding.INSTANCE);
+          source.clearCodeRange();
+      } else if (encoding != UTF8Encoding.INSTANCE) {
+          source = (RubyString) source.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
       }
       return source;
     }
@@ -639,7 +642,8 @@ public class Parser extends RubyObject {
             if (cs >= JSON_string_first_final && result != null) {
                 if (result instanceof RubyString) {
                   RubyString string = (RubyString)result;
-                  string.force_encoding(context, info.utf8.get());
+                  string.setEncoding(UTF8Encoding.INSTANCE);
+                  string.clearCodeRange();
                   if (parser.freeze) {
                      string.setFrozen(true);
                      string = context.runtime.freezeAndDedupString(string);

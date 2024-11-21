@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
-import org.jruby.RubyEncoding;
 import org.jruby.RubyModule;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -36,21 +35,7 @@ final class RuntimeInfo {
     /** JSON::SAFE_STATE_PROTOTYPE */
     WeakReference<GeneratorState> safeStatePrototype;
 
-    final WeakReference<RubyEncoding> utf8;
-    final WeakReference<RubyEncoding> ascii8bit;
-
-    private RuntimeInfo(Ruby runtime) {
-        RubyClass encodingClass = runtime.getEncoding();
-        if (encodingClass == null) { // 1.8 mode
-            utf8 = ascii8bit = null;
-        } else {
-            ThreadContext context = runtime.getCurrentContext();
-
-            utf8 = new WeakReference<>((RubyEncoding) RubyEncoding.find(context,
-                    encodingClass, runtime.newString("utf-8")));
-            ascii8bit = new WeakReference<>((RubyEncoding) RubyEncoding.find(context,
-                    encodingClass, runtime.newString("ascii-8bit")));
-        }
+    private RuntimeInfo() {
     }
 
     static RuntimeInfo initRuntime(Ruby runtime) {
@@ -59,7 +44,7 @@ final class RuntimeInfo {
                 return info1;
             } else if (runtime1.get() == null) {
                 runtime1 = new WeakReference<>(runtime);
-                info1 = new RuntimeInfo(runtime);
+                info1 = new RuntimeInfo();
                 return info1;
             } else {
                 if (runtimes == null) {
@@ -67,7 +52,7 @@ final class RuntimeInfo {
                 }
                 RuntimeInfo cache = runtimes.get(runtime);
                 if (cache == null) {
-                    cache = new RuntimeInfo(runtime);
+                    cache = new RuntimeInfo();
                     runtimes.put(runtime, cache);
                 }
                 return cache;
