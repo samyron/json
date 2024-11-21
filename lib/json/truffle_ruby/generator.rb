@@ -96,8 +96,14 @@ module JSON
       # This class is used to create State instances, that are use to hold data
       # while generating a JSON text from a Ruby data structure.
       class State
-        def self.generate(obj, opts = nil)
-          new(opts).generate(obj)
+        def self.generate(obj, opts = nil, io = nil)
+          string = new(opts).generate(obj)
+          if io
+            io.write(string)
+            io
+          else
+            string
+          end
         end
 
         # Creates a State object from _opts_, which ought to be Hash to create
