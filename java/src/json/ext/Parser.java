@@ -109,7 +109,7 @@ public class Parser extends RubyObject {
      * <code>source</code>.
      * It will be configured by the <code>opts</code> Hash.
      * <code>opts</code> can have the following keys:
-     *
+     * <p>
      * <dl>
      * <dt><code>:max_nesting</code>
      * <dd>The maximum depth of nesting allowed in the parsed data
@@ -120,31 +120,31 @@ public class Parser extends RubyObject {
      * <dd>If set to <code>true</code>, allow <code>NaN</code>,
      * <code>Infinity</code> and <code>-Infinity</code> in defiance of RFC 4627
      * to be parsed by the Parser. This option defaults to <code>false</code>.
-     *
+     * <p>
      * <dt><code>:allow_trailing_comma</code>
      * <dd>If set to <code>true</code>, allow arrays and objects with a trailing
      * comma in defiance of RFC 4627 to be parsed by the Parser.
      * This option defaults to <code>false</code>.
-     *
+     * <p>
      * <dt><code>:symbolize_names</code>
      * <dd>If set to <code>true</code>, returns symbols for the names (keys) in
      * a JSON object. Otherwise strings are returned, which is also the default.
-     *
+     * <p>
      * <dt><code>:create_additions</code>
      * <dd>If set to <code>false</code>, the Parser doesn't create additions
      * even if a matching class and <code>create_id</code> was found. This option
      * defaults to <code>true</code>.
-     *
+     * <p>
      * <dt><code>:object_class</code>
      * <dd>Defaults to Hash. If another type is provided, it will be used
      * instead of Hash to represent JSON objects. The type must respond to
      * <code>new</code> without arguments, and return an object that respond to <code>[]=</code>.
-     *
+     * <p>
      * <dt><code>:array_class</code>
      * <dd>Defaults to Array. If another type is provided, it will be used
      * instead of Hash to represent JSON arrays. The type must respond to
      * <code>new</code> without arguments, and return an object that respond to <code><<</code>.
-     *
+     * <p>
      * <dt><code>:decimal_class</code>
      * <dd>Specifies which class to use instead of the default (Float) when
      * parsing decimal numbers. This class must accept a single string argument
