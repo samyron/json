@@ -194,6 +194,7 @@ public final class Generator {
         void generateToBuffer(Session session, T object, OutputStream buffer)  {
             try {
                 generate(session, object, buffer);
+                buffer.flush();
             } catch (IOException ioe) {
                 throw session.getRuntime().newIOErrorFromException(ioe);
             }
