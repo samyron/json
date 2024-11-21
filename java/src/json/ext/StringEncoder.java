@@ -40,17 +40,16 @@ final class StringEncoder extends ByteListTranscoder {
             new byte[] {'0', '1', '2', '3', '4', '5', '6', '7',
                         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-    StringEncoder(ThreadContext context, boolean asciiOnly, boolean scriptSafe) {
-        super(context);
+    StringEncoder(boolean asciiOnly, boolean scriptSafe) {
         this.asciiOnly = asciiOnly;
         this.scriptSafe = scriptSafe;
     }
 
-    void encode(ByteList src, OutputStream out) throws IOException {
+    void encode(ThreadContext context, ByteList src, OutputStream out) throws IOException {
         init(src, out);
         append('"');
         while (hasNext()) {
-            handleChar(readUtf8Char());
+            handleChar(readUtf8Char(context));
         }
         quoteStop(pos);
         append('"');
@@ -120,8 +119,7 @@ final class StringEncoder extends ByteListTranscoder {
     }
 
     @Override
-    protected RaiseException invalidUtf8() {
-         return Utils.newException(context, Utils.M_GENERATOR_ERROR,
-                 "source sequence is illegal/malformed utf-8");
+    protected RaiseException invalidUtf8(ThreadContext context) {
+         return Utils.newException(context, Utils.M_GENERATOR_ERROR, "source sequence is illegal/malformed utf-8");
     }
 }
