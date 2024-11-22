@@ -5,6 +5,9 @@
  */
 package json.ext;
 
+import org.jcodings.Encoding;
+import org.jcodings.specific.ASCIIEncoding;
+import org.jcodings.specific.USASCIIEncoding;
 import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyArray;
@@ -24,6 +27,7 @@ import org.jruby.util.ByteList;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.util.ConvertBytes;
 import org.jruby.util.IOOutputStream;
+import org.jruby.util.StringSupport;
 import org.jruby.util.TypeConverter;
 
 import java.io.BufferedOutputStream;
@@ -423,21 +427,48 @@ public final class Generator {
 
             @Override
             void generate(ThreadContext context, Session session, RubyString object, OutputStream buffer) throws IOException {
-                RubyString src;
-
                 try {
-                    if (object.getEncoding() != UTF8Encoding.INSTANCE) {
-                        src = (RubyString)object.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
-                    } else {
-                        src = object;
+                    object = ensureValidEncoding(context, object);
+                    StringEncoder stringEncoder = session.getStringEncoder(context);
+                    ByteList byteList = object.getByteList();
+                    switch (object.scanForCodeRange()) {
+                        case StringSupport.CR_7BIT:
+                            stringEncoder.encodeASCII(context, byteList, buffer);
+                            break;
+                        case StringSupport.CR_VALID:
+                            stringEncoder.encode(context, byteList, buffer);
+                            break;
+                        default:
+                            throw stringEncoder.invalidUtf8(context);
                     }
-
-                    session.getStringEncoder(context).encode(context, src.getByteList(), buffer);
                 } catch (RaiseException re) {
                   throw Utils.newException(context, Utils.M_GENERATOR_ERROR, re.getMessage());
                 }
             }
         };
+
+    static RubyString ensureValidEncoding(ThreadContext context, RubyString str) {
+        Encoding encoding = str.getEncoding();
+        RubyString utf8String;
+        if (!(encoding == USASCIIEncoding.INSTANCE || encoding == UTF8Encoding.INSTANCE)) {
+            if (encoding == ASCIIEncoding.INSTANCE) {
+                utf8String = str.strDup(context.runtime);
+                utf8String.setEncoding(UTF8Encoding.INSTANCE);
+                switch (utf8String.getCodeRange()) {
+                    case StringSupport.CR_7BIT:
+                        return utf8String;
+                    case StringSupport.CR_VALID:
+                        // For historical reason, we silently reinterpret binary strings as UTF-8 if it would work.
+                        // TODO: Raise in 3.0.0
+                        context.runtime.getWarnings().warn("JSON.generate: UTF-8 string passed as BINARY, this will raise an encoding error in json 3.0");
+                        return utf8String;
+                }
+            }
+
+            str = (RubyString) str.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
+        }
+        return str;
+    }
 
     static final Handler<RubyBoolean> TRUE_HANDLER =
             new KeywordHandler<>("true");

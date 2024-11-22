@@ -104,6 +104,11 @@ abstract class ByteListTranscoder {
         throw invalidUtf8(context);
     }
 
+    protected int readASCIIChar() {
+        charStart = pos;
+        return next();
+    }
+
     /**
      * Throws a GeneratorError if the input list doesn't have at least this
      * many bytes left.

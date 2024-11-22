@@ -55,6 +55,16 @@ final class StringEncoder extends ByteListTranscoder {
         append('"');
     }
 
+    void encodeASCII(ThreadContext context, ByteList src, OutputStream out) throws IOException {
+        init(src, out);
+        append('"');
+        while (hasNext()) {
+            handleChar(readASCIIChar());
+        }
+        quoteStop(pos);
+        append('"');
+    }
+
     private void handleChar(int c) throws IOException {
         switch (c) {
         case '"':
