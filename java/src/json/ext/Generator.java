@@ -11,10 +11,12 @@ import org.jruby.RubyArray;
 import org.jruby.RubyBasicObject;
 import org.jruby.RubyBignum;
 import org.jruby.RubyBoolean;
+import org.jruby.RubyClass;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
 import org.jruby.RubyString;
+import org.jruby.RubySymbol;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -22,6 +24,7 @@ import org.jruby.util.ByteList;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.util.ConvertBytes;
 import org.jruby.util.IOOutputStream;
+import org.jruby.util.TypeConverter;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -366,7 +369,20 @@ public final class Generator {
 
                             Ruby runtime = context.runtime;
 
-                            IRubyObject keyStr = key.callMethod(context, "to_s");
+                            IRubyObject keyStr;
+                            RubyClass keyClass = key.getType();
+                            if (key instanceof RubyString) {
+                                if (keyClass == runtime.getString()) {
+                                    keyStr = key;
+                                } else {
+                                    keyStr = key.callMethod(context, "to_s");
+                                }
+                            } else if (keyClass == runtime.getSymbol()) {
+                                keyStr = key.asString();
+                            } else {
+                                keyStr = TypeConverter.convertToType(key, runtime.getString(), "to_s");
+                            }
+
                             if (keyStr.getMetaClass() == runtime.getString()) {
                                 STRING_HANDLER.generate(context, session, (RubyString) keyStr, buffer);
                             } else {
