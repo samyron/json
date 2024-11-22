@@ -141,7 +141,7 @@ abstract class ByteListTranscoder {
      */
     protected void quoteStop(int endPos) throws IOException {
         if (quoteStart != -1) {
-            out.write(src.bytes(), quoteStart, endPos - quoteStart);
+            out.write(src.unsafeBytes(), src.begin() + quoteStart, endPos - quoteStart);
             quoteStart = -1;
         }
     }
