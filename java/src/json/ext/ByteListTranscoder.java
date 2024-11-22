@@ -24,7 +24,6 @@ abstract class ByteListTranscoder {
     /** Position of the next character to read */
     protected int pos;
 
-    private OutputStream out;
     /**
      * When a character that can be copied straight into the output is found,
      * its index is stored on this variable, and copying is delayed until
@@ -34,16 +33,15 @@ abstract class ByteListTranscoder {
      */
     private int quoteStart = -1;
 
-    protected void init(ByteList src, OutputStream out) {
-        this.init(src, 0, src.length(), out);
+    protected void init(ByteList src) {
+        this.init(src, 0, src.length());
     }
 
-    protected void init(ByteList src, int start, int end, OutputStream out) {
+    protected void init(ByteList src, int start, int end) {
         this.src = src;
         this.pos = start;
         this.charStart = start;
         this.srcEnd = end;
-        this.out = out;
     }
 
     /**
@@ -146,18 +144,14 @@ abstract class ByteListTranscoder {
      */
     protected void quoteStop(int endPos) throws IOException {
         if (quoteStart != -1) {
-            out.write(src.unsafeBytes(), src.begin() + quoteStart, endPos - quoteStart);
+            append(src.unsafeBytes(), src.begin() + quoteStart, endPos - quoteStart);
             quoteStart = -1;
         }
     }
 
-    protected void append(int b) throws IOException {
-        out.write(b);
-    }
+    protected abstract void append(int b) throws IOException;
 
-    protected void append(byte[] origin, int start, int length) throws IOException {
-        out.write(origin, start, length);
-    }
+    protected abstract void append(byte[] origin, int start, int length) throws IOException;
 
 
     protected abstract RaiseException invalidUtf8(ThreadContext context);

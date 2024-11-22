@@ -23,18 +23,20 @@ final class StringDecoder extends ByteListTranscoder {
      */
     private int surrogatePairStart = -1;
 
+    private ByteList out;
+
     // Array used for writing multibyte characters into the buffer at once
     private final byte[] aux = new byte[4];
 
     ByteList decode(ThreadContext context, ByteList src, int start, int end) {
         try {
-            ByteListDirectOutputStream out = new ByteListDirectOutputStream(end - start);
-            init(src, start, end, out);
+            init(src, start, end);
+            this.out = new ByteList(end - start);
             while (hasNext()) {
                 handleChar(context, readUtf8Char(context));
             }
             quoteStop(pos);
-            return out.toByteListDirect(src.getEncoding());
+            return out;
         } catch (IOException e) {
             throw context.runtime.newIOErrorFromException(e);
         }
@@ -82,6 +84,14 @@ final class StringDecoder extends ByteListTranscoder {
         default: // '\\', '"', '/'...
             quoteStart();
         }
+    }
+
+    protected void append(int b) throws IOException {
+        out.append(b);
+    }
+
+    protected void append(byte[] origin, int start, int length) throws IOException {
+        out.append(origin, start, length);
     }
 
     private void handleLowSurrogate(ThreadContext context, char highSurrogate) throws IOException {

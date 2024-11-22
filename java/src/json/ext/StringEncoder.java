@@ -20,6 +20,8 @@ import java.io.OutputStream;
 final class StringEncoder extends ByteListTranscoder {
     private final boolean asciiOnly, scriptSafe;
 
+    private OutputStream out;
+
     // Escaped characters will reuse this array, to avoid new allocations
     // or appending them byte-by-byte
     private final byte[] aux =
@@ -46,7 +48,8 @@ final class StringEncoder extends ByteListTranscoder {
     }
 
     void encode(ThreadContext context, ByteList src, OutputStream out) throws IOException {
-        init(src, out);
+        init(src);
+        this.out = out;
         append('"');
         while (hasNext()) {
             handleChar(readUtf8Char(context));
@@ -56,13 +59,22 @@ final class StringEncoder extends ByteListTranscoder {
     }
 
     void encodeASCII(ThreadContext context, ByteList src, OutputStream out) throws IOException {
-        init(src, out);
+        init(src);
+        this.out = out;
         append('"');
         while (hasNext()) {
             handleChar(readASCIIChar());
         }
         quoteStop(pos);
         append('"');
+    }
+
+    protected void append(int b) throws IOException {
+        out.write(b);
+    }
+
+    protected void append(byte[] origin, int start, int length) throws IOException {
+        out.write(origin, start, length);
     }
 
     private void handleChar(int c) throws IOException {
