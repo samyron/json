@@ -9,7 +9,6 @@ import org.jruby.Ruby;
 import org.jruby.RubyArray;
 import org.jruby.RubyClass;
 import org.jruby.RubyException;
-import org.jruby.RubyHash;
 import org.jruby.RubyString;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.Block;
@@ -44,12 +43,6 @@ final class Utils {
         throw runtime.newTypeError(object, runtime.getArray());
     }
 
-    static RubyHash ensureHash(IRubyObject object) throws RaiseException {
-        if (object instanceof RubyHash) return (RubyHash)object;
-        Ruby runtime = object.getRuntime();
-        throw runtime.newTypeError(object, runtime.getHash());
-    }
-
     static RubyString ensureString(IRubyObject object) throws RaiseException {
         if (object instanceof RubyString) return (RubyString)object;
         Ruby runtime = object.getRuntime();
@@ -59,17 +52,15 @@ final class Utils {
     static RaiseException newException(ThreadContext context,
                                        String className, String message) {
         return newException(context, className,
-                            context.getRuntime().newString(message));
+                            context.runtime.newString(message));
     }
 
     static RaiseException newException(ThreadContext context,
                                        String className, RubyString message) {
-        RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
+        RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
         RubyClass klazz = info.jsonModule.get().getClass(className);
-        RubyException excptn =
-            (RubyException)klazz.newInstance(context,
-                new IRubyObject[] {message}, Block.NULL_BLOCK);
-        return new RaiseException(excptn);
+        RubyException excptn = (RubyException)klazz.newInstance(context, message, Block.NULL_BLOCK);
+        return excptn.toThrowable();
     }
 
     static byte[] repeat(ByteList a, int n) {

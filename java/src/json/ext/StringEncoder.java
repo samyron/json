@@ -20,10 +20,12 @@ import java.io.OutputStream;
 final class StringEncoder extends ByteListTranscoder {
     private final boolean asciiOnly, scriptSafe;
 
+    private OutputStream out;
+
     // Escaped characters will reuse this array, to avoid new allocations
     // or appending them byte-by-byte
     private final byte[] aux =
-        new byte[] {/* First unicode character */
+        new byte[] {/* First Unicode character */
                     '\\', 'u', 0, 0, 0, 0,
                     /* Second unicode character (for surrogate pairs) */
                     '\\', 'u', 0, 0, 0, 0,
@@ -40,20 +42,39 @@ final class StringEncoder extends ByteListTranscoder {
             new byte[] {'0', '1', '2', '3', '4', '5', '6', '7',
                         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-    StringEncoder(ThreadContext context, boolean asciiOnly, boolean scriptSafe) {
-        super(context);
+    StringEncoder(boolean asciiOnly, boolean scriptSafe) {
         this.asciiOnly = asciiOnly;
         this.scriptSafe = scriptSafe;
     }
 
-    void encode(ByteList src, OutputStream out) throws IOException {
-        init(src, out);
+    void encode(ThreadContext context, ByteList src, OutputStream out) throws IOException {
+        init(src);
+        this.out = out;
         append('"');
         while (hasNext()) {
-            handleChar(readUtf8Char());
+            handleChar(readUtf8Char(context));
         }
         quoteStop(pos);
         append('"');
+    }
+
+    void encodeASCII(ThreadContext context, ByteList src, OutputStream out) throws IOException {
+        init(src);
+        this.out = out;
+        append('"');
+        while (hasNext()) {
+            handleChar(readASCIIChar());
+        }
+        quoteStop(pos);
+        append('"');
+    }
+
+    protected void append(int b) throws IOException {
+        out.write(b);
+    }
+
+    protected void append(byte[] origin, int start, int length) throws IOException {
+        out.write(origin, start, length);
     }
 
     private void handleChar(int c) throws IOException {
@@ -120,8 +141,7 @@ final class StringEncoder extends ByteListTranscoder {
     }
 
     @Override
-    protected RaiseException invalidUtf8() {
-         return Utils.newException(context, Utils.M_GENERATOR_ERROR,
-                 "source sequence is illegal/malformed utf-8");
+    protected RaiseException invalidUtf8(ThreadContext context) {
+         return Utils.newException(context, Utils.M_GENERATOR_ERROR, "source sequence is illegal/malformed utf-8");
     }
 }

@@ -17,8 +17,6 @@ import java.io.OutputStream;
  * using UTF-8 ByteLists as both input and output.
  */
 abstract class ByteListTranscoder {
-    protected final ThreadContext context;
-
     protected ByteList src;
     protected int srcEnd;
     /** Position where the last read character started */
@@ -26,7 +24,6 @@ abstract class ByteListTranscoder {
     /** Position of the next character to read */
     protected int pos;
 
-    private OutputStream out;
     /**
      * When a character that can be copied straight into the output is found,
      * its index is stored on this variable, and copying is delayed until
@@ -36,20 +33,15 @@ abstract class ByteListTranscoder {
      */
     private int quoteStart = -1;
 
-    protected ByteListTranscoder(ThreadContext context) {
-        this.context = context;
+    protected void init(ByteList src) {
+        this.init(src, 0, src.length());
     }
 
-    protected void init(ByteList src, OutputStream out) {
-        this.init(src, 0, src.length(), out);
-    }
-
-    protected void init(ByteList src, int start, int end, OutputStream out) {
+    protected void init(ByteList src, int start, int end) {
         this.src = src;
         this.pos = start;
         this.charStart = start;
         this.srcEnd = end;
-        this.out = out;
     }
 
     /**
@@ -70,52 +62,57 @@ abstract class ByteListTranscoder {
      * Reads an UTF-8 character from the input and returns its code point,
      * while advancing the input position.
      *
-     * <p>Raises an {@link #invalidUtf8()} exception if an invalid byte
+     * <p>Raises an {@link #invalidUtf8(ThreadContext)} exception if an invalid byte
      * is found.
      */
-    protected int readUtf8Char() {
+    protected int readUtf8Char(ThreadContext context) {
         charStart = pos;
         char head = next();
         if (head <= 0x7f) { // 0b0xxxxxxx (ASCII)
             return head;
         }
         if (head <= 0xbf) { // 0b10xxxxxx
-            throw invalidUtf8(); // tail byte with no head
+            throw invalidUtf8(context); // tail byte with no head
         }
         if (head <= 0xdf) { // 0b110xxxxx
-            ensureMin(1);
+            ensureMin(context, 1);
             int cp = ((head  & 0x1f) << 6)
-                     | nextPart();
-            if (cp < 0x0080) throw invalidUtf8();
+                     | nextPart(context);
+            if (cp < 0x0080) throw invalidUtf8(context);
             return cp;
         }
         if (head <= 0xef) { // 0b1110xxxx
-            ensureMin(2);
+            ensureMin(context, 2);
             int cp = ((head & 0x0f) << 12)
-                     | (nextPart()  << 6)
-                     | nextPart();
-            if (cp < 0x0800) throw invalidUtf8();
+                     | (nextPart(context)  << 6)
+                     | nextPart(context);
+            if (cp < 0x0800) throw invalidUtf8(context);
             return cp;
         }
         if (head <= 0xf7) { // 0b11110xxx
-            ensureMin(3);
+            ensureMin(context, 3);
             int cp = ((head & 0x07) << 18)
-                     | (nextPart()  << 12)
-                     | (nextPart()  << 6)
-                     | nextPart();
-            if (!Character.isValidCodePoint(cp)) throw invalidUtf8();
+                     | (nextPart(context)  << 12)
+                     | (nextPart(context)  << 6)
+                     | nextPart(context);
+            if (!Character.isValidCodePoint(cp)) throw invalidUtf8(context);
             return cp;
         }
         // 0b11111xxx?
-        throw invalidUtf8();
+        throw invalidUtf8(context);
+    }
+
+    protected int readASCIIChar() {
+        charStart = pos;
+        return next();
     }
 
     /**
      * Throws a GeneratorError if the input list doesn't have at least this
      * many bytes left.
      */
-    protected void ensureMin(int n) {
-        if (pos + n > srcEnd) throw incompleteUtf8();
+    protected void ensureMin(ThreadContext context, int n) {
+        if (pos + n > srcEnd) throw incompleteUtf8(context);
     }
 
     /**
@@ -124,10 +121,10 @@ abstract class ByteListTranscoder {
      *
      * <p>Throws a GeneratorError if the byte is not a valid tail.
      */
-    private int nextPart() {
+    private int nextPart(ThreadContext context) {
         char c = next();
         // tail bytes must be 0b10xxxxxx
-        if ((c & 0xc0) != 0x80) throw invalidUtf8();
+        if ((c & 0xc0) != 0x80) throw invalidUtf8(context);
         return c & 0x3f;
     }
 
@@ -147,23 +144,19 @@ abstract class ByteListTranscoder {
      */
     protected void quoteStop(int endPos) throws IOException {
         if (quoteStart != -1) {
-            out.write(src.bytes(), quoteStart, endPos - quoteStart);
+            append(src.unsafeBytes(), src.begin() + quoteStart, endPos - quoteStart);
             quoteStart = -1;
         }
     }
 
-    protected void append(int b) throws IOException {
-        out.write(b);
-    }
+    protected abstract void append(int b) throws IOException;
 
-    protected void append(byte[] origin, int start, int length) throws IOException {
-        out.write(origin, start, length);
-    }
+    protected abstract void append(byte[] origin, int start, int length) throws IOException;
 
 
-    protected abstract RaiseException invalidUtf8();
+    protected abstract RaiseException invalidUtf8(ThreadContext context);
 
-    protected RaiseException incompleteUtf8() {
-        return invalidUtf8();
+    protected RaiseException incompleteUtf8(ThreadContext context) {
+        return invalidUtf8(context);
     }
 }

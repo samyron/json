@@ -5,6 +5,7 @@
  */
 package json.ext;
 
+import org.jcodings.specific.UTF8Encoding;
 import org.jruby.Ruby;
 import org.jruby.RubyClass;
 import org.jruby.RubyHash;
@@ -22,7 +23,7 @@ final class OptionsReader {
 
     OptionsReader(ThreadContext context, IRubyObject vOpts) {
         this.context = context;
-        this.runtime = context.getRuntime();
+        this.runtime = context.runtime;
         if (vOpts == null || vOpts.isNil()) {
             opts = null;
         } else if (vOpts.respondsTo("to_hash")) {
@@ -41,7 +42,7 @@ final class OptionsReader {
     }
 
     /**
-     * Efficiently looks up items with a {@link RubySymbol Symbol} key
+     * Efficiently looks up items with a {@link org.jruby.RubySymbol Symbol} key
      * @param key The Symbol name to look up for
      * @return The item in the {@link RubyHash Hash}, or <code>null</code>
      *         if not found
@@ -69,7 +70,7 @@ final class OptionsReader {
      * @param key The Symbol name to look up for
      * @return <code>null</code> if the key is not in the Hash or if
      *         its value evaluates to <code>false</code>
-     * @throws RaiseException <code>TypeError</code> if the value does not
+     * @throws org.jruby.exceptions.RaiseException <code>TypeError</code> if the value does not
      *                        evaluate to <code>false</code> and can't be
      *                        converted to string
      */
@@ -83,9 +84,8 @@ final class OptionsReader {
         if (value == null || !value.isTrue()) return defaultValue;
 
         RubyString str = value.convertToString();
-        RuntimeInfo info = getRuntimeInfo();
-        if (str.encoding(context) != info.utf8.get()) {
-            str = (RubyString)str.encode(context, info.utf8.get());
+        if (str.getEncoding() != UTF8Encoding.INSTANCE) {
+            str = (RubyString)str.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
         }
         return str;
     }

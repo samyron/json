@@ -12,7 +12,6 @@ import org.jruby.RubyBoolean;
 import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
-import org.jruby.RubyInteger;
 import org.jruby.RubyModule;
 import org.jruby.RubyNumeric;
 import org.jruby.RubyString;
@@ -30,8 +29,8 @@ import org.jruby.util.ByteList;
 class GeneratorMethods {
     /**
      * Populates the given module with all modules and their methods
-     * @param info
-     * @param generatorMethodsModule The module to populate
+     * @param info The current RuntimeInfo
+     * @param module The module to populate
      * (normally <code>JSON::Generator::GeneratorMethods</code>)
      */
     static void populate(RuntimeInfo info, RubyModule module) {
@@ -45,65 +44,79 @@ class GeneratorMethods {
         defineMethods(module, "String",     RbString.class);
         defineMethods(module, "TrueClass",  RbTrue.class);
 
-        info.stringExtendModule = new WeakReference<RubyModule>(module.defineModuleUnder("String")
-                                            .defineModuleUnder("Extend"));
-        info.stringExtendModule.get().defineAnnotatedMethods(StringExtend.class);
+        RubyModule stringExtend = module.defineModuleUnder("String").defineModuleUnder("Extend");
+        stringExtend.defineAnnotatedMethods(StringExtend.class);
     }
 
     /**
      * Convenience method for defining methods on a submodule.
-     * @param parentModule
-     * @param submoduleName
-     * @param klass
+     * @param parentModule the parent module
+     * @param submoduleName the submodule
+     * @param klass the class from which to define methods
      */
     private static void defineMethods(RubyModule parentModule,
-            String submoduleName, Class klass) {
+            String submoduleName, Class<?> klass) {
         RubyModule submodule = parentModule.defineModuleUnder(submoduleName);
         submodule.defineAnnotatedMethods(klass);
     }
 
-
     public static class RbHash {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyHash)vSelf,
-                    Generator.HASH_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyHash)vSelf, Generator.HASH_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyHash)vSelf, Generator.HASH_HANDLER, arg0);
         }
     }
 
     public static class RbArray {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyArray)vSelf,
-                    Generator.ARRAY_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyArray<IRubyObject>)vSelf, Generator.ARRAY_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyArray<IRubyObject>)vSelf, Generator.ARRAY_HANDLER, arg0);
         }
     }
 
     public static class RbInteger {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, vSelf, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, vSelf);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, vSelf, arg0);
         }
     }
 
     public static class RbFloat {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyFloat)vSelf,
-                    Generator.FLOAT_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyFloat)vSelf, Generator.FLOAT_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyFloat)vSelf, Generator.FLOAT_HANDLER, arg0);
         }
     }
 
     public static class RbString {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyString)vSelf,
-                    Generator.STRING_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyString)vSelf, Generator.STRING_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyString)vSelf, Generator.STRING_HANDLER, arg0);
         }
 
         /**
@@ -112,12 +125,16 @@ class GeneratorMethods {
          * <p>This method creates a JSON text from the result of a call to
          * {@link #to_json_raw_object} of this String.
          */
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json_raw(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
+        @JRubyMethod
+        public static IRubyObject to_json_raw(ThreadContext context, IRubyObject vSelf) {
             RubyHash obj = toJsonRawObject(context, Utils.ensureString(vSelf));
-            return Generator.generateJson(context, obj,
-                    Generator.HASH_HANDLER, args);
+            return Generator.generateJson(context, obj, Generator.HASH_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json_raw(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            RubyHash obj = toJsonRawObject(context, Utils.ensureString(vSelf));
+            return Generator.generateJson(context, obj, Generator.HASH_HANDLER, arg0);
         }
 
         /**
@@ -128,15 +145,14 @@ class GeneratorMethods {
          * method should be used if you want to convert raw strings to JSON
          * instead of UTF-8 strings, e.g. binary data.
          */
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json_raw_object(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
+        @JRubyMethod
+        public static IRubyObject to_json_raw_object(ThreadContext context, IRubyObject vSelf) {
             return toJsonRawObject(context, Utils.ensureString(vSelf));
         }
 
         private static RubyHash toJsonRawObject(ThreadContext context,
                                                 RubyString self) {
-            Ruby runtime = context.getRuntime();
+            Ruby runtime = context.runtime;
             RubyHash result = RubyHash.newHash(runtime);
 
             IRubyObject createId = RuntimeInfo.forRuntime(runtime)
@@ -154,11 +170,10 @@ class GeneratorMethods {
             return result;
         }
 
-        @JRubyMethod(required=1, module=true)
-        public static IRubyObject included(ThreadContext context,
-                IRubyObject vSelf, IRubyObject module) {
-            RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
-            return module.callMethod(context, "extend", info.stringExtendModule.get());
+        @JRubyMethod(module=true)
+        public static IRubyObject included(ThreadContext context, IRubyObject extendModule, IRubyObject module) {
+            RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
+            return module.callMethod(context, "extend", ((RubyModule) extendModule).getConstant("Extend"));
         }
     }
 
@@ -170,10 +185,10 @@ class GeneratorMethods {
          * array for the key "raw"). The Ruby String can be created by this
          * module method.
          */
-        @JRubyMethod(required=1)
+        @JRubyMethod
         public static IRubyObject json_create(ThreadContext context,
                 IRubyObject vSelf, IRubyObject vHash) {
-            Ruby runtime = context.getRuntime();
+            Ruby runtime = context.runtime;
             RubyHash o = vHash.convertToHash();
             IRubyObject rawData = o.fastARef(runtime.newString("raw"));
             if (rawData == null) {
@@ -195,37 +210,50 @@ class GeneratorMethods {
     }
 
     public static class RbTrue {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyBoolean)vSelf,
-                    Generator.TRUE_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyBoolean)vSelf, Generator.TRUE_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyBoolean)vSelf, Generator.TRUE_HANDLER, arg0);
         }
     }
 
     public static class RbFalse {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, (RubyBoolean)vSelf,
-                    Generator.FALSE_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, (RubyBoolean)vSelf, Generator.FALSE_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, (RubyBoolean)vSelf, Generator.FALSE_HANDLER, arg0);
         }
     }
 
     public static class RbNil {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject vSelf, IRubyObject[] args) {
-            return Generator.generateJson(context, vSelf,
-                    Generator.NIL_HANDLER, args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf) {
+            return Generator.generateJson(context, vSelf, Generator.NIL_HANDLER);
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject vSelf, IRubyObject arg0) {
+            return Generator.generateJson(context, vSelf, Generator.NIL_HANDLER, arg0);
         }
     }
 
     public static class RbObject {
-        @JRubyMethod(rest=true)
-        public static IRubyObject to_json(ThreadContext context,
-                IRubyObject self, IRubyObject[] args) {
-            return RbString.to_json(context, self.asString(), args);
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject self) {
+            return RbString.to_json(context, self.asString());
+        }
+
+        @JRubyMethod
+        public static IRubyObject to_json(ThreadContext context, IRubyObject self, IRubyObject arg0) {
+            return RbString.to_json(context, self.asString(), arg0);
         }
     }
 }

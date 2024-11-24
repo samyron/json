@@ -108,11 +108,7 @@ public class GeneratorState extends RubyObject {
      */
     private int depth = 0;
 
-    static final ObjectAllocator ALLOCATOR = new ObjectAllocator() {
-        public IRubyObject allocate(Ruby runtime, RubyClass klazz) {
-            return new GeneratorState(runtime, klazz);
-        }
-    };
+    static final ObjectAllocator ALLOCATOR = GeneratorState::new;
 
     public GeneratorState(Ruby runtime, RubyClass metaClass) {
         super(runtime, metaClass);
@@ -126,15 +122,13 @@ public class GeneratorState extends RubyObject {
      * configured by <codes>opts</code>, something else to create an
      * unconfigured instance. If <code>opts</code> is a <code>State</code>
      * object, it is just returned.
-     * @param clazzParam The receiver of the method call
-     *                   ({@link RubyClass} <code>State</code>)
+     * @param context The current thread context
+     * @param klass The receiver of the method call ({@link RubyClass} <code>State</code>)
      * @param opts The object to use as a base for the new <code>State</code>
-     * @param block The block passed to the method
      * @return A <code>GeneratorState</code> as determined above
      */
     @JRubyMethod(meta=true)
-    public static IRubyObject from_state(ThreadContext context,
-            IRubyObject klass, IRubyObject opts) {
+    public static IRubyObject from_state(ThreadContext context, IRubyObject klass, IRubyObject opts) {
         return fromState(context, opts);
     }
 
@@ -144,7 +138,7 @@ public class GeneratorState extends RubyObject {
     }
 
     static GeneratorState fromState(ThreadContext context, IRubyObject opts) {
-        return fromState(context, RuntimeInfo.forRuntime(context.getRuntime()), opts);
+        return fromState(context, RuntimeInfo.forRuntime(context.runtime), opts);
     }
 
     static GeneratorState fromState(ThreadContext context, RuntimeInfo info,
@@ -155,9 +149,8 @@ public class GeneratorState extends RubyObject {
             if (klass.isInstance(opts)) return (GeneratorState)opts;
 
             // if the given parameter is a Hash, pass it to the instantiator
-            if (context.getRuntime().getHash().isInstance(opts)) {
-                return (GeneratorState)klass.newInstance(context,
-                        new IRubyObject[] {opts}, Block.NULL_BLOCK);
+            if (context.runtime.getHash().isInstance(opts)) {
+                return (GeneratorState)klass.newInstance(context, opts, Block.NULL_BLOCK);
             }
         }
 
@@ -167,9 +160,9 @@ public class GeneratorState extends RubyObject {
 
     /**
      * <code>State#initialize(opts = {})</code>
-     *
+     * <p>
      * Instantiates a new <code>State</code> object, configured by <code>opts</code>.
-     *
+     * <p>
      * <code>opts</code> can have the following keys:
      *
      * <dl>
@@ -194,15 +187,21 @@ public class GeneratorState extends RubyObject {
      * <dd>set to <code>true</code> if U+2028, U+2029 and forward slashes should be escaped
      * in the json output to make it safe to include in a JavaScript tag (default: <code>false</code>)
      */
-    @JRubyMethod(optional=1, visibility=Visibility.PRIVATE)
-    public IRubyObject initialize(ThreadContext context, IRubyObject[] args) {
-        _configure(context, args.length > 0 ? args[0] : null);
+    @JRubyMethod(visibility=Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context) {
+        _configure(context, null);
+        return this;
+    }
+
+    @JRubyMethod(visibility=Visibility.PRIVATE)
+    public IRubyObject initialize(ThreadContext context, IRubyObject arg0) {
+        _configure(context, arg0);
         return this;
     }
 
     @JRubyMethod
     public IRubyObject initialize_copy(ThreadContext context, IRubyObject vOrig) {
-        Ruby runtime = context.getRuntime();
+        Ruby runtime = context.runtime;
         if (!(vOrig instanceof GeneratorState)) {
             throw runtime.newTypeError(vOrig, getType());
         }
@@ -231,7 +230,7 @@ public class GeneratorState extends RubyObject {
     @JRubyMethod(visibility = Visibility.PRIVATE)
     public IRubyObject _generate(ThreadContext context, IRubyObject obj, IRubyObject io) {
         IRubyObject result = Generator.generateJson(context, obj, this, io);
-        RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
+        RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
         if (!(result instanceof RubyString)) {
             return result;
         }
@@ -239,25 +238,16 @@ public class GeneratorState extends RubyObject {
         RubyString resultString = result.convertToString();
         if (resultString.getEncoding() != UTF8Encoding.INSTANCE) {
             if (resultString.isFrozen()) {
-                resultString = resultString.strDup(context.getRuntime());
+                resultString = resultString.strDup(context.runtime);
             }
-            resultString.force_encoding(context, info.utf8.get());
+            resultString.setEncoding(UTF8Encoding.INSTANCE);
+            resultString.clearCodeRange();
         }
 
         return resultString;
     }
 
-    private static boolean matchClosingBrace(ByteList bl, int pos, int len,
-                                             int brace) {
-        for (int endPos = len - 1; endPos > pos; endPos--) {
-            int b = bl.get(endPos);
-            if (Character.isWhitespace(b)) continue;
-            return b == brace;
-        }
-        return false;
-    }
-
-    @JRubyMethod(name="[]", required=1)
+    @JRubyMethod(name="[]")
     public IRubyObject op_aref(ThreadContext context, IRubyObject vName) {
         String name = vName.asJavaString();
         if (getMetaClass().isMethodBound(name, true)) {
@@ -268,16 +258,16 @@ public class GeneratorState extends RubyObject {
         }
     }
 
-    @JRubyMethod(name="[]=", required=2)
+    @JRubyMethod(name="[]=")
     public IRubyObject op_aset(ThreadContext context, IRubyObject vName, IRubyObject value) {
         String name = vName.asJavaString();
         String nameWriter = name + "=";
         if (getMetaClass().isMethodBound(nameWriter, true)) {
-            return send(context, context.getRuntime().newString(nameWriter), value, Block.NULL_BLOCK);
+            return send(context, context.runtime.newString(nameWriter), value, Block.NULL_BLOCK);
         } else {
             getInstanceVariables().setInstanceVariable("@" + name, value);
         }
-        return context.getRuntime().getNil();
+        return context.nil;
     }
 
     public ByteList getIndent() {
@@ -286,7 +276,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="indent")
     public RubyString indent_get(ThreadContext context) {
-        return context.getRuntime().newString(indent);
+        return context.runtime.newString(indent);
     }
 
     @JRubyMethod(name="indent=")
@@ -301,7 +291,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="space")
     public RubyString space_get(ThreadContext context) {
-        return context.getRuntime().newString(space);
+        return context.runtime.newString(space);
     }
 
     @JRubyMethod(name="space=")
@@ -316,7 +306,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="space_before")
     public RubyString space_before_get(ThreadContext context) {
-        return context.getRuntime().newString(spaceBefore);
+        return context.runtime.newString(spaceBefore);
     }
 
     @JRubyMethod(name="space_before=")
@@ -332,7 +322,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="object_nl")
     public RubyString object_nl_get(ThreadContext context) {
-        return context.getRuntime().newString(objectNl);
+        return context.runtime.newString(objectNl);
     }
 
     @JRubyMethod(name="object_nl=")
@@ -348,7 +338,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="array_nl")
     public RubyString array_nl_get(ThreadContext context) {
-        return context.getRuntime().newString(arrayNl);
+        return context.runtime.newString(arrayNl);
     }
 
     @JRubyMethod(name="array_nl=")
@@ -360,19 +350,12 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="check_circular?")
     public RubyBoolean check_circular_p(ThreadContext context) {
-        return context.getRuntime().newBoolean(maxNesting != 0);
-    }
-
-    /**
-     * Returns the maximum level of nesting configured for this state.
-     */
-    public int getMaxNesting() {
-        return maxNesting;
+        return RubyBoolean.newBoolean(context, maxNesting != 0);
     }
 
     @JRubyMethod(name="max_nesting")
     public RubyInteger max_nesting_get(ThreadContext context) {
-        return context.getRuntime().newFixnum(maxNesting);
+        return context.runtime.newFixnum(maxNesting);
     }
 
     @JRubyMethod(name="max_nesting=")
@@ -390,7 +373,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="script_safe", alias="escape_slash")
     public RubyBoolean script_safe_get(ThreadContext context) {
-        return context.getRuntime().newBoolean(scriptSafe);
+        return RubyBoolean.newBoolean(context, scriptSafe);
     }
 
     @JRubyMethod(name="script_safe=", alias="escape_slash=")
@@ -401,7 +384,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="script_safe?", alias="escape_slash?")
     public RubyBoolean script_safe_p(ThreadContext context) {
-        return context.getRuntime().newBoolean(scriptSafe);
+        return RubyBoolean.newBoolean(context, scriptSafe);
     }
 
     /**
@@ -413,7 +396,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name={"strict","strict?"})
     public RubyBoolean strict_get(ThreadContext context) {
-        return context.getRuntime().newBoolean(strict);
+        return RubyBoolean.newBoolean(context, strict);
     }
 
     @JRubyMethod(name="strict=")
@@ -428,7 +411,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="allow_nan?")
     public RubyBoolean allow_nan_p(ThreadContext context) {
-        return context.getRuntime().newBoolean(allowNaN);
+        return RubyBoolean.newBoolean(context, allowNaN);
     }
 
     public boolean asciiOnly() {
@@ -437,12 +420,12 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="ascii_only?")
     public RubyBoolean ascii_only_p(ThreadContext context) {
-        return context.getRuntime().newBoolean(asciiOnly);
+        return RubyBoolean.newBoolean(context, asciiOnly);
     }
 
     @JRubyMethod(name="buffer_initial_length")
     public RubyInteger buffer_initial_length_get(ThreadContext context) {
-        return context.getRuntime().newFixnum(bufferInitialLength);
+        return context.runtime.newFixnum(bufferInitialLength);
     }
 
     @JRubyMethod(name="buffer_initial_length=")
@@ -458,7 +441,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(name="depth")
     public RubyInteger depth_get(ThreadContext context) {
-        return context.getRuntime().newFixnum(depth);
+        return context.runtime.newFixnum(depth);
     }
 
     @JRubyMethod(name="depth=")
@@ -469,9 +452,8 @@ public class GeneratorState extends RubyObject {
 
     private ByteList prepareByteList(ThreadContext context, IRubyObject value) {
         RubyString str = value.convertToString();
-        RuntimeInfo info = RuntimeInfo.forRuntime(context.getRuntime());
-        if (str.encoding(context) != info.utf8.get()) {
-            str = (RubyString)str.encode(context, info.utf8.get());
+        if (str.getEncoding() != UTF8Encoding.INSTANCE) {
+            str = (RubyString)str.encode(context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(UTF8Encoding.INSTANCE));
         }
         return str.getByteList().dup();
     }
@@ -527,7 +509,7 @@ public class GeneratorState extends RubyObject {
      */
     @JRubyMethod(alias = "to_hash")
     public RubyHash to_h(ThreadContext context) {
-        Ruby runtime = context.getRuntime();
+        Ruby runtime = context.runtime;
         RubyHash result = RubyHash.newHash(runtime);
 
         result.op_aset(context, runtime.newSymbol("indent"), indent_get(context));
@@ -548,26 +530,24 @@ public class GeneratorState extends RubyObject {
         return result;
     }
 
-    public int increaseDepth() {
+    public int increaseDepth(ThreadContext context) {
         depth++;
-        checkMaxNesting();
+        checkMaxNesting(context);
         return depth;
     }
 
-    public int decreaseDepth() {
-        return --depth;
+    public void decreaseDepth() {
+        --depth;
     }
 
     /**
      * Checks if the current depth is allowed as per this state's options.
-     * @param context
-     * @param depth The current depth
+     * @param context The current context
      */
-    private void checkMaxNesting() {
+    private void checkMaxNesting(ThreadContext context) {
         if (maxNesting != 0 && depth > maxNesting) {
             depth--;
-            throw Utils.newException(getRuntime().getCurrentContext(),
-                    Utils.M_NESTING_ERROR, "nesting of " + depth + " is too deep");
+            throw Utils.newException(context, Utils.M_NESTING_ERROR, "nesting of " + depth + " is too deep");
         }
     }
 }

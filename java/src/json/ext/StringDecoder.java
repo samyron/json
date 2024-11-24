@@ -23,39 +23,37 @@ final class StringDecoder extends ByteListTranscoder {
      */
     private int surrogatePairStart = -1;
 
-    // Array used for writing multi-byte characters into the buffer at once
+    private ByteList out;
+
+    // Array used for writing multibyte characters into the buffer at once
     private final byte[] aux = new byte[4];
 
-    StringDecoder(ThreadContext context) {
-        super(context);
-    }
-
-    ByteList decode(ByteList src, int start, int end) {
+    ByteList decode(ThreadContext context, ByteList src, int start, int end) {
         try {
-            ByteListDirectOutputStream out = new ByteListDirectOutputStream(end - start);
-            init(src, start, end, out);
+            init(src, start, end);
+            this.out = new ByteList(end - start);
             while (hasNext()) {
-                handleChar(readUtf8Char());
+                handleChar(context, readUtf8Char(context));
             }
             quoteStop(pos);
-            return out.toByteListDirect(src.getEncoding());
+            return out;
         } catch (IOException e) {
             throw context.runtime.newIOErrorFromException(e);
         }
     }
 
-    private void handleChar(int c) throws IOException {
+    private void handleChar(ThreadContext context, int c) throws IOException {
         if (c == '\\') {
             quoteStop(charStart);
-            handleEscapeSequence();
+            handleEscapeSequence(context);
         } else {
             quoteStart();
         }
     }
 
-    private void handleEscapeSequence() throws IOException {
-        ensureMin(1);
-        switch (readUtf8Char()) {
+    private void handleEscapeSequence(ThreadContext context) throws IOException {
+        ensureMin(context, 1);
+        switch (readUtf8Char(context)) {
         case 'b':
             append('\b');
             break;
@@ -72,13 +70,13 @@ final class StringDecoder extends ByteListTranscoder {
             append('\t');
             break;
         case 'u':
-            ensureMin(4);
-            int cp = readHex();
+            ensureMin(context, 4);
+            int cp = readHex(context);
             if (Character.isHighSurrogate((char)cp)) {
-                handleLowSurrogate((char)cp);
+                handleLowSurrogate(context, (char)cp);
             } else if (Character.isLowSurrogate((char)cp)) {
                 // low surrogate with no high surrogate
-                throw invalidUtf8();
+                throw invalidUtf8(context);
             } else {
                 writeUtf8Char(cp);
             }
@@ -88,15 +86,23 @@ final class StringDecoder extends ByteListTranscoder {
         }
     }
 
-    private void handleLowSurrogate(char highSurrogate) throws IOException {
+    protected void append(int b) throws IOException {
+        out.append(b);
+    }
+
+    protected void append(byte[] origin, int start, int length) throws IOException {
+        out.append(origin, start, length);
+    }
+
+    private void handleLowSurrogate(ThreadContext context, char highSurrogate) throws IOException {
         surrogatePairStart = charStart;
-        ensureMin(1);
-        int lowSurrogate = readUtf8Char();
+        ensureMin(context, 1);
+        int lowSurrogate = readUtf8Char(context);
 
         if (lowSurrogate == '\\') {
-            ensureMin(5);
-            if (readUtf8Char() != 'u') throw invalidUtf8();
-            lowSurrogate = readHex();
+            ensureMin(context, 5);
+            if (readUtf8Char(context) != 'u') throw invalidUtf8(context);
+            lowSurrogate = readHex(context);
         }
 
         if (Character.isLowSurrogate((char)lowSurrogate)) {
@@ -104,7 +110,7 @@ final class StringDecoder extends ByteListTranscoder {
                                                 (char)lowSurrogate));
             surrogatePairStart = -1;
         } else {
-            throw invalidUtf8();
+            throw invalidUtf8(context);
         }
     }
 
@@ -136,12 +142,12 @@ final class StringDecoder extends ByteListTranscoder {
     /**
      * Reads a 4-digit unsigned hexadecimal number from the source.
      */
-    private int readHex() {
+    private int readHex(ThreadContext context) {
         int numberStart = pos;
         int result = 0;
         int length = 4;
         for (int i = 0; i < length; i++) {
-            int digit = readUtf8Char();
+            int digit = readUtf8Char(context);
             int digitValue;
             if (digit >= '0' && digit <= '9') {
                 digitValue = digit - '0';
@@ -159,13 +165,13 @@ final class StringDecoder extends ByteListTranscoder {
     }
 
     @Override
-    protected RaiseException invalidUtf8() {
+    protected RaiseException invalidUtf8(ThreadContext context) {
         ByteList message = new ByteList(
                 ByteList.plain("partial character in source, " +
                                "but hit end near "));
         int start = surrogatePairStart != -1 ? surrogatePairStart : charStart;
         message.append(src, start, srcEnd - start);
         return Utils.newException(context, Utils.M_PARSER_ERROR,
-                                  context.getRuntime().newString(message));
+                                  context.runtime.newString(message));
     }
 }
