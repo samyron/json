@@ -20,6 +20,7 @@ import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
 import org.jruby.RubyString;
 import org.jruby.RubySymbol;
+import org.jruby.RubyException;
 import org.jruby.runtime.Helpers;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.runtime.builtin.IRubyObject;
@@ -254,7 +255,7 @@ public final class Generator {
 
                 if (Double.isInfinite(value) || Double.isNaN(value)) {
                     if (!session.getState(context).allowNaN()) {
-                        throw Utils.newException(context, Utils.M_GENERATOR_ERROR, object + " not allowed in JSON");
+                        throw Utils.buildGeneratorError(context, object, object + " not allowed in JSON").toThrowable();
                     }
                 }
 
@@ -429,20 +430,23 @@ public final class Generator {
             void generate(ThreadContext context, Session session, RubyString object, OutputStream buffer) throws IOException {
                 try {
                     object = ensureValidEncoding(context, object);
-                    StringEncoder stringEncoder = session.getStringEncoder(context);
-                    ByteList byteList = object.getByteList();
-                    switch (object.scanForCodeRange()) {
-                        case StringSupport.CR_7BIT:
-                            stringEncoder.encodeASCII(context, byteList, buffer);
-                            break;
-                        case StringSupport.CR_VALID:
-                            stringEncoder.encode(context, byteList, buffer);
-                            break;
-                        default:
-                            throw stringEncoder.invalidUtf8(context);
-                    }
                 } catch (RaiseException re) {
-                  throw Utils.newException(context, Utils.M_GENERATOR_ERROR, re.getMessage());
+                    RubyException exc = Utils.buildGeneratorError(context, object, re.getMessage());
+                    exc.setCause(re.getException());
+                    throw exc.toThrowable();
+                }
+
+                StringEncoder stringEncoder = session.getStringEncoder(context);
+                ByteList byteList = object.getByteList();
+                switch (object.scanForCodeRange()) {
+                    case StringSupport.CR_7BIT:
+                        stringEncoder.encodeASCII(context, byteList, buffer);
+                        break;
+                    case StringSupport.CR_VALID:
+                        stringEncoder.encode(context, byteList, buffer);
+                        break;
+                    default:
+                        throw Utils.buildGeneratorError(context, object, "source sequence is illegal/malformed utf-8").toThrowable();
                 }
             }
         };
@@ -506,7 +510,7 @@ public final class Generator {
             RubyString generateNew(ThreadContext context, Session session, IRubyObject object) {
                 GeneratorState state = session.getState(context);
                 if (state.strict()) {
-                    throw Utils.newException(context, Utils.M_GENERATOR_ERROR, object + " not allowed in JSON");
+                    throw Utils.buildGeneratorError(context, object, object + " not allowed in JSON").toThrowable();
                 } else if (object.respondsTo("to_json")) {
                     IRubyObject result = object.callMethod(context, "to_json", state);
                     if (result instanceof RubyString) return (RubyString)result;
