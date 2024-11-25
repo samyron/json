@@ -63,6 +63,18 @@ final class Utils {
         return excptn.toThrowable();
     }
 
+    static RubyException buildGeneratorError(ThreadContext context, IRubyObject invalidObject, RubyString message) {
+        RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
+        RubyClass klazz = info.jsonModule.get().getClass(M_GENERATOR_ERROR);
+        RubyException excptn = (RubyException)klazz.newInstance(context, message, Block.NULL_BLOCK);
+        excptn.setInstanceVariable("@invalid_object", invalidObject);
+        return excptn;
+    }
+
+    static RubyException buildGeneratorError(ThreadContext context, IRubyObject invalidObject, String message) {
+        return buildGeneratorError(context, invalidObject, context.runtime.newString(message));
+    }
+
     static byte[] repeat(ByteList a, int n) {
         return repeat(a.unsafeBytes(), a.begin(), a.length(), n);
     }

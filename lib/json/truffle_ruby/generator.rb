@@ -62,8 +62,8 @@ module JSON
         string
       end
 
-      def utf8_to_json_ascii(string, script_safe = false) # :nodoc:
-        string = string.b
+      def utf8_to_json_ascii(original_string, script_safe = false) # :nodoc:
+        string = original_string.b
         map = script_safe ? SCRIPT_SAFE_MAP : MAP
         string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
         string.gsub!(/(
@@ -74,7 +74,7 @@ module JSON
           )+ |
           [\x80-\xc1\xf5-\xff]       # invalid
         )/nx) { |c|
-          c.size == 1 and raise GeneratorError, "invalid utf8 byte: '#{c}'"
+          c.size == 1 and raise GeneratorError.new("invalid utf8 byte: '#{c}'", original_string)
           s = c.encode(::Encoding::UTF_16BE, ::Encoding::UTF_8).unpack('H*')[0]
           s.force_encoding(::Encoding::BINARY)
           s.gsub!(/.{4}/n, '\\\\u\&')
@@ -83,7 +83,7 @@ module JSON
         string.force_encoding(::Encoding::UTF_8)
         string
       rescue => e
-        raise GeneratorError.wrap(e)
+        raise GeneratorError.new(e.message, original_string)
       end
 
       def valid_utf8?(string)
@@ -306,8 +306,10 @@ module JSON
           else
             result = obj.to_json(self)
           end
-          JSON::TruffleRuby::Generator.valid_utf8?(result) or raise GeneratorError,
-            "source sequence #{result.inspect} is illegal/malformed utf-8"
+          JSON::TruffleRuby::Generator.valid_utf8?(result) or raise GeneratorError.new(
+            "source sequence #{result.inspect} is illegal/malformed utf-8",
+            obj
+          )
           result
         end
 
@@ -364,10 +366,10 @@ module JSON
             begin
               string = string.encode(::Encoding::UTF_8)
             rescue Encoding::UndefinedConversionError => error
-              raise GeneratorError, error.message
+              raise GeneratorError.new(error.message, string)
             end
           end
-          raise GeneratorError, "source sequence is illegal/malformed utf-8" unless string.valid_encoding?
+          raise GeneratorError.new("source sequence is illegal/malformed utf-8", string) unless string.valid_encoding?
 
           if /["\\\x0-\x1f]/n.match?(string)
             buf << string.gsub(/["\\\x0-\x1f]/n, MAP)
@@ -403,7 +405,7 @@ module JSON
           # special method #to_json was defined for some object.
           def to_json(state = nil, *)
             if state && State.from_state(state).strict?
-              raise GeneratorError, "#{self.class} not allowed in JSON"
+              raise GeneratorError.new("#{self.class} not allowed in JSON", self)
             else
               to_s.to_json
             end
@@ -454,7 +456,7 @@ module JSON
 
               result = +"#{result}#{key_json}#{state.space_before}:#{state.space}"
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
-                raise GeneratorError, "#{value.class} not allowed in JSON"
+                raise GeneratorError.new("#{value.class} not allowed in JSON", value)
               elsif value.respond_to?(:to_json)
                 result << value.to_json(state)
               else
@@ -507,7 +509,7 @@ module JSON
               result << delim unless first
               result << state.indent * depth if indent
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
-                raise GeneratorError, "#{value.class} not allowed in JSON"
+                raise GeneratorError.new("#{value.class} not allowed in JSON", value)
               elsif value.respond_to?(:to_json)
                 result << value.to_json(state)
               else
@@ -536,13 +538,13 @@ module JSON
               if state.allow_nan?
                 to_s
               else
-                raise GeneratorError, "#{self} not allowed in JSON"
+                raise GeneratorError.new("#{self} not allowed in JSON", self)
               end
             when nan?
               if state.allow_nan?
                 to_s
               else
-                raise GeneratorError, "#{self} not allowed in JSON"
+                raise GeneratorError.new("#{self} not allowed in JSON", self)
               end
             else
               to_s
@@ -558,7 +560,7 @@ module JSON
             state = State.from_state(state)
             if encoding == ::Encoding::UTF_8
               unless valid_encoding?
-                raise GeneratorError, "source sequence is illegal/malformed utf-8"
+                raise GeneratorError.new("source sequence is illegal/malformed utf-8", self)
               end
               string = self
             else
@@ -570,7 +572,7 @@ module JSON
               %("#{JSON::TruffleRuby::Generator.utf8_to_json(string, state.script_safe)}")
             end
           rescue Encoding::UndefinedConversionError => error
-            raise ::JSON::GeneratorError, error.message
+            raise ::JSON::GeneratorError.new(error.message, self)
           end
 
           # Module that holds the extending methods if, the String module is

@@ -142,6 +142,6 @@ final class StringEncoder extends ByteListTranscoder {
 
     @Override
     protected RaiseException invalidUtf8(ThreadContext context) {
-         return Utils.newException(context, Utils.M_GENERATOR_ERROR, "source sequence is illegal/malformed utf-8");
+        return Utils.newException(context, Utils.M_GENERATOR_ERROR, "source sequence is illegal/malformed utf-8");
     }
 }
