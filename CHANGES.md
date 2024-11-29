@@ -18,6 +18,7 @@
   pre-existing support for comments, make it suitable to parse `jsonc` documents.
 * Many performance improvements to `JSON.parse` and `JSON.load`, up to `1.7x` faster on real world documents.
 * Some minor performance improvements to `JSON.dump` and `JSON.generate`.
+* `JSON.pretty_generate` no longer include newline inside empty object and arrays. 
 
 ### 2024-11-04 (2.7.6)
 
