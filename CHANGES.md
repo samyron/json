@@ -1,5 +1,13 @@
 # Changes
 
+### 2024-12-03 (2.9.0)
+
+* Fix C implementation of `script_safe` escaping to not confuse some other 3 wide characters with `\u2028` and `\u2029`.
+  e.g. `JSON.generate(["倩", "瀨"], script_safe: true)` would generate the wrong JSON.
+* `JSON.dump(object, some_io)` now write into the IO in chunks while previously it would buffer the entire JSON before writing.
+* `JSON::GeneratorError` now has a `#invalid_object` attribute, making it easier to understand why an object tree cannot be serialized.
+* Numerous improvements to the JRuby extension.
+
 ### 2024-11-14 (2.8.2)
 
 * `JSON.load_file` explictly read the file as UTF-8.
