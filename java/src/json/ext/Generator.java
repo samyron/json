@@ -510,6 +510,14 @@ public final class Generator {
             RubyString generateNew(ThreadContext context, Session session, IRubyObject object) {
                 GeneratorState state = session.getState(context);
                 if (state.strict()) {
+                    if (state.getAsJSON() != null ) {
+                        IRubyObject value = state.getAsJSON().call(context, object);
+                        Handler handler = getHandlerFor(context.runtime, value);
+                        if (handler == GENERIC_HANDLER) {
+                            throw Utils.buildGeneratorError(context, object, value + " returned by as_json not allowed in JSON").toThrowable();
+                        }
+                        return handler.generateNew(context, session, value);
+                    }
                     throw Utils.buildGeneratorError(context, object, object + " not allowed in JSON").toThrowable();
                 } else if (object.respondsTo("to_json")) {
                     IRubyObject result = object.callMethod(context, "to_json", state);
