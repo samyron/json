@@ -1,5 +1,9 @@
 # Changes
 
+### 2024-12-18 (2.9.1)
+
+* Fix support for Solaris 10.
+
 ### 2024-12-03 (2.9.0)
 
 * Fix C implementation of `script_safe` escaping to not confuse some other 3 wide characters with `\u2028` and `\u2029`.
