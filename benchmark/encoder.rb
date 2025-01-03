@@ -68,12 +68,10 @@ benchmark_encoding "small hash", { "username" => "jhawthorn", "id" => 123, "even
 benchmark_encoding "mixed utf8", ([("a" * 5000) + "€" + ("a" * 5000)] * 500)
 benchmark_encoding "mostly utf8", ([("€" * 3333)] * 500)
 
-# On these benchmarks we perform well, we're on par or better.
+# On these benchmarks we perform well, we're on par or a bit better.
 benchmark_encoding "integers", (1_000_000..1_001_000).to_a, except: %i(json_state)
 benchmark_encoding "activitypub.json", JSON.load_file("#{__dir__}/data/activitypub.json")
 benchmark_encoding "citm_catalog.json", JSON.load_file("#{__dir__}/data/citm_catalog.json")
-
-# On twitter.json we're still about 6% slower, this is worth investigating.
 benchmark_encoding "twitter.json", JSON.load_file("#{__dir__}/data/twitter.json")
 
 # This benchmark spent the overwhelming majority of its time in `ruby_dtoa`. We rely on Ruby's implementation
