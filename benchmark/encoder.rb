@@ -1,5 +1,6 @@
 require "benchmark/ips"
 require "json"
+require "date"
 require "oj"
 
 Oj.default_options = Oj.default_options.merge(mode: :compat)
