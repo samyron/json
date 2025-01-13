@@ -40,8 +40,8 @@ EXT_GENERATOR_DL  = "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}"
 EXT_GENERATOR_SRC = "#{EXT_GENERATOR_DIR}/generator.c"
 
 JAVA_DIR            = "java/src/json/ext"
-JAVA_RAGEL_PATH     = "#{JAVA_DIR}/Parser.rl"
-JAVA_PARSER_SRC     = "#{JAVA_DIR}/Parser.java"
+JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
+JAVA_PARSER_SRC     = "#{JAVA_DIR}/ParserConfig.java"
 JAVA_SOURCES        = FileList["#{JAVA_DIR}/*.java"]
 JAVA_CLASSES        = []
 JRUBY_PARSER_JAR    = File.expand_path("lib/json/ext/parser.jar")
@@ -95,9 +95,9 @@ end
 file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
   cd JAVA_DIR do
     if RAGEL_CODEGEN == 'ragel'
-      sh "ragel Parser.rl -J -o Parser.java"
+      sh "ragel ParserConfig.rl -J -o ParserConfig.java"
     else
-      sh "ragel -x Parser.rl | #{RAGEL_CODEGEN} -J"
+      sh "ragel -x ParserConfig.rl | #{RAGEL_CODEGEN} -J"
     end
   end
 end
