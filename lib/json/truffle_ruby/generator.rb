@@ -97,13 +97,7 @@ module JSON
       # while generating a JSON text from a Ruby data structure.
       class State
         def self.generate(obj, opts = nil, io = nil)
-          string = new(opts).generate(obj)
-          if io
-            io.write(string)
-            io
-          else
-            string
-          end
+          new(opts).generate(obj, io)
         end
 
         # Creates a State object from _opts_, which ought to be Hash to create
@@ -299,7 +293,7 @@ module JSON
         # returns the result. If no valid JSON document can be
         # created this method raises a
         # GeneratorError exception.
-        def generate(obj)
+        def generate(obj, anIO = nil)
           if @indent.empty? and @space.empty? and @space_before.empty? and @object_nl.empty? and @array_nl.empty? and
               !@ascii_only and !@script_safe and @max_nesting == 0 and !@strict
             result = generate_json(obj, ''.dup)
@@ -310,7 +304,12 @@ module JSON
             "source sequence #{result.inspect} is illegal/malformed utf-8",
             obj
           )
-          result
+          if anIO
+            anIO.write(result)
+            anIO
+          else
+            result
+          end
         end
 
         # Handles @allow_nan, @buffer_initial_length, other ivars must be the default value (see above)

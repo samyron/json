@@ -134,7 +134,7 @@ public class GeneratorState extends RubyObject {
 
     @JRubyMethod(meta=true)
     public static IRubyObject generate(ThreadContext context, IRubyObject klass, IRubyObject obj, IRubyObject opts, IRubyObject io) {
-        return fromState(context, opts)._generate(context, obj, io);
+        return fromState(context, opts).generate(context, obj, io);
     }
 
     static GeneratorState fromState(ThreadContext context, IRubyObject opts) {
@@ -227,8 +227,8 @@ public class GeneratorState extends RubyObject {
      * the result. If no valid JSON document can be created this method raises
      * a GeneratorError exception.
      */
-    @JRubyMethod(visibility = Visibility.PRIVATE)
-    public IRubyObject _generate(ThreadContext context, IRubyObject obj, IRubyObject io) {
+    @JRubyMethod
+    public IRubyObject generate(ThreadContext context, IRubyObject obj, IRubyObject io) {
         IRubyObject result = Generator.generateJson(context, obj, this, io);
         RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
         if (!(result instanceof RubyString)) {
@@ -245,6 +245,11 @@ public class GeneratorState extends RubyObject {
         }
 
         return resultString;
+    }
+
+    @JRubyMethod
+    public IRubyObject generate(ThreadContext context, IRubyObject obj) {
+        return generate(context, obj, context.nil);
     }
 
     @JRubyMethod(name="[]")
