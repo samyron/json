@@ -1,42 +1,16 @@
-begin
-  require 'rubygems/package_task'
-rescue LoadError
-end
+require "bundler/gem_tasks"
 
 require 'rbconfig'
 include RbConfig
-
-require 'rake/clean'
-CLOBBER.include 'doc', 'Gemfile.lock'
-CLEAN.include FileList['diagrams/*.*'], 'doc', 'coverage', 'tmp',
-  FileList["ext/**/{Makefile,mkmf.log}"], 'build', 'dist', FileList['**/*.rbc'],
-  FileList["{ext,lib}/**/*.{so,bundle,#{CONFIG['DLEXT']},o,obj,pdb,lib,manifest,exp,def,jar,class,dSYM}"],
-  FileList['java/src/**/*.class']
 
 require 'rake/testtask'
 class UndocumentedTestTask < Rake::TestTask
   def desc(*) end
 end
 
-which = lambda { |c|
-  w = `which #{c}`
-  break w.chomp unless w.empty?
-}
-
-MAKE   = ENV['MAKE']   || %w[gmake make].find(&which)
-BUNDLE = ENV['BUNDLE'] || %w[bundle].find(&which)
-
 PKG_VERSION       = File.foreach(File.join(__dir__, "lib/json/version.rb")) do |line|
   /^\s*VERSION\s*=\s*'(.*)'/ =~ line and break $1
 end rescue nil
-
-EXT_ROOT_DIR      = 'ext/json/ext'
-EXT_PARSER_DIR    = "#{EXT_ROOT_DIR}/parser"
-EXT_PARSER_DL     = "#{EXT_PARSER_DIR}/parser.#{CONFIG['DLEXT']}"
-EXT_PARSER_SRC    = "#{EXT_PARSER_DIR}/parser.c"
-EXT_GENERATOR_DIR = "#{EXT_ROOT_DIR}/generator"
-EXT_GENERATOR_DL  = "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}"
-EXT_GENERATOR_SRC = "#{EXT_GENERATOR_DIR}/generator.c"
 
 JAVA_DIR            = "java/src/json/ext"
 JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
@@ -46,6 +20,11 @@ JAVA_CLASSES        = []
 JRUBY_PARSER_JAR    = File.expand_path("lib/json/ext/parser.jar")
 JRUBY_GENERATOR_JAR = File.expand_path("lib/json/ext/generator.jar")
 
+which = lambda { |c|
+  w = `which #{c}`
+  break w.chomp unless w.empty?
+}
+
 if RUBY_PLATFORM =~ /mingw|mswin/
   # cleans up Windows CI output
   RAGEL_CODEGEN     = %w[ragel].find(&which)
@@ -53,42 +32,6 @@ if RUBY_PLATFORM =~ /mingw|mswin/
 else
   RAGEL_CODEGEN     = %w[rlcodegen rlgen-cd ragel].find(&which)
   RAGEL_DOTGEN      = %w[rlgen-dot rlgen-cd ragel].find(&which)
-end
-
-desc "Installing library (extension)"
-task :install => [ :compile ] do
-  sitearchdir = CONFIG["sitearchdir"]
-  cd 'ext' do
-    for file in Dir["json/ext/*.#{CONFIG['DLEXT']}"]
-      d = File.join(sitearchdir, file)
-      mkdir_p File.dirname(d)
-      install(file, d)
-    end
-    warn " *** Installed EXT ruby library."
-  end
-end
-
-namespace :gems do
-  desc 'Install all development gems'
-  task :install do
-    sh "#{BUNDLE}"
-  end
-end
-
-file EXT_PARSER_DL => EXT_PARSER_SRC do
-  cd EXT_PARSER_DIR do
-    ruby 'extconf.rb'
-    sh MAKE
-  end
-  cp "#{EXT_PARSER_DIR}/parser.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
-end
-
-file EXT_GENERATOR_DL => EXT_GENERATOR_SRC do
-  cd EXT_GENERATOR_DIR do
-    ruby 'extconf.rb'
-    sh MAKE
-  end
-  cp "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
 end
 
 file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
@@ -102,13 +45,7 @@ file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
 end
 
 desc "Generate parser with ragel"
-task :ragel => [EXT_PARSER_SRC, JAVA_PARSER_SRC]
-
-desc "Delete the ragel generated C source"
-task :ragel_clean do
-  rm_rf EXT_PARSER_SRC
-  rm_rf JAVA_PARSER_SRC
-end
+task :ragel => [JAVA_PARSER_SRC]
 
 if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   ENV['JAVA_HOME'] ||= [
@@ -201,12 +138,13 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
 
   task :release => :build
 else
-  desc "Compiling extension"
-  if RUBY_ENGINE == 'truffleruby'
-    task :compile => [ EXT_PARSER_DL ]
-  else
-    task :compile => [ EXT_PARSER_DL, EXT_GENERATOR_DL ]
+  require 'rake/extensiontask'
+
+  unless RUBY_ENGINE == 'truffleruby'
+    Rake::ExtensionTask.new("json/ext/generator")
   end
+
+  Rake::ExtensionTask.new("json/ext/parser")
 
   UndocumentedTestTask.new do |t|
     t.name = :test
