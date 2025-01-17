@@ -4,6 +4,10 @@
 #include <math.h>
 #include <ctype.h>
 
+#ifdef HAVE_ARM_NEON_H
+#include <arm_neon.h>
+#endif
+
 /* ruby api and some helpers */
 
 typedef struct JSON_Generator_StateStruct {
@@ -179,7 +183,124 @@ static const unsigned char script_safe_escape_table[256] = {
  * Everything else (should be UTF-8) is just passed through and
  * appended to the result.
  */
-static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+#define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
+#define PROCESS_BYTE if (RB_UNLIKELY(ch_len)) { \
+                switch (ch_len) { \
+                    case 9: { \
+                        FLUSH_POS(1); \
+                        switch (ch) { \
+                            case '"':  fbuffer_append(out_buffer, "\\\"", 2); break; \
+                            case '\\': fbuffer_append(out_buffer, "\\\\", 2); break; \
+                            case '/':  fbuffer_append(out_buffer, "\\/", 2); break; \
+                            case '\b': fbuffer_append(out_buffer, "\\b", 2); break; \
+                            case '\f': fbuffer_append(out_buffer, "\\f", 2); break; \
+                            case '\n': fbuffer_append(out_buffer, "\\n", 2); break; \
+                            case '\r': fbuffer_append(out_buffer, "\\r", 2); break; \
+                            case '\t': fbuffer_append(out_buffer, "\\t", 2); break; \
+                            default: { \
+                                scratch[2] = '0'; \
+                                scratch[3] = '0'; \
+                                scratch[4] = hexdig[(ch >> 4) & 0xf]; \
+                                scratch[5] = hexdig[ch & 0xf]; \
+                                fbuffer_append(out_buffer, scratch, 6); \
+                                break; \
+                            } \
+                        } \
+                        break; \
+                    } \
+                    case 11: { \
+                        unsigned char b2 = ptr[pos + 1]; \
+                        if (RB_UNLIKELY(b2 == 0x80)) { \
+                            unsigned char b3 = ptr[pos + 2]; \
+                            if (b3 == 0xA8) { \
+                                FLUSH_POS(3); \
+                                fbuffer_append(out_buffer, "\\u2028", 6); \
+                                break; \
+                            } else if (b3 == 0xA9) { \
+                                FLUSH_POS(3); \
+                                fbuffer_append(out_buffer, "\\u2029", 6); \
+                                break; \
+                            } \
+                        } \
+                        ch_len = 3;  \
+                    } \
+                    default: \
+                        pos += ch_len; \
+                        break; \
+                } \
+            } else { \
+                pos++; \
+            }
+
+static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
+{
+    const char *hexdig = "0123456789abcdef";
+    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
+
+    const char *ptr = RSTRING_PTR(str);
+    unsigned long len = RSTRING_LEN(str);
+
+    unsigned long beg = 0, pos = 0;
+
+#ifdef HAVE_ARM_NEON_H
+    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
+    const uint8x16_t backslash       = vdupq_n_u8(92);
+    const uint8x16_t dblquote        = vdupq_n_u8(34);
+
+    while (pos+16 < len) {
+        uint8x16_t chunk    = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low  = vcltq_u8(chunk, lower_bound);
+
+        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote);
+
+        uint8x16_t invalid = too_low;
+        uint8x16_t has_escaped_char = vorrq_u8(has_backslash, has_dblquote);
+        
+        invalid = vorrq_u8(invalid, has_escaped_char);
+
+        if (vmaxvq_u8(invalid) == 0) {
+            pos += 16;
+            continue;
+        }
+
+        uint8x16_t tmp = vandq_u8(too_low, vdupq_n_u8(0x1));
+        tmp = vorrq_u8(tmp, vandq_u8(has_backslash, vdupq_n_u8(0x2)));
+        tmp = vorrq_u8(tmp, vandq_u8(has_dblquote, vdupq_n_u8(0x4)));
+
+        uint8_t arr[16];
+        vst1q_u8(arr, tmp);
+        for (int i = 0; i < 16; i++) {
+            unsigned char ch = ptr[pos];
+            unsigned char ch_len = arr[i];
+            
+            // This must remain in sync with the array `escape_table`.
+            if (RB_UNLIKELY(ch_len)) {
+                ch_len = 9;
+                PROCESS_BYTE;
+            } else {
+                pos++;
+            }
+        }
+    }
+#endif
+
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = escape_table[ch];
+        /* JSON encoding */
+
+        PROCESS_BYTE
+    }
+
+    if (beg < len) {
+        fbuffer_append(out_buffer, &ptr[beg], len - beg);
+    }
+
+    RB_GC_GUARD(str);
+}
+
+static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -191,61 +312,72 @@ static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const un
 
 #define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
 
-    while (pos < len) {
-        unsigned char ch = ptr[pos];
-        unsigned char ch_len = escape_table[ch];
-        /* JSON encoding */
+#ifdef HAVE_ARM_NEON_H
+    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
+    const uint8x16_t upper_bound     = vdupq_n_u8(126);
+    const uint8x16_t backslash       = vdupq_n_u8(92);
+    const uint8x16_t dblquote_slash  = vdupq_n_u8(34);
+    const uint8x16_t forward_slash   = vdupq_n_u8(47);
 
-        if (RB_UNLIKELY(ch_len)) {
-            switch (ch_len) {
-                case 9: {
-                    FLUSH_POS(1);
-                    switch (ch) {
-                        case '"':  fbuffer_append(out_buffer, "\\\"", 2); break;
-                        case '\\': fbuffer_append(out_buffer, "\\\\", 2); break;
-                        case '/':  fbuffer_append(out_buffer, "\\/", 2); break;
-                        case '\b': fbuffer_append(out_buffer, "\\b", 2); break;
-                        case '\f': fbuffer_append(out_buffer, "\\f", 2); break;
-                        case '\n': fbuffer_append(out_buffer, "\\n", 2); break;
-                        case '\r': fbuffer_append(out_buffer, "\\r", 2); break;
-                        case '\t': fbuffer_append(out_buffer, "\\t", 2); break;
-                        default: {
-                            scratch[2] = '0';
-                            scratch[3] = '0';
-                            scratch[4] = hexdig[(ch >> 4) & 0xf];
-                            scratch[5] = hexdig[ch & 0xf];
-                            fbuffer_append(out_buffer, scratch, 6);
-                            break;
-                        }
-                    }
+    while (pos+16 < len) {
+        uint8x16_t chunk    = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low  = vcltq_u8(chunk, lower_bound);
+        uint8x16_t too_high = vcgtq_u8(chunk, upper_bound);
+
+        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote_slash);
+        uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
+
+        uint8x16_t invalid = vorrq_u8(too_low, too_high);
+        uint8x16_t has_escaped_char = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
+        
+        invalid = vorrq_u8(invalid, has_escaped_char);
+
+        if (vmaxvq_u8(invalid) == 0) {
+            pos += 16;
+            continue;
+        }
+
+        uint8x16_t tmp = vandq_u8(too_low, vdupq_n_u8(0x1));
+        tmp = vorrq_u8(tmp, vandq_u8(has_backslash, vdupq_n_u8(0x2)));
+        tmp = vorrq_u8(tmp, vandq_u8(has_dblquote, vdupq_n_u8(0x4)));
+        tmp = vorrq_u8(tmp, vandq_u8(has_forward_slash, vdupq_n_u8(0x8)));
+
+        uint8_t arr[16];
+        vst1q_u8(arr, tmp);
+        for (int i = 0; i < 16; ) {
+            unsigned long start = pos;
+            unsigned char ch = ptr[pos];
+            unsigned char ch_len = arr[i];
+            switch(ch_len) {
+                case 0x1:
+                case 0x2:
+                case 0x4:
+                case 0x8:
+                    ch_len = 9;
                     break;
-                }
-                case 11: {
-                    unsigned char b2 = ptr[pos + 1];
-                    if (RB_UNLIKELY(b2 == 0x80)) {
-                        unsigned char b3 = ptr[pos + 2];
-                        if (b3 == 0xA8) {
-                            FLUSH_POS(3);
-                            fbuffer_append(out_buffer, "\\u2028", 6);
-                            break;
-                        } else if (b3 == 0xA9) {
-                            FLUSH_POS(3);
-                            fbuffer_append(out_buffer, "\\u2029", 6);
-                            break;
-                        }
-                    }
-                    ch_len = 3;
-                    // fallthrough
-                }
                 default:
-                    pos += ch_len;
-                    break;
+                    ch_len = script_safe_escape_table[ch];
             }
-        } else {
-            pos++;
+            // This must remain in sync with the array `escape_table`.
+            if (RB_UNLIKELY(ch_len)) {
+                PROCESS_BYTE;
+            } else {
+                pos++;
+            }
+
+            i += (pos - start);
         }
     }
-#undef FLUSH_POS
+#endif
+
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = script_safe_escape_table[ch];
+        /* JSON encoding */
+
+        PROCESS_BYTE;
+    }
 
     if (beg < len) {
         fbuffer_append(out_buffer, &ptr[beg], len - beg);
@@ -253,6 +385,86 @@ static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const un
 
     RB_GC_GUARD(str);
 }
+
+#undef PROCESS_BYTE
+
+#define PROCESS_BYTE 		if (RB_UNLIKELY(ch_len)) { \
+            switch (ch_len) { \
+                case 9: { \
+                    FLUSH_POS(1); \
+                    switch (ch) { \
+                        case '"':  fbuffer_append(out_buffer, "\\\"", 2); break; \
+                        case '\\': fbuffer_append(out_buffer, "\\\\", 2); break; \
+                        case '/':  fbuffer_append(out_buffer, "\\/", 2); break; \
+                        case '\b': fbuffer_append(out_buffer, "\\b", 2); break; \
+                        case '\f': fbuffer_append(out_buffer, "\\f", 2); break; \
+                        case '\n': fbuffer_append(out_buffer, "\\n", 2); break; \
+                        case '\r': fbuffer_append(out_buffer, "\\r", 2); break; \
+                        case '\t': fbuffer_append(out_buffer, "\\t", 2); break; \
+                        default: { \
+                            scratch[2] = '0'; \
+                            scratch[3] = '0'; \
+                            scratch[4] = hexdig[(ch >> 4) & 0xf]; \
+                            scratch[5] = hexdig[ch & 0xf]; \
+                            fbuffer_append(out_buffer, scratch, 6); \
+                            break; \
+                        } \
+                    } \
+                    break; \
+                } \
+                default: { \
+                    uint32_t wchar = 0; \
+                    ch_len = ch_len & CHAR_LENGTH_MASK; \
+ \
+                    switch(ch_len) { \
+                        case 2: \
+                            wchar = ptr[pos] & 0x1F; \
+                            break; \
+                        case 3: \
+                            wchar = ptr[pos] & 0x0F; \
+                            break; \
+                        case 4: \
+                            wchar = ptr[pos] & 0x07; \
+                            break; \
+                    } \
+ \
+                    for (short i = 1; i < ch_len; i++) { \
+                        wchar = (wchar << 6) | (ptr[pos+i] & 0x3F); \
+                    } \
+ \
+                    FLUSH_POS(ch_len); \
+ \
+                    if (wchar <= 0xFFFF) { \
+                        scratch[2] = hexdig[wchar >> 12]; \
+                        scratch[3] = hexdig[(wchar >> 8) & 0xf]; \
+                        scratch[4] = hexdig[(wchar >> 4) & 0xf]; \
+                        scratch[5] = hexdig[wchar & 0xf]; \
+                        fbuffer_append(out_buffer, scratch, 6); \
+                    } else { \
+                        uint16_t hi, lo; \
+                        wchar -= 0x10000; \
+                        hi = 0xD800 + (uint16_t)(wchar >> 10); \
+                        lo = 0xDC00 + (uint16_t)(wchar & 0x3FF); \
+ \
+                        scratch[2] = hexdig[hi >> 12]; \
+                        scratch[3] = hexdig[(hi >> 8) & 0xf]; \
+                        scratch[4] = hexdig[(hi >> 4) & 0xf]; \
+                        scratch[5] = hexdig[hi & 0xf]; \
+ \
+                        scratch[8] = hexdig[lo >> 12]; \
+                        scratch[9] = hexdig[(lo >> 8) & 0xf]; \
+                        scratch[10] = hexdig[(lo >> 4) & 0xf]; \
+                        scratch[11] = hexdig[lo & 0xf]; \
+ \
+                        fbuffer_append(out_buffer, scratch, 12); \
+                    } \
+ \
+                    break; \
+                } \
+            } \
+        } else { \
+            pos++; \
+        } 
 
 static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
@@ -264,91 +476,43 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
 
     unsigned long beg = 0, pos = 0;
 
-#define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
+#ifdef HAVE_ARM_NEON_H
+    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
+    const uint8x16_t upper_bound     = vdupq_n_u8(126);
+    const uint8x16_t backslash       = vdupq_n_u8(92); // '\\'
+    const uint8x16_t dblquote        = vdupq_n_u8(34); // '"'
+
+    while (pos+16 < len) {
+        uint8x16_t chunk = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low = vcltq_u8(chunk, lower_bound);
+        uint8x16_t too_high = vcgtq_u8(chunk, upper_bound);
+        uint8x16_t invalid = vorrq_u8(too_low, too_high);
+
+        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote);
+        uint8x16_t has_escape_char = vorrq_u8(has_backslash, has_dblquote);
+
+        if (escape_table == script_safe_escape_table) {
+            uint8x16_t forward_slash   = vdupq_n_u8('/');
+            uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
+            has_escape_char = vorrq_u8(has_escape_char, has_forward_slash);
+            invalid = vorrq_u8(invalid, has_escape_char);
+        }
+
+        if (vmaxvq_u8(invalid) != 0) {
+            break;
+        }
+
+        pos += 16;
+    }
+#endif
 
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = escape_table[ch];
 
-        if (RB_UNLIKELY(ch_len)) {
-            switch (ch_len) {
-                case 9: {
-                    FLUSH_POS(1);
-                    switch (ch) {
-                        case '"':  fbuffer_append(out_buffer, "\\\"", 2); break;
-                        case '\\': fbuffer_append(out_buffer, "\\\\", 2); break;
-                        case '/':  fbuffer_append(out_buffer, "\\/", 2); break;
-                        case '\b': fbuffer_append(out_buffer, "\\b", 2); break;
-                        case '\f': fbuffer_append(out_buffer, "\\f", 2); break;
-                        case '\n': fbuffer_append(out_buffer, "\\n", 2); break;
-                        case '\r': fbuffer_append(out_buffer, "\\r", 2); break;
-                        case '\t': fbuffer_append(out_buffer, "\\t", 2); break;
-                        default: {
-                            scratch[2] = '0';
-                            scratch[3] = '0';
-                            scratch[4] = hexdig[(ch >> 4) & 0xf];
-                            scratch[5] = hexdig[ch & 0xf];
-                            fbuffer_append(out_buffer, scratch, 6);
-                            break;
-                        }
-                    }
-                    break;
-                }
-                default: {
-                    uint32_t wchar = 0;
-                    ch_len = ch_len & CHAR_LENGTH_MASK;
-
-                    switch(ch_len) {
-                        case 2:
-                            wchar = ptr[pos] & 0x1F;
-                            break;
-                        case 3:
-                            wchar = ptr[pos] & 0x0F;
-                            break;
-                        case 4:
-                            wchar = ptr[pos] & 0x07;
-                            break;
-                    }
-
-                    for (short i = 1; i < ch_len; i++) {
-                        wchar = (wchar << 6) | (ptr[pos+i] & 0x3F);
-                    }
-
-                    FLUSH_POS(ch_len);
-
-                    if (wchar <= 0xFFFF) {
-                        scratch[2] = hexdig[wchar >> 12];
-                        scratch[3] = hexdig[(wchar >> 8) & 0xf];
-                        scratch[4] = hexdig[(wchar >> 4) & 0xf];
-                        scratch[5] = hexdig[wchar & 0xf];
-                        fbuffer_append(out_buffer, scratch, 6);
-                    } else {
-                        uint16_t hi, lo;
-                        wchar -= 0x10000;
-                        hi = 0xD800 + (uint16_t)(wchar >> 10);
-                        lo = 0xDC00 + (uint16_t)(wchar & 0x3FF);
-
-                        scratch[2] = hexdig[hi >> 12];
-                        scratch[3] = hexdig[(hi >> 8) & 0xf];
-                        scratch[4] = hexdig[(hi >> 4) & 0xf];
-                        scratch[5] = hexdig[hi & 0xf];
-
-                        scratch[8] = hexdig[lo >> 12];
-                        scratch[9] = hexdig[(lo >> 8) & 0xf];
-                        scratch[10] = hexdig[(lo >> 4) & 0xf];
-                        scratch[11] = hexdig[lo & 0xf];
-
-                        fbuffer_append(out_buffer, scratch, 12);
-                    }
-
-                    break;
-                }
-            }
-        } else {
-            pos++;
-        }
+        PROCESS_BYTE
     }
-#undef FLUSH_POS
 
     if (beg < len) {
         fbuffer_append(out_buffer, &ptr[beg], len - beg);
@@ -356,6 +520,8 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
 
     RB_GC_GUARD(str);
 }
+
+#undef FLUSH_POS
 
 /*
  * Document-module: JSON::Ext::Generator
@@ -912,7 +1078,12 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
             if (RB_UNLIKELY(state->ascii_only)) {
                 convert_UTF8_to_ASCII_only_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : ascii_only_escape_table);
             } else {
-                convert_UTF8_to_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : escape_table);
+                if (state->script_safe) {
+                    convert_UTF8_to_JSON_script_safe(buffer, obj);
+                }
+                else {
+                    convert_UTF8_to_JSON(buffer, obj);
+                }
             }
             break;
         default:
