@@ -254,22 +254,18 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
         uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
         uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote);
 
-        uint8x16_t invalid = too_low;
+        uint8x16_t needs_escape = too_low;
         uint8x16_t has_escaped_char = vorrq_u8(has_backslash, has_dblquote);
         
-        invalid = vorrq_u8(invalid, has_escaped_char);
+        needs_escape = vorrq_u8(needs_escape, has_escaped_char);
 
-        if (vmaxvq_u8(invalid) == 0) {
+        if (vmaxvq_u8(needs_escape) == 0) {
             pos += 16;
             continue;
         }
 
-        uint8x16_t tmp = vandq_u8(too_low, vdupq_n_u8(0x1));
-        tmp = vorrq_u8(tmp, vandq_u8(has_backslash, vdupq_n_u8(0x2)));
-        tmp = vorrq_u8(tmp, vandq_u8(has_dblquote, vdupq_n_u8(0x4)));
-
         uint8_t arr[16];
-        vst1q_u8(arr, tmp);
+        vst1q_u8(arr, needs_escape);
         for (int i = 0; i < 16; i++) {
             unsigned char ch = ptr[pos];
             unsigned char ch_len = arr[i];
