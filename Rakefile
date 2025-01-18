@@ -86,7 +86,7 @@ end
 
 file EXT_GENERATOR_DL => EXT_GENERATOR_SRC do
   cd EXT_GENERATOR_DIR do
-    ruby 'extconf.rb'
+    ruby "extconf.rb #{ENV['JSON_GENERATOR_CONFIGURE_OPTS']}"
     sh MAKE
   end
   cp "#{EXT_GENERATOR_DIR}/generator.#{CONFIG['DLEXT']}", EXT_ROOT_DIR
