@@ -4,6 +4,8 @@
 #include <math.h>
 #include <ctype.h>
 
+#include "extconf.h"
+
 #ifdef HAVE_ARM_NEON_H
 #include <arm_neon.h>
 #endif
@@ -243,21 +245,59 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
     unsigned long beg = 0, pos = 0;
 
 #ifdef HAVE_ARM_NEON_H
-    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
-    const uint8x16_t backslash       = vdupq_n_u8(92);
-    const uint8x16_t dblquote        = vdupq_n_u8(34);
+    /*
+     * The code below implements an SIMD-based algorithm to determine if N bytes at a time
+     * need to be escaped. 
+     * 
+     * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
+     * 
+     * The explanination will be limited to the first 8 bytes of the string for simplicity. However
+     * the vector insructions may work on larger vectors.
+     * 
+     * First, we load three constants 'lower_bound', 'backslash' and 'dblquote" in vector registers.
+     * 
+     * lower_bound: [20 20 20 20 20 20 20 20] 
+     * backslash:   [5C 5C 5C 5C 5C 5C 5C 5C] 
+     * dblquote:    [22 22 22 22 22 22 22 22] 
+     * 
+     * Next we load the first chunk of the ptr: 
+     * [22 54 65 5C 73 74 69 6E] ("  T  e  \  s  t  i  n)
+     * 
+     * First we check if any byte in chunk is less than 32 (0x20). This returns the following vector
+     * as no bytes are less than 32 (0x20):
+     * [0 0 0 0 0 0 0 0]
+     * 
+     * Next, we check if any byte in chunk is equal to a backslash:
+     * [0 0 0 FF 0 0 0 0]
+     * 
+     * Finally we check if any byte in chunk is equal to a double quote:
+     * [FF 0 0 0 0 0 0 0] 
+     * 
+     * Now we have three vectors where each byte indicates if the corresponding byte in chunk
+     * needs to be escaped. We combine these vectors with a series of logical OR instructions.
+     * This is the needs_escape vector and it is equal to:
+     * [FF 0 0 FF 0 0 0 0] 
+     * 
+     * For ARM Neon specifically, we check if the maximum number in the vector is 0. The maximum of
+     * the needs_escape vector is FF. Therefore, we know there is at least one byte that needs to be
+     * escaped.
+     * 
+     * If the maximum of the needs_escape vector is 0, none of the bytes need to be escaped and
+     * we advance pos by the width of the vector.
+     * 
+     * To determine how to escape characters, we look at each value in the needs_escape vector and take
+     * the appropriate action.
+     */
+    const uint8x16_t lower_bound = vdupq_n_u8(' '); 
+    const uint8x16_t backslash   = vdupq_n_u8('\\');
+    const uint8x16_t dblquote    = vdupq_n_u8('\"');
 
     while (pos+16 < len) {
-        uint8x16_t chunk    = vld1q_u8((const uint8_t*)&ptr[pos]);
-        uint8x16_t too_low  = vcltq_u8(chunk, lower_bound);
-
+        uint8x16_t chunk         = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
         uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
-        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote);
-
-        uint8x16_t needs_escape = too_low;
-        uint8x16_t has_escaped_char = vorrq_u8(has_backslash, has_dblquote);
-        
-        needs_escape = vorrq_u8(needs_escape, has_escaped_char);
+        uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
+        uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
 
         if (vmaxvq_u8(needs_escape) == 0) {
             pos += 16;
@@ -309,25 +349,37 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 #define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
 
 #ifdef HAVE_ARM_NEON_H
-    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
-    const uint8x16_t upper_bound     = vdupq_n_u8(126);
-    const uint8x16_t backslash       = vdupq_n_u8(92);
-    const uint8x16_t dblquote_slash  = vdupq_n_u8(34);
-    const uint8x16_t forward_slash   = vdupq_n_u8(47);
+    /*
+    * This works almost exactly the same as what is described above. The difference in this case comes after we know
+    * there is a byte to be escaped. In the previous case, all bytes were handled the same way. In this case, however,
+    * some bytes need to be handled differently. 
+    * 
+    * Since we know each byte in chunk can only match a single case, we logical AND each of the has_backslash,
+    * has_dblquote, and has_forward_slash with a different bit (0x1, 0x2 and 0x4 respectively) and combine
+    * the results with a logical OR. 
+    * 
+    * Now we loop over the result vector and switch on the particular pattern we just created. If we find a 
+    * case we don't know, we simply lookup the byte in the script_safe_escape_table to determine the correct
+    * action.
+    */
+    const uint8x16_t lower_bound     = vdupq_n_u8(' '); 
+    const uint8x16_t upper_bound     = vdupq_n_u8('~');
+    const uint8x16_t backslash       = vdupq_n_u8('\\');
+    const uint8x16_t dblquote        = vdupq_n_u8('\"');
+    const uint8x16_t forward_slash   = vdupq_n_u8('/');
 
     while (pos+16 < len) {
-        uint8x16_t chunk    = vld1q_u8((const uint8_t*)&ptr[pos]);
-        uint8x16_t too_low  = vcltq_u8(chunk, lower_bound);
-        uint8x16_t too_high = vcgtq_u8(chunk, upper_bound);
+        uint8x16_t chunk             = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low           = vcltq_u8(chunk, lower_bound);
+        uint8x16_t too_high          = vcgtq_u8(chunk, upper_bound);
 
-        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
-        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote_slash);
+        uint8x16_t has_backslash     = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote      = vceqq_u8(chunk, dblquote);
         uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
 
-        uint8x16_t invalid = vorrq_u8(too_low, too_high);
-        uint8x16_t has_escaped_char = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
-        
-        invalid = vorrq_u8(invalid, has_escaped_char);
+        uint8x16_t invalid           = vorrq_u8(too_low, too_high);
+        uint8x16_t has_escaped_char  = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
+        invalid                      = vorrq_u8(invalid, has_escaped_char);
 
         if (vmaxvq_u8(invalid) == 0) {
             pos += 16;
@@ -473,19 +525,19 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
     unsigned long beg = 0, pos = 0;
 
 #ifdef HAVE_ARM_NEON_H
-    const uint8x16_t lower_bound     = vdupq_n_u8(32); 
-    const uint8x16_t upper_bound     = vdupq_n_u8(126);
-    const uint8x16_t backslash       = vdupq_n_u8(92); // '\\'
-    const uint8x16_t dblquote        = vdupq_n_u8(34); // '"'
+    const uint8x16_t lower_bound = vdupq_n_u8(' '); 
+    const uint8x16_t upper_bound = vdupq_n_u8('~');
+    const uint8x16_t backslash   = vdupq_n_u8('\\');
+    const uint8x16_t dblquote    = vdupq_n_u8('\"');
 
     while (pos+16 < len) {
-        uint8x16_t chunk = vld1q_u8((const uint8_t*)&ptr[pos]);
-        uint8x16_t too_low = vcltq_u8(chunk, lower_bound);
-        uint8x16_t too_high = vcgtq_u8(chunk, upper_bound);
-        uint8x16_t invalid = vorrq_u8(too_low, too_high);
+        uint8x16_t chunk         = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
+        uint8x16_t too_high      = vcgtq_u8(chunk, upper_bound);
+        uint8x16_t invalid       = vorrq_u8(too_low, too_high);
 
         uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
-        uint8x16_t has_dblquote = vceqq_u8(chunk, dblquote);
+        uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
         uint8x16_t has_escape_char = vorrq_u8(has_backslash, has_dblquote);
 
         if (escape_table == script_safe_escape_table) {
