@@ -240,7 +240,7 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
 
     unsigned long beg = 0, pos = 0;
 
-#ifdef HAVE_ARM_NEON_H
+#ifdef ENABLE_SIMD
     /*
      * The code below implements an SIMD-based algorithm to determine if N bytes at a time
      * need to be escaped. 
@@ -346,7 +346,7 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 
 #define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
 
-#ifdef HAVE_ARM_NEON_H
+#ifdef ENABLE_SIMD
     /*
     * This works almost exactly the same as what is described above. The difference in this case comes after we know
     * there is a byte to be escaped. In the previous case, all bytes were handled the same way. In this case, however,
@@ -522,7 +522,7 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
 
     unsigned long beg = 0, pos = 0;
 
-#ifdef HAVE_ARM_NEON_H
+#ifdef ENABLE_SIMD
     const simd_vec_type lower_bound   = simd_vec_from_byte(' '); 
     const simd_vec_type upper_bound   = simd_vec_from_byte('~');
     const simd_vec_type backslash     = simd_vec_from_byte('\\');
