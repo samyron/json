@@ -4,8 +4,6 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "extconf.h"
-
 #ifdef HAVE_ARM_NEON_H
 #include <arm_neon.h>
 #endif
