@@ -4,6 +4,7 @@
 #include <math.h>
 #include <ctype.h>
 
+#include "extconf.h"
 #include "simd.h"
 
 /* ruby api and some helpers */
@@ -23,6 +24,8 @@ typedef struct JSON_Generator_StateStruct {
     bool ascii_only;
     bool script_safe;
     bool strict;
+
+    void (*convert_UTF8_to_JSON)(FBuffer *, VALUE, const unsigned char escape_table[256]);
 } JSON_Generator_State;
 
 #ifndef RB_UNLIKELY
@@ -229,8 +232,9 @@ static const unsigned char script_safe_escape_table[256] = {
             } else { \
                 pos++; \
             }
+#ifdef HAVE_SIMD_NEON
 
-static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
+static void convert_UTF8_to_JSON_escape_table_neon(FBuffer *out_buffer, VALUE str)
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -285,19 +289,19 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
      * the appropriate action.
      */
 
-    const simd_vec_type lower_bound = simd_vec_from_byte(' '); 
-    const simd_vec_type backslash   = simd_vec_from_byte('\\');
-    const simd_vec_type dblquote    = simd_vec_from_byte('\"');
+    const uint8x16_t lower_bound = vdupq_n_u8(' '); 
+    const uint8x16_t backslash   = vdupq_n_u8('\\');
+    const uint8x16_t dblquote    = vdupq_n_u8('\"');
 
-    while (pos+SIMD_VEC_STRIDE < len) {
-        simd_vec_type chunk         = simd_vec_load_from_mem((const uint8_t*)&ptr[pos]);
-        simd_vec_type too_low       = simd_vec_lt(chunk, lower_bound);
-        simd_vec_type has_backslash = simd_vec_eq(chunk, backslash);
-        simd_vec_type has_dblquote  = simd_vec_eq(chunk, dblquote);
-        simd_vec_type needs_escape  = simd_vec_or(too_low, simd_vec_or(has_backslash, has_dblquote));
+    while (pos+16 < len) {
+        uint8x16_t chunk         = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
+        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
+        uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
 
-        if (simd_vec_all_zero(needs_escape)) {
-            pos += SIMD_VEC_STRIDE;
+        if (vmaxvq_u8(needs_escape) == 0) {
+            pos += 16;
             continue;
         }
 
@@ -309,8 +313,8 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
         * if the bit/byte (implementation defined) at position 'pos' is non-zero.
         */
 
-        uint8_t arr[SIMD_VEC_STRIDE];
-        simd_vec_to_memory(arr, needs_escape);
+        uint8_t arr[16];
+        vst1q_u8(arr, needs_escape);
 
         for (int i = 0; i < 16; i++) {
             unsigned char ch = ptr[pos];
@@ -343,7 +347,7 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
     RB_GC_GUARD(str);
 }
 
-static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
+static void convert_UTF8_to_JSON_script_safe_neon(FBuffer *out_buffer, VALUE str)
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -369,37 +373,37 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
     * case we don't know, we simply lookup the byte in the script_safe_escape_table to determine the correct
     * action.
     */
-    const simd_vec_type lower_bound     = simd_vec_from_byte(' '); 
-    const simd_vec_type upper_bound     = simd_vec_from_byte('~');
-    const simd_vec_type backslash       = simd_vec_from_byte('\\');
-    const simd_vec_type dblquote        = simd_vec_from_byte('\"');
-    const simd_vec_type forward_slash   = simd_vec_from_byte('/');
+    const uint8x16_t lower_bound     = vdupq_n_u8(' '); 
+    const uint8x16_t upper_bound     = vdupq_n_u8('~');
+    const uint8x16_t backslash       = vdupq_n_u8('\\');
+    const uint8x16_t dblquote        = vdupq_n_u8('\"');
+    const uint8x16_t forward_slash   = vdupq_n_u8('/');
 
-    while (pos+SIMD_VEC_STRIDE < len) {
-        simd_vec_type chunk             = simd_vec_load_from_mem((const uint8_t*)&ptr[pos]);
-        simd_vec_type too_low           = simd_vec_lt(chunk, lower_bound);
-        simd_vec_type too_high          = simd_vec_gt(chunk, upper_bound);
+    while (pos+16 < len) {
+        uint8x16_t chunk             = vld1q_u8((const uint8_t*)&ptr[pos]);
+        uint8x16_t too_low           = vcltq_u8(chunk, lower_bound);
+        uint8x16_t too_high          = vcgtq_u8(chunk, upper_bound);
 
-        simd_vec_type has_backslash     = simd_vec_eq(chunk, backslash);
-        simd_vec_type has_dblquote      = simd_vec_eq(chunk, dblquote);
-        simd_vec_type has_forward_slash = simd_vec_eq(chunk, forward_slash);
+        uint8x16_t has_backslash     = vceqq_u8(chunk, backslash);
+        uint8x16_t has_dblquote      = vceqq_u8(chunk, dblquote);
+        uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
 
-        simd_vec_type needs_escape      = simd_vec_or(too_low, too_high);
-        simd_vec_type has_escaped_char  = simd_vec_or(has_forward_slash, simd_vec_or(has_backslash, has_dblquote));
-        needs_escape                    = simd_vec_or(needs_escape, has_escaped_char);
+        uint8x16_t needs_escape      = vorrq_u8(too_low, too_high);
+        uint8x16_t has_escaped_char  = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
+        needs_escape                 = vorrq_u8(needs_escape, has_escaped_char);
 
-        if (simd_vec_all_zero(needs_escape)) {
-            pos += SIMD_VEC_STRIDE;
+        if (vmaxvq_u8(needs_escape) == 0) {
+            pos += 16;
             continue;
         }
 
-        simd_vec_type tmp = simd_vec_and(too_low, simd_vec_from_byte(0x1));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_backslash, simd_vec_from_byte(0x2)));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_dblquote, simd_vec_from_byte(0x4)));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_forward_slash, simd_vec_from_byte(0x8)));
+        uint8x16_t tmp = vandq_u8(too_low, vdupq_n_u8(0x1));
+        tmp = vorrq_u8(tmp, vandq_u8(has_backslash, vdupq_n_u8(0x2)));
+        tmp = vorrq_u8(tmp, vandq_u8(has_dblquote, vdupq_n_u8(0x4)));
+        tmp = vorrq_u8(tmp, vandq_u8(has_forward_slash, vdupq_n_u8(0x8)));
 
-        uint8_t arr[SIMD_VEC_STRIDE];
-        simd_vec_to_memory(arr, tmp);
+        uint8_t arr[16];
+        vst1q_u8(arr, tmp);
         
         for (int i = 0; i < 16; ) {
             unsigned long start = pos;
@@ -430,6 +434,44 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = script_safe_escape_table[ch];
+        /* JSON encoding */
+
+        PROCESS_BYTE;
+    }
+
+    if (beg < len) {
+        fbuffer_append(out_buffer, &ptr[beg], len - beg);
+    }
+
+    RB_GC_GUARD(str);
+}
+
+static void convert_UTF8_to_JSON_neon(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+{
+    if (escape_table == script_safe_escape_table) {
+        convert_UTF8_to_JSON_script_safe_neon(out_buffer, str);
+    } else {
+        convert_UTF8_to_JSON_escape_table_neon(out_buffer, str);
+    }
+}
+
+#endif /* HAVE_SIMD_NEON */
+
+static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+{
+    const char *hexdig = "0123456789abcdef";
+    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
+
+    const char *ptr = RSTRING_PTR(str);
+    unsigned long len = RSTRING_LEN(str);
+
+    unsigned long beg = 0, pos = 0;
+
+#define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
+
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = escape_table[ch];
         /* JSON encoding */
 
         PROCESS_BYTE;
@@ -913,6 +955,17 @@ static void state_init(JSON_Generator_State *state)
 {
     state->max_nesting = 100;
     state->buffer_initial_length = FBUFFER_INITIAL_LENGTH_DEFAULT;
+    // TODO ADD RUNTIME CHECKS HERE?
+
+    switch(find_simd_implementation()) {
+#ifdef HAVE_SIMD_NEON
+        case SIMD_NEON:
+            state->convert_UTF8_to_JSON = convert_UTF8_to_JSON_neon;
+            break;
+#endif
+        default:
+            state->convert_UTF8_to_JSON = convert_UTF8_to_JSON;
+    }
 }
 
 static VALUE cState_s_allocate(VALUE klass)
@@ -1134,12 +1187,7 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
             if (RB_UNLIKELY(state->ascii_only)) {
                 convert_UTF8_to_ASCII_only_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : ascii_only_escape_table);
             } else {
-                if (state->script_safe) {
-                    convert_UTF8_to_JSON_script_safe(buffer, obj);
-                }
-                else {
-                    convert_UTF8_to_JSON(buffer, obj);
-                }
+                state->convert_UTF8_to_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : escape_table);
             }
             break;
         default:
@@ -1341,6 +1389,7 @@ static VALUE cState_init_copy(VALUE obj, VALUE orig)
     objState->space_before = origState->space_before;
     objState->object_nl = origState->object_nl;
     objState->array_nl = origState->array_nl;
+    objState->convert_UTF8_to_JSON = origState->convert_UTF8_to_JSON;
     return obj;
 }
 

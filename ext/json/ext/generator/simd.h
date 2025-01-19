@@ -2,11 +2,23 @@
 
 #ifdef ENABLE_SIMD
 
-#ifdef HAVE_ARM_NEON_H
+typedef enum {
+    SIMD_NONE,
+    SIMD_NEON,
+    SIMD_SSE4_1,
+    SIMD_AVX2
+} SIMD_Implementation;
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
 
-#ifdef HAVE_TYPE_UINT8X16_T
+SIMD_Implementation find_simd_implementation() {
+    return SIMD_NEON;
+}
 
+#define HAVE_SIMD_NEON 1
+
+#ifdef HAVE_TYPE_UINT8X16_T
 #define SIMD_VEC_STRIDE          16
 
 #define simd_vec_type            uint8x16_t
@@ -51,7 +63,7 @@ inline int smd_vec_all_zero(uint8x8_t vec) {
 }
 
 #endif /* HAVE_TYPE_UINT8X16_T */
-#endif /* HAVE_ARM_NEON_H */
+#endif /* ARM Neon Support.*/
 
 #ifdef HAVE_X86INTRIN_H
 #include <x86intrin.h>
@@ -115,6 +127,23 @@ int simd_vec_all_zero(__m256i vec) {
 #elif HAVE_TYPE___M128I
 #define SIMD_VEC_STRIDE          16
 
+/*
+ From: https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#ig_expand=876,4329,7112,5801,3975,6546,4842,305,4293,6490,5869,4602,4329,4293,4329
+
+_mm_and_si128               SSE2
+_mm_cmpeq_epi8              SSE2
+_mm_lddqu_si128             SSE3
+_mm_max_epu8                SSE2
+_mm_max_epi8                SSE4.1
+_mm_movemask_epi8           SSE2
+_mm_or_si128                SSE2
+_mm_set1_epi8               SSE2
+_mm_setzero_si128           SSE2
+_mm_store_si128             SSE2
+_mm_storeu_si128            SSE2
+_mm_xor_si128               SSE2
+*/
+
 #define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
 #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
@@ -169,5 +198,17 @@ int simd_vec_all_zero(__m128i vec) {
 }
 
 #endif /* HAVE_TYPE___M256 */
+
+SIMD_Implementation find_simd_implementation() {
+    /* IMPLEMENT THIS! */
+    return SIMD_NONE;
+}
+
 #endif /* HAVE_X86INTRIN_H */
+#else
+
+SIMD_Implementation find_simd_implementation() {
+    return SIMD_NONE;
+}
+
 #endif /* ENABLE_SIMD */
