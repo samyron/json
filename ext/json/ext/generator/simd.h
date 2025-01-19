@@ -20,11 +20,11 @@
 #define simd_vec_and             vandq_u8
 #define simd_vec_max             vmaxvq_u8
 
-inline int smd_vec_any_set(uint8x16_t vec) {
+inline int simd_vec_any_set(uint8x16_t vec) {
     return vmaxvq_u8(vec) != 0;
 }
 
-inline int smd_vec_all_zero(uint8x16_t vec) {
+inline int simd_vec_all_zero(uint8x16_t vec) {
     return vmaxvq_u8(vec) == 0;
 }
 
