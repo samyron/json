@@ -296,13 +296,22 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
         simd_vec_type has_dblquote  = simd_vec_eq(chunk, dblquote);
         simd_vec_type needs_escape  = simd_vec_or(too_low, simd_vec_or(has_backslash, has_dblquote));
 
-        if (simd_vec_max(needs_escape) == 0) {
+        if (simd_vec_all_zero(needs_escape)) {
             pos += SIMD_VEC_STRIDE;
             continue;
         }
 
+        /*
+        * TODO Consider making another type simd_vec_mask. The reason being on x86 we can use _mm_movemask_epi8
+        * to get a mask rather than storing the vector to memory. 
+        * 
+        * We would need another function like simd_vec_mask_position_set(mask, pos) which returns true
+        * if the bit/byte (implementation defined) at position 'pos' is non-zero.
+        */
+
         uint8_t arr[SIMD_VEC_STRIDE];
         simd_vec_to_memory(arr, needs_escape);
+
         for (int i = 0; i < 16; i++) {
             unsigned char ch = ptr[pos];
             unsigned char ch_len = arr[i];
@@ -375,11 +384,11 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
         simd_vec_type has_dblquote      = simd_vec_eq(chunk, dblquote);
         simd_vec_type has_forward_slash = simd_vec_eq(chunk, forward_slash);
 
-        simd_vec_type invalid           = simd_vec_or(too_low, too_high);
+        simd_vec_type needs_escape      = simd_vec_or(too_low, too_high);
         simd_vec_type has_escaped_char  = simd_vec_or(has_forward_slash, simd_vec_or(has_backslash, has_dblquote));
-        invalid                         = simd_vec_or(invalid, has_escaped_char);
+        needs_escape                    = simd_vec_or(needs_escape, has_escaped_char);
 
-        if (simd_vec_max(invalid) == 0) {
+        if (simd_vec_all_zero(needs_escape)) {
             pos += SIMD_VEC_STRIDE;
             continue;
         }
@@ -391,6 +400,7 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 
         uint8_t arr[SIMD_VEC_STRIDE];
         simd_vec_to_memory(arr, tmp);
+        
         for (int i = 0; i < 16; ) {
             unsigned long start = pos;
             unsigned char ch = ptr[pos];
@@ -545,7 +555,7 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
             invalid                          = simd_vec_or(invalid, has_escape_char);
         }
 
-        if (simd_vec_max(invalid) != 0) {
+        if (simd_vec_any_set(invalid)) {
             break;
         }
 
