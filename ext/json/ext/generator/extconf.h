@@ -1,8 +1,0 @@
-#ifndef EXTCONF_H
-#define EXTCONF_H
-#define JSON_GENERATOR 1
-#define ENABLE_SIMD 1
-#define HAVE_ARM_NEON_H 1
-#define HAVE_TYPE_UINT8X16_T 1
-#define HAVE_TYPE_UINT8X8_T 1
-#endif
