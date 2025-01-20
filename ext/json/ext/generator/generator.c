@@ -478,35 +478,12 @@ static void convert_UTF8_to_JSON_escape_table_sse(FBuffer *out_buffer, VALUE str
      * better than what is implemented here.
      */
 
-    // if (((unsigned long)str & 15) == 0) {
-    //     //printf("VALUE IS ALIGNED!\n");
-    // } else {
-    //     printf("VALUE IS NOT ALIGNED!\n");
-    // }
-
-    // Let's get to an aligned pointer.
-    // unsigned long skipped = 0;
-    // while (((unsigned long)(ptr+pos) & 15) && pos < len) {
-    //     unsigned char ch = ptr[pos];
-    //     unsigned char ch_len = escape_table[ch];
-    //     skipped++;
-    //     PROCESS_BYTE
-    // }
-
-    // if (skipped) {
-    //     printf("Skipped %ld bytes. Remaining: %ld\n", skipped, (len - skipped));
-    // }
-
     const __m128i lower_bound = _mm_set1_epi8(' '); 
     const __m128i backslash   = _mm_set1_epi8('\\');
     const __m128i dblquote    = _mm_set1_epi8('\"');
 
     while (pos+16 < len) {
-        // __m128i chunk         = _mm_lddqu_si128((__m128i const*)&ptr[pos]); // This allows unaligned loads. The aligned version may perform better.
         __m128i chunk         = _mm_loadu_si128((__m128i const*)&ptr[pos]);
-
-        // This is the aligned version. Benefit: 
-        // __m128i chunk         = _mm_load_si128((__m128i const*)&ptr[pos]);
         __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
         __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
         __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
