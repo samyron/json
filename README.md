@@ -52,6 +52,18 @@ You can also use the `pretty_generate` method (which formats the output more
 verbosely and nicely) or `fast_generate` (which doesn't do any of the security
 checks generate performs, e. g. nesting deepness checks).
 
+## Combining JSON fragments
+
+To combine JSON fragments to build a bigger JSON document, you can use `JSON::Fragment`:
+
+```ruby
+posts_json = cache.fetch_multi(post_ids) do |post_id|
+  JSON.generate(Post.find(post_id))
+end
+posts_json.map { |post_json| JSON::Fragment.new(post_json) }
+JSON.generate({ posts: posts_json, count: posts_json.count })
+```
+
 ## Handling arbitrary types
 
 > [!CAUTION]
