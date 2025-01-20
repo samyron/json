@@ -41,7 +41,6 @@ else
           }
           SRC
           $defs.push("-DENABLE_SIMD")
-          append_cflags('-mavx2')
         elsif have_type('__m128i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
           #include <x86intrin.h>
           int main() {
@@ -50,9 +49,10 @@ else
           }
           SRC
             $defs.push("-DENABLE_SIMD")
-            append_cflags('-mavx2')
         end
       end
+
+      have_header('cpuid.h')
   end
 
   create_header
