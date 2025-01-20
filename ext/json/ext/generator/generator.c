@@ -38,6 +38,7 @@ static ID i_to_s, i_to_json, i_new, i_pack, i_unpack, i_create_id, i_extend, i_e
 static ID sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan,
           sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict;
 
+static void (*convert_UTF8_to_JSON_impl)(FBuffer *, VALUE, const unsigned char escape_table[256]);
 
 #define GET_STATE_TO(self, state) \
     TypedData_Get_Struct(self, JSON_Generator_State, &JSON_Generator_State_type, state)
@@ -453,15 +454,22 @@ static void convert_UTF8_to_JSON_neon(FBuffer *out_buffer, VALUE str, const unsi
 #endif /* HAVE_SIMD_NEON */
 
 #ifdef HAVE_SIMD_X86_64
+
+#ifdef HAVE_TYPE___M128I
+#ifdef __GNU_C__
 #pragma GCC push_options
 #pragma GCC target ("sse4")
+#endif /* __GNU_C__ */
 
 #define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
 #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
-static void convert_UTF8_to_JSON_escape_table_sse(FBuffer *out_buffer, VALUE str)
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
+static void convert_UTF8_to_JSON_escape_table_sse (FBuffer *out_buffer, VALUE str)
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -526,6 +534,9 @@ static void convert_UTF8_to_JSON_escape_table_sse(FBuffer *out_buffer, VALUE str
     RB_GC_GUARD(str);
 }
 
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
 static void convert_UTF8_to_JSON_script_safe_sse(FBuffer *out_buffer, VALUE str)
 {
     const char *hexdig = "0123456789abcdef";
@@ -614,6 +625,9 @@ static void convert_UTF8_to_JSON_script_safe_sse(FBuffer *out_buffer, VALUE str)
     RB_GC_GUARD(str);
 }
 
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
 static void convert_UTF8_to_JSON_sse(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     if (escape_table == script_safe_escape_table) {
@@ -623,7 +637,199 @@ static void convert_UTF8_to_JSON_sse(FBuffer *out_buffer, VALUE str, const unsig
     }
 }
 
+#ifdef __GNU_C__
 #pragma GCC pop_options
+#endif /* __GNU_C__ */
+#endif /* HAVE_TYPE___M128I */
+
+#ifdef HAVE_TYPE___M256I
+#ifdef __GNU_C__
+#pragma GCC push_options
+#pragma GCC target ("avx2")
+#endif /* __GNU_C__ */
+
+#define _mm256_cmpge_epu8(a, b) _mm256_cmpeq_epi8(_mm256_max_epu8(a, b), a)
+#define _mm256_cmple_epu8(a, b) _mm256_cmpge_epu8(b, a)
+#define _mm256_cmpgt_epu8(a, b) _mm256_xor_si256(_mm256_cmple_epu8(a, b), _mm256_set1_epi8(-1))
+#define _mm256_cmplt_epu8(a, b) _mm256_cmpgt_epu8(b, a)
+
+#ifdef __clang__
+__attribute__((target("avx2")))
+#endif /* __clang__ */
+static void convert_UTF8_to_JSON_escape_table_avx2 (FBuffer *out_buffer, VALUE str)
+{
+    const char *hexdig = "0123456789abcdef";
+    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
+
+    const char *ptr = RSTRING_PTR(str);
+    unsigned long len = RSTRING_LEN(str);
+
+    unsigned long beg = 0, pos = 0;
+
+    /*
+     * This is a straight port of the ARM Neon implementation to SSE4. This is 
+     * likely not optimal for this instruction set. There is likely table lookup,
+     * shuffle, gather, blend, etc. instructions that may perform significantly
+     * better than what is implemented here.
+     */
+
+    const __m256i lower_bound = _mm256_set1_epi8(' '); 
+    const __m256i backslash   = _mm256_set1_epi8('\\');
+    const __m256i dblquote    = _mm256_set1_epi8('\"');
+
+    while (pos+32 < len) {
+        __m256i chunk         = _mm256_loadu_si256((__m256i const*)&ptr[pos]);
+        __m256i too_low       = _mm256_cmplt_epu8(chunk, lower_bound);
+        __m256i has_backslash = _mm256_cmpeq_epi8(chunk, backslash);
+        __m256i has_dblquote  = _mm256_cmpeq_epi8(chunk, dblquote);
+        __m256i needs_escape  = _mm256_or_si256(too_low, _mm256_or_si256(has_backslash, has_dblquote));
+
+        int needs_escape_mask = _mm256_movemask_epi8(needs_escape);
+
+        if (needs_escape_mask == 0) {
+            pos += 32;
+            continue;
+        }
+
+        for (int i = 0; i < 32; i++) {
+            int bit = needs_escape_mask & (1 << i);
+            unsigned char ch = ptr[pos];
+            unsigned char ch_len = 0;
+            
+            // This must remain in sync with the array `escape_table`.
+            if (RB_UNLIKELY(bit)) {
+                ch_len = 9;
+                PROCESS_BYTE;
+            } else {
+                pos++;
+            }   
+        }
+    }
+
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = escape_table[ch];
+        /* JSON encoding */
+
+        PROCESS_BYTE
+    }
+
+    if (beg < len) {
+        fbuffer_append(out_buffer, &ptr[beg], len - beg);
+    }
+
+    RB_GC_GUARD(str);
+}
+
+#ifdef __clang__
+__attribute__((target("avx2")))
+#endif /* __clang__ */
+static void convert_UTF8_to_JSON_script_safe_avx2(FBuffer *out_buffer, VALUE str)
+{
+    const char *hexdig = "0123456789abcdef";
+    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
+
+    const char *ptr = RSTRING_PTR(str);
+    unsigned long len = RSTRING_LEN(str);
+
+    unsigned long beg = 0, pos = 0;
+
+#define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
+
+    /*
+    * Again, this is basically a straight port of the ARM Neon version.
+    */
+    const __m256i lower_bound     = _mm256_set1_epi8(' '); 
+    const __m256i upper_bound     = _mm256_set1_epi8('~');
+    const __m256i backslash       = _mm256_set1_epi8('\\');
+    const __m256i dblquote        = _mm256_set1_epi8('\"');
+    const __m256i forward_slash   = _mm256_set1_epi8('/');
+
+    while (pos+32 < len) {
+        __m256i chunk             = _mm256_loadu_si256((__m256i const*)&ptr[pos]);
+        __m256i too_low           = _mm256_cmplt_epu8(chunk, lower_bound);
+        __m256i too_high          = _mm256_cmpgt_epu8(chunk, upper_bound);
+
+        __m256i has_backslash     = _mm256_cmpeq_epi8(chunk, backslash);
+        __m256i has_dblquote      = _mm256_cmpeq_epi8(chunk, dblquote);
+        __m256i has_forward_slash = _mm256_cmpeq_epi8(chunk, forward_slash);
+
+        __m256i needs_escape      = _mm256_or_si256(too_low, too_high);
+        __m256i has_escaped_char  = _mm256_or_si256(has_forward_slash, _mm256_or_si256(has_backslash, has_dblquote));
+        needs_escape              = _mm256_or_si256(needs_escape, has_escaped_char);
+
+        int needs_escape_mask     = _mm256_movemask_epi8(needs_escape);
+        if (needs_escape_mask == 0) {
+            pos += 32;
+            continue;
+        }
+
+        __m256i tmp = _mm256_and_si256(too_low, _mm256_set1_epi8(0x1));
+        tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_backslash, _mm256_set1_epi8(0x2)));
+        tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_dblquote, _mm256_set1_epi8(0x4)));
+        tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_forward_slash, _mm256_set1_epi8(0x8)));
+
+        uint8_t arr[32];
+        _mm256_storeu_si256((__m256i *) arr, tmp);
+
+        for (int i = 0; i < 32; ) {
+            unsigned long start = pos;
+            unsigned char ch = ptr[pos];
+            unsigned char ch_len = arr[i];
+            switch(ch_len) {
+                case 0x1:
+                case 0x2:
+                case 0x4:
+                case 0x8:
+                    ch_len = 9;
+                    break;
+                default:
+                    ch_len = script_safe_escape_table[ch];
+            }
+            // This must remain in sync with the array `escape_table`.
+            if (RB_UNLIKELY(ch_len)) {
+                PROCESS_BYTE;
+            } else {
+                pos++;
+            }
+
+            i += (pos - start);
+        }
+    }
+
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = script_safe_escape_table[ch];
+        /* JSON encoding */
+
+        PROCESS_BYTE;
+    }
+
+    if (beg < len) {
+        fbuffer_append(out_buffer, &ptr[beg], len - beg);
+    }
+
+    RB_GC_GUARD(str);
+}
+
+#ifdef __clang__
+__attribute__((target("avx2")))
+#endif /* __clang__ */
+static void convert_UTF8_to_JSON_avx2(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+{
+    if (escape_table == script_safe_escape_table) {
+        convert_UTF8_to_JSON_script_safe_avx2(out_buffer, str);
+    } else {
+        convert_UTF8_to_JSON_escape_table_avx2(out_buffer, str);
+    }
+}
+
+#ifdef __GNU_C__
+#pragma GCC pop_options
+#endif /* __GNU_C__ */
+
+#endif /* HAVE_TYPE___M256I */
+
 #endif /* x86_64 support */
 
 
@@ -1092,22 +1298,6 @@ static void state_init(JSON_Generator_State *state)
 {
     state->max_nesting = 100;
     state->buffer_initial_length = FBUFFER_INITIAL_LENGTH_DEFAULT;
-    // TODO ADD RUNTIME CHECKS HERE?
-
-    switch(find_simd_implementation()) {
-#ifdef HAVE_SIMD_NEON
-        case SIMD_NEON:
-            state->convert_UTF8_to_JSON = convert_UTF8_to_JSON_neon;
-            break;
-#endif
-#ifdef HAVE_SIMD_X86_64
-        case SIMD_SSE4:
-            state->convert_UTF8_to_JSON = convert_UTF8_to_JSON_sse;
-            break;
-#endif
-        default:
-            state->convert_UTF8_to_JSON = convert_UTF8_to_JSON;
-    }
 }
 
 static VALUE cState_s_allocate(VALUE klass)
@@ -1329,7 +1519,7 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
             if (RB_UNLIKELY(state->ascii_only)) {
                 convert_UTF8_to_ASCII_only_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : ascii_only_escape_table);
             } else {
-                state->convert_UTF8_to_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : escape_table);
+                convert_UTF8_to_JSON_impl(buffer, obj, state->script_safe ? script_safe_escape_table : escape_table);
             }
             break;
         default:
@@ -1531,7 +1721,6 @@ static VALUE cState_init_copy(VALUE obj, VALUE orig)
     objState->space_before = origState->space_before;
     objState->object_nl = origState->object_nl;
     objState->array_nl = origState->array_nl;
-    objState->convert_UTF8_to_JSON = origState->convert_UTF8_to_JSON;
     return obj;
 }
 
@@ -2088,4 +2277,25 @@ void Init_generator(void)
     binary_encindex = rb_ascii8bit_encindex();
 
     rb_require("json/ext/generator/state");
+
+       // TODO ADD RUNTIME CHECKS HERE?
+    switch(find_simd_implementation()) {
+#ifdef HAVE_SIMD_NEON
+        case SIMD_NEON:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_neon;
+            break;
+#endif
+#ifdef HAVE_SIMD_X86_64
+        case SIMD_SSE4:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_sse;
+            break;
+#ifdef HAVE_TYPE___M256I
+        case SIMD_AVX2:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_avx2;
+            break;
+#endif /* HAVE_TYPE___M256I */
+#endif
+        default:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON;
+    }
 }

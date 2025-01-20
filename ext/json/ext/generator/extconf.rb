@@ -31,9 +31,7 @@ else
         end
       elsif have_header('x86intrin.h')
         
-        # This is currently hardcoded to false as using m256 seems significantly slower on my machine.
-        # TODO make this configurable
-        if false && have_type('__m256i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
+        if have_type('__m256i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
           #include <x86intrin.h>
           int main() {
               __m256i test = _mm256_set1_epi8(32);
@@ -41,14 +39,16 @@ else
           }
           SRC
           $defs.push("-DENABLE_SIMD")
-        elsif have_type('__m128i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
+        end
+        
+        if have_type('__m128i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
           #include <x86intrin.h>
           int main() {
               __m128i test = _mm_set1_epi8(32);
               return 0;
           }
           SRC
-            $defs.push("-DENABLE_SIMD")
+            $defs.push("-DENABLE_SIMD") unless $defs.include?('-DENABLE_SIMD')
         end
       end
 
