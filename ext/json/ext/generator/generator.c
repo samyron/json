@@ -4,6 +4,7 @@
 #include <math.h>
 #include <ctype.h>
 
+#include "extconf.h"
 #include "simd.h"
 
 /* ruby api and some helpers */
@@ -35,6 +36,11 @@ static ID i_to_s, i_to_json, i_new, i_pack, i_unpack, i_create_id, i_extend, i_e
 static ID sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan,
           sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict;
 
+static void (*convert_UTF8_to_JSON_impl)(FBuffer *, VALUE, const unsigned char escape_table[256]);
+
+#ifdef ENABLE_SIMD
+static void (*convert_UTF8_to_JSON_simd_kernel)(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]);
+#endif
 
 #define GET_STATE_TO(self, state) \
     TypedData_Get_Struct(self, JSON_Generator_State, &JSON_Generator_State_type, state)
@@ -230,7 +236,8 @@ static const unsigned char script_safe_escape_table[256] = {
                 pos++; \
             }
 
-static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
+#ifdef ENABLE_SIMD
+static void convert_UTF8_to_JSON_simd(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -240,100 +247,12 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
 
     unsigned long beg = 0, pos = 0;
 
-#ifdef ENABLE_SIMD
-    /*
-     * The code below implements an SIMD-based algorithm to determine if N bytes at a time
-     * need to be escaped. 
-     * 
-     * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
-     * 
-     * The explanination will be limited to the first 8 bytes of the string for simplicity. However
-     * the vector insructions may work on larger vectors.
-     * 
-     * First, we load three constants 'lower_bound', 'backslash' and 'dblquote" in vector registers.
-     * 
-     * lower_bound: [20 20 20 20 20 20 20 20] 
-     * backslash:   [5C 5C 5C 5C 5C 5C 5C 5C] 
-     * dblquote:    [22 22 22 22 22 22 22 22] 
-     * 
-     * Next we load the first chunk of the ptr: 
-     * [22 54 65 5C 73 74 69 6E] ("  T  e  \  s  t  i  n)
-     * 
-     * First we check if any byte in chunk is less than 32 (0x20). This returns the following vector
-     * as no bytes are less than 32 (0x20):
-     * [0 0 0 0 0 0 0 0]
-     * 
-     * Next, we check if any byte in chunk is equal to a backslash:
-     * [0 0 0 FF 0 0 0 0]
-     * 
-     * Finally we check if any byte in chunk is equal to a double quote:
-     * [FF 0 0 0 0 0 0 0] 
-     * 
-     * Now we have three vectors where each byte indicates if the corresponding byte in chunk
-     * needs to be escaped. We combine these vectors with a series of logical OR instructions.
-     * This is the needs_escape vector and it is equal to:
-     * [FF 0 0 FF 0 0 0 0] 
-     * 
-     * For ARM Neon specifically, we check if the maximum number in the vector is 0. The maximum of
-     * the needs_escape vector is FF. Therefore, we know there is at least one byte that needs to be
-     * escaped.
-     * 
-     * If the maximum of the needs_escape vector is 0, none of the bytes need to be escaped and
-     * we advance pos by the width of the vector.
-     * 
-     * To determine how to escape characters, we look at each value in the needs_escape vector and take
-     * the appropriate action.
-     */
-
-    const simd_vec_type lower_bound = simd_vec_from_byte(' '); 
-    const simd_vec_type backslash   = simd_vec_from_byte('\\');
-    const simd_vec_type dblquote    = simd_vec_from_byte('\"');
-
-    while (pos+SIMD_VEC_STRIDE < len) {
-        simd_vec_type chunk         = simd_vec_load_from_mem((const uint8_t*)&ptr[pos]);
-        simd_vec_type too_low       = simd_vec_lt(chunk, lower_bound);
-        simd_vec_type has_backslash = simd_vec_eq(chunk, backslash);
-        simd_vec_type has_dblquote  = simd_vec_eq(chunk, dblquote);
-        simd_vec_type needs_escape  = simd_vec_or(too_low, simd_vec_or(has_backslash, has_dblquote));
-
-        if (simd_vec_all_zero(needs_escape)) {
-            pos += SIMD_VEC_STRIDE;
-            continue;
-        }
-
-        /*
-        * TODO Consider making another type simd_vec_mask. The reason being on x86 we can use _mm_movemask_epi8
-        * to get a mask rather than storing the vector to memory. 
-        * 
-        * We would need another function like simd_vec_mask_position_set(mask, pos) which returns true
-        * if the bit/byte (implementation defined) at position 'pos' is non-zero.
-        */
-
-        uint8_t arr[SIMD_VEC_STRIDE];
-        simd_vec_to_memory(arr, needs_escape);
-
-        for (int i = 0; i < 16; i++) {
-            unsigned char ch = ptr[pos];
-            unsigned char ch_len = arr[i];
-            
-            // This must remain in sync with the array `escape_table`.
-            if (RB_UNLIKELY(ch_len)) {
-                ch_len = 9;
-                PROCESS_BYTE;
-            } else {
-                pos++;
-            }
-        }
-    }
-
-#endif
-
+    convert_UTF8_to_JSON_simd_kernel(out_buffer, ptr, len, &beg, &pos, hexdig, scratch, escape_table);
+    
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = escape_table[ch];
-        /* JSON encoding */
-
-        PROCESS_BYTE
+        PROCESS_BYTE;
     }
 
     if (beg < len) {
@@ -342,8 +261,432 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str)
 
     RB_GC_GUARD(str);
 }
+#endif 
 
-static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
+#ifdef HAVE_SIMD_NEON
+
+void convert_UTF8_to_JSON_simd_kernel_neon(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]) {
+    unsigned long beg = *_beg, pos = *_pos;
+        
+    const uint8x16_t lower_bound = vdupq_n_u8(' '); 
+    const uint8x16_t backslash   = vdupq_n_u8('\\');
+    const uint8x16_t dblquote    = vdupq_n_u8('\"');
+
+    if (escape_table == script_safe_escape_table) {
+        /*
+        * This works almost exactly the same as what is described above. The difference in this case comes after we know
+        * there is a byte to be escaped. In the previous case, all bytes were handled the same way. In this case, however,
+        * some bytes need to be handled differently. 
+        * 
+        * Since we know each byte in chunk can only match a single case, we logical AND each of the has_backslash,
+        * has_dblquote, and has_forward_slash with a different bit (0x1, 0x2 and 0x4 respectively) and combine
+        * the results with a logical OR. 
+        * 
+        * Now we loop over the result vector and switch on the particular pattern we just created. If we find a 
+        * case we don't know, we simply lookup the byte in the script_safe_escape_table to determine the correct
+        * action.
+        */
+        const uint8x16_t upper_bound     = vdupq_n_u8('~');
+        const uint8x16_t forward_slash   = vdupq_n_u8('/');
+
+        while (pos+16 < len) {
+            uint8x16_t chunk             = vld1q_u8((const uint8_t*)&ptr[pos]);
+            uint8x16_t too_low           = vcltq_u8(chunk, lower_bound);
+            uint8x16_t too_high          = vcgtq_u8(chunk, upper_bound);
+
+            uint8x16_t has_backslash     = vceqq_u8(chunk, backslash);
+            uint8x16_t has_dblquote      = vceqq_u8(chunk, dblquote);
+            uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
+
+            uint8x16_t needs_escape      = vorrq_u8(too_low, too_high);
+            uint8x16_t has_escaped_char  = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
+            needs_escape                 = vorrq_u8(needs_escape, has_escaped_char);
+
+            if (vmaxvq_u8(needs_escape) == 0) {
+                pos += 16;
+                continue;
+            }
+
+            uint8x16_t tmp = vandq_u8(too_low, vdupq_n_u8(0x1));
+            tmp = vorrq_u8(tmp, vandq_u8(has_backslash, vdupq_n_u8(0x2)));
+            tmp = vorrq_u8(tmp, vandq_u8(has_dblquote, vdupq_n_u8(0x4)));
+            tmp = vorrq_u8(tmp, vandq_u8(has_forward_slash, vdupq_n_u8(0x8)));
+
+            uint8_t arr[16];
+            vst1q_u8(arr, tmp);
+            
+            for (int i = 0; i < 16; ) {
+                unsigned long start = pos;
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = arr[i];
+                switch(ch_len) {
+                    case 0x1:
+                    case 0x2:
+                    case 0x4:
+                    case 0x8:
+                        ch_len = 9;
+                        break;
+                    default:
+                        ch_len = script_safe_escape_table[ch];
+                }
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(ch_len)) {
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }
+
+                i += (pos - start);
+            }
+        }
+    } else {
+        /*
+        * The code below implements an SIMD-based algorithm to determine if N bytes at a time
+        * need to be escaped. 
+        * 
+        * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
+        * 
+        * The explanination will be limited to the first 8 bytes of the string for simplicity. However
+        * the vector insructions may work on larger vectors.
+        * 
+        * First, we load three constants 'lower_bound', 'backslash' and 'dblquote" in vector registers.
+        * 
+        * lower_bound: [20 20 20 20 20 20 20 20] 
+        * backslash:   [5C 5C 5C 5C 5C 5C 5C 5C] 
+        * dblquote:    [22 22 22 22 22 22 22 22] 
+        * 
+        * Next we load the first chunk of the ptr: 
+        * [22 54 65 5C 73 74 69 6E] ("  T  e  \  s  t  i  n)
+        * 
+        * First we check if any byte in chunk is less than 32 (0x20). This returns the following vector
+        * as no bytes are less than 32 (0x20):
+        * [0 0 0 0 0 0 0 0]
+        * 
+        * Next, we check if any byte in chunk is equal to a backslash:
+        * [0 0 0 FF 0 0 0 0]
+        * 
+        * Finally we check if any byte in chunk is equal to a double quote:
+        * [FF 0 0 0 0 0 0 0] 
+        * 
+        * Now we have three vectors where each byte indicates if the corresponding byte in chunk
+        * needs to be escaped. We combine these vectors with a series of logical OR instructions.
+        * This is the needs_escape vector and it is equal to:
+        * [FF 0 0 FF 0 0 0 0] 
+        * 
+        * For ARM Neon specifically, we check if the maximum number in the vector is 0. The maximum of
+        * the needs_escape vector is FF. Therefore, we know there is at least one byte that needs to be
+        * escaped.
+        * 
+        * If the maximum of the needs_escape vector is 0, none of the bytes need to be escaped and
+        * we advance pos by the width of the vector.
+        * 
+        * To determine how to escape characters, we look at each value in the needs_escape vector and take
+        * the appropriate action.
+        */
+        while (pos+16 < len) {
+            uint8x16_t chunk         = vld1q_u8((const uint8_t*)&ptr[pos]);
+            uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
+            uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+            uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
+            uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
+
+            if (vmaxvq_u8(needs_escape) == 0) {
+                pos += 16;
+                continue;
+            }
+
+            /*
+            * TODO Consider making another type simd_vec_mask. The reason being on x86 we can use _mm_movemask_epi8
+            * to get a mask rather than storing the vector to memory. 
+            * 
+            * We would need another function like simd_vec_mask_position_set(mask, pos) which returns true
+            * if the bit/byte (implementation defined) at position 'pos' is non-zero.
+            */
+
+            uint8_t arr[16];
+            vst1q_u8(arr, needs_escape);
+
+            for (int i = 0; i < 16; i++) {
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = arr[i];
+                
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(ch_len)) {
+                    ch_len = 9;
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }
+            }
+        }
+    }
+
+    *_beg = beg;
+    *_pos = pos;
+}
+
+#endif /* HAVE_SIMD_NEON */
+
+#ifdef HAVE_SIMD_X86_64
+
+#ifdef HAVE_TYPE___M128I
+#ifdef __GNUC__
+#pragma GCC push_options
+#pragma GCC target ("sse4")
+#endif /* __GNUC__ */
+
+#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
+void convert_UTF8_to_JSON_simd_kernel_sse42(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]) {
+    unsigned long beg = *_beg, pos = *_pos;
+
+    if (escape_table == script_safe_escape_table) {
+        /*
+        * Again, this is basically a straight port of the ARM Neon version.
+        */
+        const __m128i lower_bound     = _mm_set1_epi8(' '); 
+        const __m128i upper_bound     = _mm_set1_epi8('~');
+        const __m128i backslash       = _mm_set1_epi8('\\');
+        const __m128i dblquote        = _mm_set1_epi8('\"');
+        const __m128i forward_slash   = _mm_set1_epi8('/');
+
+        while (pos+16 < len) {
+            __m128i chunk             = _mm_loadu_si128((__m128i const*)&ptr[pos]);
+            __m128i too_low           = _mm_cmplt_epu8(chunk, lower_bound);
+            __m128i too_high          = _mm_cmpgt_epu8(chunk, upper_bound);
+
+            __m128i has_backslash     = _mm_cmpeq_epi8(chunk, backslash);
+            __m128i has_dblquote      = _mm_cmpeq_epi8(chunk, dblquote);
+            __m128i has_forward_slash = _mm_cmpeq_epi8(chunk, forward_slash);
+
+            __m128i needs_escape      = _mm_or_si128(too_low, too_high);
+            __m128i has_escaped_char  = _mm_or_si128(has_forward_slash, _mm_or_si128(has_backslash, has_dblquote));
+            needs_escape              = _mm_or_si128(needs_escape, has_escaped_char);
+
+            int needs_escape_mask     = _mm_movemask_epi8(needs_escape);
+            if (needs_escape_mask == 0) {
+                pos += 16;
+                continue;
+            }
+
+            __m128i tmp = _mm_and_si128(too_low, _mm_set1_epi8(0x1));
+            tmp = _mm_or_si128(tmp, _mm_and_si128(has_backslash, _mm_set1_epi8(0x2)));
+            tmp = _mm_or_si128(tmp, _mm_and_si128(has_dblquote, _mm_set1_epi8(0x4)));
+            tmp = _mm_or_si128(tmp, _mm_and_si128(has_forward_slash, _mm_set1_epi8(0x8)));
+
+            uint8_t arr[16];
+            _mm_storeu_si128((__m128i *) arr, tmp);
+
+            for (int i = 0; i < 16; ) {
+                unsigned long start = pos;
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = arr[i];
+                switch(ch_len) {
+                    case 0x1:
+                    case 0x2:
+                    case 0x4:
+                    case 0x8:
+                        ch_len = 9;
+                        break;
+                    default:
+                        ch_len = script_safe_escape_table[ch];
+                }
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(ch_len)) {
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }
+
+                i += (pos - start);
+            }
+        }
+    } else {
+        /*
+        * This is a straight port of the ARM Neon implementation to SSE4. This is 
+        * likely not optimal for this instruction set. There is likely table lookup,
+        * shuffle, gather, blend, etc. instructions that may perform significantly
+        * better than what is implemented here.
+        */
+
+        const __m128i lower_bound = _mm_set1_epi8(' '); 
+        const __m128i backslash   = _mm_set1_epi8('\\');
+        const __m128i dblquote    = _mm_set1_epi8('\"');
+
+        while (pos+16 < len) {
+            __m128i chunk         = _mm_loadu_si128((__m128i const*)&ptr[pos]);
+            __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
+            __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
+            __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
+            __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+
+            int needs_escape_mask = _mm_movemask_epi8(needs_escape);
+
+            if (needs_escape_mask == 0) {
+                pos += 16;
+                continue;
+            }
+
+            for (int i = 0; i < 16; i++) {
+                int bit = needs_escape_mask & (1 << i);
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = 0;
+                
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(bit)) {
+                    ch_len = 9;
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }   
+            }
+        }
+    }
+
+    *_beg = beg;
+    *_pos = pos;
+}
+
+#ifdef __GNUC__
+#pragma GCC pop_options
+#endif /* __GNUC__ */
+#endif /* HAVE_TYPE___M128I */
+
+#ifdef HAVE_TYPE___M256I
+#ifdef __GNUC__
+#pragma GCC push_options
+#pragma GCC target ("avx2")
+#endif /* __GNUC__ */
+
+#define _mm256_cmpge_epu8(a, b) _mm256_cmpeq_epi8(_mm256_max_epu8(a, b), a)
+#define _mm256_cmple_epu8(a, b) _mm256_cmpge_epu8(b, a)
+#define _mm256_cmpgt_epu8(a, b) _mm256_xor_si256(_mm256_cmple_epu8(a, b), _mm256_set1_epi8(-1))
+#define _mm256_cmplt_epu8(a, b) _mm256_cmpgt_epu8(b, a)
+
+#ifdef __clang__
+__attribute__((target("avx2")))
+#endif /* __clang__ */
+void convert_UTF8_to_JSON_simd_kernel_avx2(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]) {
+    unsigned long beg = *_beg, pos = *_pos;
+
+    const __m256i lower_bound = _mm256_set1_epi8(' '); 
+    const __m256i backslash   = _mm256_set1_epi8('\\');
+    const __m256i dblquote    = _mm256_set1_epi8('\"');
+
+    if (escape_table == script_safe_escape_table) {
+        /*
+        * Again, this is basically a straight port of the ARM Neon version.
+        */
+        const __m256i upper_bound     = _mm256_set1_epi8('~');
+        const __m256i forward_slash   = _mm256_set1_epi8('/');
+
+        while (pos+32 < len) {
+            __m256i chunk             = _mm256_loadu_si256((__m256i const*)&ptr[pos]);
+            __m256i too_low           = _mm256_cmplt_epu8(chunk, lower_bound);
+            __m256i too_high          = _mm256_cmpgt_epu8(chunk, upper_bound);
+
+            __m256i has_backslash     = _mm256_cmpeq_epi8(chunk, backslash);
+            __m256i has_dblquote      = _mm256_cmpeq_epi8(chunk, dblquote);
+            __m256i has_forward_slash = _mm256_cmpeq_epi8(chunk, forward_slash);
+
+            __m256i needs_escape      = _mm256_or_si256(too_low, too_high);
+            __m256i has_escaped_char  = _mm256_or_si256(has_forward_slash, _mm256_or_si256(has_backslash, has_dblquote));
+            needs_escape              = _mm256_or_si256(needs_escape, has_escaped_char);
+
+            int needs_escape_mask     = _mm256_movemask_epi8(needs_escape);
+            if (needs_escape_mask == 0) {
+                pos += 32;
+                continue;
+            }
+
+            __m256i tmp = _mm256_and_si256(too_low, _mm256_set1_epi8(0x1));
+            tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_backslash, _mm256_set1_epi8(0x2)));
+            tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_dblquote, _mm256_set1_epi8(0x4)));
+            tmp = _mm256_or_si256(tmp, _mm256_and_si256(has_forward_slash, _mm256_set1_epi8(0x8)));
+
+            uint8_t arr[32];
+            _mm256_storeu_si256((__m256i *) arr, tmp);
+
+            for (int i = 0; i < 32; ) {
+                unsigned long start = pos;
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = arr[i];
+                switch(ch_len) {
+                    case 0x1:
+                    case 0x2:
+                    case 0x4:
+                    case 0x8:
+                        ch_len = 9;
+                        break;
+                    default:
+                        ch_len = script_safe_escape_table[ch];
+                }
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(ch_len)) {
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }
+
+                i += (pos - start);
+            }
+        }
+    } else {
+        /*
+        * This is a straight port of the ARM Neon implementation to SSE4. This is 
+        * likely not optimal for this instruction set. There is likely table lookup,
+        * shuffle, gather, blend, etc. instructions that may perform significantly
+        * better than what is implemented here.
+        */
+        while (pos+32 < len) {
+            __m256i chunk         = _mm256_loadu_si256((__m256i const*)&ptr[pos]);
+            __m256i too_low       = _mm256_cmplt_epu8(chunk, lower_bound);
+            __m256i has_backslash = _mm256_cmpeq_epi8(chunk, backslash);
+            __m256i has_dblquote  = _mm256_cmpeq_epi8(chunk, dblquote);
+            __m256i needs_escape  = _mm256_or_si256(too_low, _mm256_or_si256(has_backslash, has_dblquote));
+
+            int needs_escape_mask = _mm256_movemask_epi8(needs_escape);
+
+            if (needs_escape_mask == 0) {
+                pos += 32;
+                continue;
+            }
+
+            for (int i = 0; i < 32; i++) {
+                int bit = needs_escape_mask & (1 << i);
+                unsigned char ch = ptr[pos];
+                unsigned char ch_len = 0;
+                
+                // This must remain in sync with the array `escape_table`.
+                if (RB_UNLIKELY(bit)) {
+                    ch_len = 9;
+                    PROCESS_BYTE;
+                } else {
+                    pos++;
+                }   
+            }
+        }
+    }
+    *_beg = beg;
+    *_pos = pos;
+}
+
+#ifdef __GNUC__
+#pragma GCC pop_options
+#endif /* __GNUC__ */
+
+#endif /* HAVE_TYPE___M256I */
+
+#endif /* x86_64 support */
+
+
+static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -353,83 +696,9 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 
     unsigned long beg = 0, pos = 0;
 
-#define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
-
-#ifdef ENABLE_SIMD
-    /*
-    * This works almost exactly the same as what is described above. The difference in this case comes after we know
-    * there is a byte to be escaped. In the previous case, all bytes were handled the same way. In this case, however,
-    * some bytes need to be handled differently. 
-    * 
-    * Since we know each byte in chunk can only match a single case, we logical AND each of the has_backslash,
-    * has_dblquote, and has_forward_slash with a different bit (0x1, 0x2 and 0x4 respectively) and combine
-    * the results with a logical OR. 
-    * 
-    * Now we loop over the result vector and switch on the particular pattern we just created. If we find a 
-    * case we don't know, we simply lookup the byte in the script_safe_escape_table to determine the correct
-    * action.
-    */
-    const simd_vec_type lower_bound     = simd_vec_from_byte(' '); 
-    const simd_vec_type upper_bound     = simd_vec_from_byte('~');
-    const simd_vec_type backslash       = simd_vec_from_byte('\\');
-    const simd_vec_type dblquote        = simd_vec_from_byte('\"');
-    const simd_vec_type forward_slash   = simd_vec_from_byte('/');
-
-    while (pos+SIMD_VEC_STRIDE < len) {
-        simd_vec_type chunk             = simd_vec_load_from_mem((const uint8_t*)&ptr[pos]);
-        simd_vec_type too_low           = simd_vec_lt(chunk, lower_bound);
-        simd_vec_type too_high          = simd_vec_gt(chunk, upper_bound);
-
-        simd_vec_type has_backslash     = simd_vec_eq(chunk, backslash);
-        simd_vec_type has_dblquote      = simd_vec_eq(chunk, dblquote);
-        simd_vec_type has_forward_slash = simd_vec_eq(chunk, forward_slash);
-
-        simd_vec_type needs_escape      = simd_vec_or(too_low, too_high);
-        simd_vec_type has_escaped_char  = simd_vec_or(has_forward_slash, simd_vec_or(has_backslash, has_dblquote));
-        needs_escape                    = simd_vec_or(needs_escape, has_escaped_char);
-
-        if (simd_vec_all_zero(needs_escape)) {
-            pos += SIMD_VEC_STRIDE;
-            continue;
-        }
-
-        simd_vec_type tmp = simd_vec_and(too_low, simd_vec_from_byte(0x1));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_backslash, simd_vec_from_byte(0x2)));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_dblquote, simd_vec_from_byte(0x4)));
-        tmp = simd_vec_or(tmp, simd_vec_and(has_forward_slash, simd_vec_from_byte(0x8)));
-
-        uint8_t arr[SIMD_VEC_STRIDE];
-        simd_vec_to_memory(arr, tmp);
-        
-        for (int i = 0; i < 16; ) {
-            unsigned long start = pos;
-            unsigned char ch = ptr[pos];
-            unsigned char ch_len = arr[i];
-            switch(ch_len) {
-                case 0x1:
-                case 0x2:
-                case 0x4:
-                case 0x8:
-                    ch_len = 9;
-                    break;
-                default:
-                    ch_len = script_safe_escape_table[ch];
-            }
-            // This must remain in sync with the array `escape_table`.
-            if (RB_UNLIKELY(ch_len)) {
-                PROCESS_BYTE;
-            } else {
-                pos++;
-            }
-
-            i += (pos - start);
-        }
-    }
-#endif
-
     while (pos < len) {
         unsigned char ch = ptr[pos];
-        unsigned char ch_len = script_safe_escape_table[ch];
+        unsigned char ch_len = escape_table[ch];
         /* JSON encoding */
 
         PROCESS_BYTE;
@@ -444,84 +713,6 @@ static void convert_UTF8_to_JSON_script_safe(FBuffer *out_buffer, VALUE str)
 
 #undef PROCESS_BYTE
 
-#define PROCESS_BYTE 		if (RB_UNLIKELY(ch_len)) { \
-            switch (ch_len) { \
-                case 9: { \
-                    FLUSH_POS(1); \
-                    switch (ch) { \
-                        case '"':  fbuffer_append(out_buffer, "\\\"", 2); break; \
-                        case '\\': fbuffer_append(out_buffer, "\\\\", 2); break; \
-                        case '/':  fbuffer_append(out_buffer, "\\/", 2); break; \
-                        case '\b': fbuffer_append(out_buffer, "\\b", 2); break; \
-                        case '\f': fbuffer_append(out_buffer, "\\f", 2); break; \
-                        case '\n': fbuffer_append(out_buffer, "\\n", 2); break; \
-                        case '\r': fbuffer_append(out_buffer, "\\r", 2); break; \
-                        case '\t': fbuffer_append(out_buffer, "\\t", 2); break; \
-                        default: { \
-                            scratch[2] = '0'; \
-                            scratch[3] = '0'; \
-                            scratch[4] = hexdig[(ch >> 4) & 0xf]; \
-                            scratch[5] = hexdig[ch & 0xf]; \
-                            fbuffer_append(out_buffer, scratch, 6); \
-                            break; \
-                        } \
-                    } \
-                    break; \
-                } \
-                default: { \
-                    uint32_t wchar = 0; \
-                    ch_len = ch_len & CHAR_LENGTH_MASK; \
- \
-                    switch(ch_len) { \
-                        case 2: \
-                            wchar = ptr[pos] & 0x1F; \
-                            break; \
-                        case 3: \
-                            wchar = ptr[pos] & 0x0F; \
-                            break; \
-                        case 4: \
-                            wchar = ptr[pos] & 0x07; \
-                            break; \
-                    } \
- \
-                    for (short i = 1; i < ch_len; i++) { \
-                        wchar = (wchar << 6) | (ptr[pos+i] & 0x3F); \
-                    } \
- \
-                    FLUSH_POS(ch_len); \
- \
-                    if (wchar <= 0xFFFF) { \
-                        scratch[2] = hexdig[wchar >> 12]; \
-                        scratch[3] = hexdig[(wchar >> 8) & 0xf]; \
-                        scratch[4] = hexdig[(wchar >> 4) & 0xf]; \
-                        scratch[5] = hexdig[wchar & 0xf]; \
-                        fbuffer_append(out_buffer, scratch, 6); \
-                    } else { \
-                        uint16_t hi, lo; \
-                        wchar -= 0x10000; \
-                        hi = 0xD800 + (uint16_t)(wchar >> 10); \
-                        lo = 0xDC00 + (uint16_t)(wchar & 0x3FF); \
- \
-                        scratch[2] = hexdig[hi >> 12]; \
-                        scratch[3] = hexdig[(hi >> 8) & 0xf]; \
-                        scratch[4] = hexdig[(hi >> 4) & 0xf]; \
-                        scratch[5] = hexdig[hi & 0xf]; \
- \
-                        scratch[8] = hexdig[lo >> 12]; \
-                        scratch[9] = hexdig[(lo >> 8) & 0xf]; \
-                        scratch[10] = hexdig[(lo >> 4) & 0xf]; \
-                        scratch[11] = hexdig[lo & 0xf]; \
- \
-                        fbuffer_append(out_buffer, scratch, 12); \
-                    } \
- \
-                    break; \
-                } \
-            } \
-        } else { \
-            pos++; \
-        } 
-
 static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     const char *hexdig = "0123456789abcdef";
@@ -532,42 +723,87 @@ static void convert_UTF8_to_ASCII_only_JSON(FBuffer *out_buffer, VALUE str, cons
 
     unsigned long beg = 0, pos = 0;
 
-#ifdef ENABLE_SIMD
-    const simd_vec_type lower_bound   = simd_vec_from_byte(' '); 
-    const simd_vec_type upper_bound   = simd_vec_from_byte('~');
-    const simd_vec_type backslash     = simd_vec_from_byte('\\');
-    const simd_vec_type dblquote      = simd_vec_from_byte('\"');
-
-    while (pos+SIMD_VEC_STRIDE < len) {
-        simd_vec_type chunk           = simd_vec_load_from_mem((const uint8_t*)&ptr[pos]);
-        simd_vec_type too_low         = simd_vec_lt(chunk, lower_bound);
-        simd_vec_type too_high        = simd_vec_gt(chunk, upper_bound);
-        simd_vec_type invalid         = simd_vec_or(too_low, too_high);
-
-        simd_vec_type has_backslash   = simd_vec_eq(chunk, backslash);
-        simd_vec_type has_dblquote    = simd_vec_eq(chunk, dblquote);
-        simd_vec_type has_escape_char = simd_vec_or(has_backslash, has_dblquote);
-
-        if (escape_table == script_safe_escape_table) {
-            simd_vec_type forward_slash      = simd_vec_from_byte('/');
-            simd_vec_type has_forward_slash  = simd_vec_eq(chunk, forward_slash);
-            has_escape_char                  = simd_vec_or(has_escape_char, has_forward_slash);
-            invalid                          = simd_vec_or(invalid, has_escape_char);
-        }
-
-        if (simd_vec_any_set(invalid)) {
-            break;
-        }
-
-        pos += SIMD_VEC_STRIDE;
-    }
-#endif
-
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = escape_table[ch];
 
-        PROCESS_BYTE
+        if (RB_UNLIKELY(ch_len)) { 
+            switch (ch_len) { 
+                case 9: { 
+                    FLUSH_POS(1); 
+                    switch (ch) { 
+                        case '"':  fbuffer_append(out_buffer, "\\\"", 2); break; 
+                        case '\\': fbuffer_append(out_buffer, "\\\\", 2); break; 
+                        case '/':  fbuffer_append(out_buffer, "\\/", 2); break; 
+                        case '\b': fbuffer_append(out_buffer, "\\b", 2); break; 
+                        case '\f': fbuffer_append(out_buffer, "\\f", 2); break; 
+                        case '\n': fbuffer_append(out_buffer, "\\n", 2); break; 
+                        case '\r': fbuffer_append(out_buffer, "\\r", 2); break; 
+                        case '\t': fbuffer_append(out_buffer, "\\t", 2); break; 
+                        default: { 
+                            scratch[2] = '0'; 
+                            scratch[3] = '0'; 
+                            scratch[4] = hexdig[(ch >> 4) & 0xf]; 
+                            scratch[5] = hexdig[ch & 0xf]; 
+                            fbuffer_append(out_buffer, scratch, 6); 
+                            break; 
+                        } 
+                    } 
+                    break; 
+                } 
+                default: { 
+                    uint32_t wchar = 0; 
+                    ch_len = ch_len & CHAR_LENGTH_MASK; 
+ 
+                    switch(ch_len) { 
+                        case 2: 
+                            wchar = ptr[pos] & 0x1F; 
+                            break; 
+                        case 3: 
+                            wchar = ptr[pos] & 0x0F; 
+                            break; 
+                        case 4: 
+                            wchar = ptr[pos] & 0x07; 
+                            break; 
+                    } 
+ 
+                    for (short i = 1; i < ch_len; i++) { 
+                        wchar = (wchar << 6) | (ptr[pos+i] & 0x3F); 
+                    } 
+ 
+                    FLUSH_POS(ch_len); 
+ 
+                    if (wchar <= 0xFFFF) { 
+                        scratch[2] = hexdig[wchar >> 12]; 
+                        scratch[3] = hexdig[(wchar >> 8) & 0xf]; 
+                        scratch[4] = hexdig[(wchar >> 4) & 0xf]; 
+                        scratch[5] = hexdig[wchar & 0xf]; 
+                        fbuffer_append(out_buffer, scratch, 6); 
+                    } else { 
+                        uint16_t hi, lo; 
+                        wchar -= 0x10000; 
+                        hi = 0xD800 + (uint16_t)(wchar >> 10); 
+                        lo = 0xDC00 + (uint16_t)(wchar & 0x3FF); 
+ 
+                        scratch[2] = hexdig[hi >> 12]; 
+                        scratch[3] = hexdig[(hi >> 8) & 0xf]; 
+                        scratch[4] = hexdig[(hi >> 4) & 0xf]; 
+                        scratch[5] = hexdig[hi & 0xf]; 
+ 
+                        scratch[8] = hexdig[lo >> 12]; 
+                        scratch[9] = hexdig[(lo >> 8) & 0xf]; 
+                        scratch[10] = hexdig[(lo >> 4) & 0xf]; 
+                        scratch[11] = hexdig[lo & 0xf]; 
+ 
+                        fbuffer_append(out_buffer, scratch, 12); 
+                    } 
+ 
+                    break; 
+                } 
+            } 
+        } else { 
+            pos++; 
+        } 
     }
 
     if (beg < len) {
@@ -1134,12 +1370,7 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
             if (RB_UNLIKELY(state->ascii_only)) {
                 convert_UTF8_to_ASCII_only_JSON(buffer, obj, state->script_safe ? script_safe_escape_table : ascii_only_escape_table);
             } else {
-                if (state->script_safe) {
-                    convert_UTF8_to_JSON_script_safe(buffer, obj);
-                }
-                else {
-                    convert_UTF8_to_JSON(buffer, obj);
-                }
+                convert_UTF8_to_JSON_impl(buffer, obj, state->script_safe ? script_safe_escape_table : escape_table);
             }
             break;
         default:
@@ -1897,4 +2128,28 @@ void Init_generator(void)
     binary_encindex = rb_ascii8bit_encindex();
 
     rb_require("json/ext/generator/state");
+
+       // TODO ADD RUNTIME CHECKS HERE?
+    switch(find_simd_implementation()) {
+#ifdef HAVE_SIMD_NEON
+        case SIMD_NEON:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_simd;
+            convert_UTF8_to_JSON_simd_kernel = convert_UTF8_to_JSON_simd_kernel_neon;
+            break;
+#endif
+#ifdef HAVE_SIMD_X86_64
+        case SIMD_SSE42:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_simd;
+            convert_UTF8_to_JSON_simd_kernel = convert_UTF8_to_JSON_simd_kernel_sse42;
+            break;
+#ifdef HAVE_TYPE___M256I
+        case SIMD_AVX2:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_simd;
+            convert_UTF8_to_JSON_simd_kernel = convert_UTF8_to_JSON_simd_kernel_avx2;
+            break;
+#endif /* HAVE_TYPE___M256I */
+#endif
+        default:
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON;
+    }
 }

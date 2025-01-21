@@ -424,6 +424,10 @@ class JSONGeneratorTest < Test::Unit::TestCase
     json = '["\\\\.(?i:gif|jpe?g|png)$"]'
     assert_equal json, generate(data)
     #
+    data = [ '\\.(?i:gif|jpe?g|png)\\.(?i:gif|jpe?g|png)\\.(?i:gif|jpe?g|png)\\.(?i:gif|jpe?g|png)\\.(?i:gif|jpe?g|png)$' ]
+    json = '["\\\\.(?i:gif|jpe?g|png)\\\\.(?i:gif|jpe?g|png)\\\\.(?i:gif|jpe?g|png)\\\\.(?i:gif|jpe?g|png)\\\\.(?i:gif|jpe?g|png)$"]'
+    assert_equal json, generate(data)
+    #
     data = [ '\\"' ]
     json = '["\\\\\""]'
     assert_equal json, generate(data)
@@ -432,8 +436,20 @@ class JSONGeneratorTest < Test::Unit::TestCase
     json = '["/"]'
     assert_equal json, generate(data)
     #
+    data = [ '////////////////////////////////////////////////////////////////////////////////////' ]
+    json = '["////////////////////////////////////////////////////////////////////////////////////"]'
+    assert_equal json, generate(data)
+    #
     data = [ '/' ]
     json = '["\/"]'
+    assert_equal json, generate(data, :script_safe => true)
+    #
+    data = [ '///////////' ]
+    json = '["\/\/\/\/\/\/\/\/\/\/\/"]'
+    assert_equal json, generate(data, :script_safe => true)
+    #
+    data = [ '///////////////////////////////////////////////////////' ]
+    json = '["\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/"]'
     assert_equal json, generate(data, :script_safe => true)
     #
     data = [ "\u2028\u2029" ]
@@ -444,8 +460,16 @@ class JSONGeneratorTest < Test::Unit::TestCase
     json = '["ABC \u2028 DEF \u2029 GHI"]'
     assert_equal json, generate(data, :script_safe => true)
     #
+    data = [ "ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI" ]
+    json = '["ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI ABC \u2028 DEF \u2029 GHI"]'
+    assert_equal json, generate(data, :script_safe => true)
+    #
     data = [ "/\u2028\u2029" ]
     json = '["\/\u2028\u2029"]'
+    assert_equal json, generate(data, :escape_slash => true)
+    #
+    data = [ "/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029/\u2028\u2029" ]
+    json = '["\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029\/\u2028\u2029"]'
     assert_equal json, generate(data, :escape_slash => true)
     #
     data = ['"']
@@ -459,6 +483,14 @@ class JSONGeneratorTest < Test::Unit::TestCase
     data = ["倩", "瀨"]
     json = '["倩","瀨"]'
     assert_equal json, generate(data, script_safe: true)
+    #
+    data = ["倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨", "倩", "瀨"]
+    json = '["倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨","倩","瀨"]'
+    assert_equal json, generate(data, script_safe: true)
+    #
+    data = '["This is a "test" of the emergency broadcast system."]'
+    json = "\"[\\\"This is a \\\"test\\\" of the emergency broadcast system.\\\"]\""
+    assert_equal json, generate(data)
   end
 
   def test_string_subclass
