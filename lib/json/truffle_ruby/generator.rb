@@ -105,16 +105,17 @@ module JSON
         # an unconfigured instance. If _opts_ is a State object, it is just
         # returned.
         def self.from_state(opts)
-          case
-          when self === opts
-            opts
-          when opts.respond_to?(:to_hash)
-            new(opts.to_hash)
-          when opts.respond_to?(:to_h)
-            new(opts.to_h)
-          else
-            SAFE_STATE_PROTOTYPE.dup
+          if opts
+            case
+            when self === opts
+              return opts
+            when opts.respond_to?(:to_hash)
+              return new(opts.to_hash)
+            when opts.respond_to?(:to_h)
+              return new(opts.to_h)
+            end
           end
+          SAFE_STATE_PROTOTYPE.dup
         end
 
         # Instantiates a new State object, configured by _opts_.
@@ -142,6 +143,7 @@ module JSON
           @array_nl              = ''
           @allow_nan             = false
           @ascii_only            = false
+          @as_json               = false
           @depth                 = 0
           @buffer_initial_length = 1024
           @script_safe           = false
@@ -166,6 +168,9 @@ module JSON
 
         # This string is put at the end of a line that holds a JSON array.
         attr_accessor :array_nl
+
+        # This proc converts unsupported types into native JSON types.
+        attr_accessor :as_json
 
         # This integer returns the maximum level of data structure nesting in
         # the generated JSON, max_nesting = 0 if no maximum is checked.
@@ -251,6 +256,7 @@ module JSON
           @object_nl             = opts[:object_nl]     || '' if opts.key?(:object_nl)
           @array_nl              = opts[:array_nl]      || '' if opts.key?(:array_nl)
           @allow_nan             = !!opts[:allow_nan]         if opts.key?(:allow_nan)
+          @as_json               = opts[:as_json].to_proc     if opts.key?(:as_json)
           @ascii_only            = opts[:ascii_only]          if opts.key?(:ascii_only)
           @depth                 = opts[:depth] || 0
           @buffer_initial_length ||= opts[:buffer_initial_length]
@@ -310,6 +316,10 @@ module JSON
           else
             result
           end
+        end
+
+        def generate_new(obj, anIO = nil) # :nodoc:
+          dup.generate(obj, anIO)
         end
 
         # Handles @allow_nan, @buffer_initial_length, other ivars must be the default value (see above)
@@ -403,8 +413,20 @@ module JSON
           # it to a JSON string, and returns the result. This is a fallback, if no
           # special method #to_json was defined for some object.
           def to_json(state = nil, *)
-            if state && State.from_state(state).strict?
-              raise GeneratorError.new("#{self.class} not allowed in JSON", self)
+            state = State.from_state(state) if state
+            if state&.strict?
+              value = self
+              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+                if state.as_json
+                  value = state.as_json.call(value)
+                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                    raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
+                  end
+                  value.to_json(state)
+                else
+                  raise GeneratorError.new("#{value.class} not allowed in JSON", value)
+                end
+              end
             else
               to_s.to_json
             end
@@ -454,8 +476,16 @@ module JSON
               end
 
               result = +"#{result}#{key_json}#{state.space_before}:#{state.space}"
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
-                raise GeneratorError.new("#{value.class} not allowed in JSON", value)
+              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+                if state.as_json
+                  value = state.as_json.call(value)
+                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                    raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
+                  end
+                  result << value.to_json(state)
+                else
+                  raise GeneratorError.new("#{value.class} not allowed in JSON", value)
+                end
               elsif value.respond_to?(:to_json)
                 result << value.to_json(state)
               else
@@ -507,8 +537,16 @@ module JSON
             each { |value|
               result << delim unless first
               result << state.indent * depth if indent
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value)
-                raise GeneratorError.new("#{value.class} not allowed in JSON", value)
+              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+                if state.as_json
+                  value = state.as_json.call(value)
+                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                    raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
+                  end
+                  result << value.to_json(state)
+                else
+                  raise GeneratorError.new("#{value.class} not allowed in JSON", value)
+                end
               elsif value.respond_to?(:to_json)
                 result << value.to_json(state)
               else

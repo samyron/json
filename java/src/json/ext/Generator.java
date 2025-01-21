@@ -5,6 +5,8 @@
  */
 package json.ext;
 
+import json.ext.RuntimeInfo;
+
 import org.jcodings.Encoding;
 import org.jcodings.specific.ASCIIEncoding;
 import org.jcodings.specific.USASCIIEncoding;
@@ -115,6 +117,11 @@ public final class Generator {
             case HASH   :
                 if (Helpers.metaclass(object) != runtime.getHash()) break;
                 return (Handler<T>) HASH_HANDLER;
+            case STRUCT :
+                RuntimeInfo info = RuntimeInfo.forRuntime(runtime);
+                RubyClass fragmentClass = info.jsonModule.get().getClass("Fragment");
+                if (Helpers.metaclass(object) != fragmentClass) break;
+                return (Handler<T>) FRAGMENT_HANDLER;
         }
         return GENERIC_HANDLER;
     }
@@ -485,6 +492,28 @@ public final class Generator {
      * The default handler (<code>Object#to_json</code>): coerces the object
      * to string using <code>#to_s</code>, and serializes that string.
      */
+    static final Handler<IRubyObject> FRAGMENT_HANDLER =
+        new Handler<IRubyObject>() {
+            @Override
+            RubyString generateNew(ThreadContext context, Session session, IRubyObject object) {
+                GeneratorState state = session.getState(context);
+                IRubyObject result = object.callMethod(context, "to_json", state);
+                if (result instanceof RubyString) return (RubyString)result;
+                throw context.runtime.newTypeError("to_json must return a String");
+            }
+
+            @Override
+            void generate(ThreadContext context, Session session, IRubyObject object, OutputStream buffer) throws IOException {
+                RubyString result = generateNew(context, session, object);
+                ByteList bytes = result.getByteList();
+                buffer.write(bytes.unsafeBytes(), bytes.begin(), bytes.length());
+            }
+        };
+
+    /**
+     * The default handler (<code>Object#to_json</code>): coerces the object
+     * to string using <code>#to_s</code>, and serializes that string.
+     */
     static final Handler<IRubyObject> OBJECT_HANDLER =
         new Handler<IRubyObject>() {
             @Override
@@ -510,6 +539,14 @@ public final class Generator {
             RubyString generateNew(ThreadContext context, Session session, IRubyObject object) {
                 GeneratorState state = session.getState(context);
                 if (state.strict()) {
+                    if (state.getAsJSON() != null ) {
+                        IRubyObject value = state.getAsJSON().call(context, object);
+                        Handler handler = getHandlerFor(context.runtime, value);
+                        if (handler == GENERIC_HANDLER) {
+                            throw Utils.buildGeneratorError(context, object, value + " returned by as_json not allowed in JSON").toThrowable();
+                        }
+                        return handler.generateNew(context, session, value);
+                    }
                     throw Utils.buildGeneratorError(context, object, object + " not allowed in JSON").toThrowable();
                 } else if (object.respondsTo("to_json")) {
                     IRubyObject result = object.callMethod(context, "to_json", state);

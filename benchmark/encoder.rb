@@ -17,8 +17,10 @@ end
 
 def implementations(ruby_obj)
   state = JSON::State.new(JSON.dump_default_options)
+  coder = JSON::Coder.new
   {
     json: ["json", proc { JSON.generate(ruby_obj) }],
+    json_coder: ["json_coder", proc { coder.dump(ruby_obj) }],
     oj: ["oj", proc { Oj.dump(ruby_obj) }],
   }
 end
