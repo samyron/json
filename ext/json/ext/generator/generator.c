@@ -235,6 +235,34 @@ static const unsigned char script_safe_escape_table[256] = {
             } else { \
                 pos++; \
             }
+
+#ifdef ENABLE_SIMD
+static void convert_UTF8_to_JSON_simd(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+{
+    const char *hexdig = "0123456789abcdef";
+    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
+
+    const char *ptr = RSTRING_PTR(str);
+    unsigned long len = RSTRING_LEN(str);
+
+    unsigned long beg = 0, pos = 0;
+
+    convert_UTF8_to_JSON_simd_kernel(out_buffer, ptr, len, &beg, &pos, hexdig, scratch, escape_table);
+    
+    while (pos < len) {
+        unsigned char ch = ptr[pos];
+        unsigned char ch_len = escape_table[ch];
+        PROCESS_BYTE;
+    }
+
+    if (beg < len) {
+        fbuffer_append(out_buffer, &ptr[beg], len - beg);
+    }
+
+    RB_GC_GUARD(str);
+}
+#endif 
+
 #ifdef HAVE_SIMD_NEON
 
 void convert_UTF8_to_JSON_simd_kernel_neon(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]) {
@@ -523,31 +551,6 @@ void convert_UTF8_to_JSON_simd_kernel_sse42(FBuffer *out_buffer, const char * pt
 
     *_beg = beg;
     *_pos = pos;
-}
-
-static void convert_UTF8_to_JSON_simd(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
-{
-    const char *hexdig = "0123456789abcdef";
-    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
-
-    const char *ptr = RSTRING_PTR(str);
-    unsigned long len = RSTRING_LEN(str);
-
-    unsigned long beg = 0, pos = 0;
-
-    convert_UTF8_to_JSON_simd_kernel(out_buffer, ptr, len, &beg, &pos, hexdig, scratch, escape_table);
-    
-    while (pos < len) {
-        unsigned char ch = ptr[pos];
-        unsigned char ch_len = escape_table[ch];
-        PROCESS_BYTE;
-    }
-
-    if (beg < len) {
-        fbuffer_append(out_buffer, &ptr[beg], len - beg);
-    }
-
-    RB_GC_GUARD(str);
 }
 
 #ifdef __GNUC__
