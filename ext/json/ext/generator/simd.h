@@ -39,11 +39,11 @@ SIMD_Implementation find_simd_implementation() {
 #endif 
 
 SIMD_Implementation find_simd_implementation(void) {
-#if defined(__GNU_C__) || defined(__clang__)
 
-#ifdef __GNUC__
+#if defined(__GNUC__ ) || defined(__clang__)
+#ifdef __GNUC__ 
     __builtin_cpu_init();
-#endif /* __GNUC__ */
+#endif /* __GNUC__  */
 
 #ifdef HAVE_TYPE___M256I
     if(__builtin_cpu_supports("avx2")) {
@@ -55,7 +55,7 @@ SIMD_Implementation find_simd_implementation(void) {
     if (__builtin_cpu_supports("sse4.2")) {
         return SIMD_SSE4;
     }
-#endif /* __GNU_C__ || __clang__*/
+#endif /* __GNUC__ || __clang__*/
 
     return SIMD_NONE;
 }
