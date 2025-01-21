@@ -1,13 +1,13 @@
 #include "extconf.h"
 
-#ifdef ENABLE_SIMD
-
 typedef enum {
     SIMD_NONE,
     SIMD_NEON,
-    SIMD_SSE4,
+    SIMD_SSE42,
     SIMD_AVX2
 } SIMD_Implementation;
+
+#ifdef ENABLE_SIMD
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
@@ -53,7 +53,7 @@ SIMD_Implementation find_simd_implementation(void) {
 
     // TODO Revisit. I think the SSE version now only uses SSE2 instructions.
     if (__builtin_cpu_supports("sse4.2")) {
-        return SIMD_SSE4;
+        return SIMD_SSE42;
     }
 #endif /* __GNUC__ || __clang__*/
 
