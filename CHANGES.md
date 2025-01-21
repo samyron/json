@@ -1,5 +1,9 @@
 # Changes
 
+* The C extension Parser has been entirely reimplemented from scratch.
+* Introduced `JSON::Coder` as a new API allowing to customize how non native types are serialized in a non-global way.
+
+
 ### 2024-12-18 (2.9.1)
 
 * Fix support for Solaris 10.
