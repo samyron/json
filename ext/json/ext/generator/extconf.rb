@@ -31,7 +31,7 @@ else
         end
       elsif have_header('x86intrin.h')
         
-        if have_type('__m256i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
+        if false && have_type('__m256i', headers=['x86intrin.h']) && try_compile(<<~'SRC', opt='-mavx2')
           #include <x86intrin.h>
           int main() {
               __m256i test = _mm256_set1_epi8(32);

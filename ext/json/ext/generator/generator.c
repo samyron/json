@@ -40,7 +40,60 @@ static void (*convert_UTF8_to_JSON_impl)(FBuffer *, VALUE, const unsigned char e
 
 #ifdef ENABLE_SIMD
 static void (*convert_UTF8_to_JSON_simd_kernel)(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]);
-#endif
+
+typedef struct {
+    // TODO Re-evaluate the types of the masks array. It may need to be larger than uint8_t.
+
+    union {
+#ifdef HAVE_TYPE___M128I
+        /* SSE42 */
+        __m128i sse42[16];
+#endif /* HAVE_TYPE___M128I */
+
+#ifdef HAVE_TYPE___M256I
+        /* AVX2 Support */
+        __m256i avx2[8];
+#endif /* HAVE_TYPE___M256I */
+    } escape_table;
+
+    /* The number of rows in the pre-computed SIMD escape_table. */
+    uint8_t escape_table_nonzero_rows;
+
+    /* 
+    * For each row in the escape table, the high nibble mask.
+    * 
+    * This corresponds to which 16-byte offset this "row" came from in the 
+    * original table.
+    */
+    uint8_t escape_table_masks[16];
+
+    union {
+#ifdef HAVE_TYPE___M128I
+        /* SSE42 */
+        __m128i sse42[16];
+#endif /* HAVE_TYPE___M128I */
+
+#ifdef HAVE_TYPE___M256I
+        /* AVX2 Support */
+        __m128i avx2[16];
+#endif /* HAVE_TYPE___M256I */
+    } script_safe_escape_table;
+
+    /* The number of rows in the pre-computed SIMD escape_table. */
+    uint8_t script_safe_escape_table_nonzero_rows;
+
+    /* 
+    * For each row in the escape table, the high nibble mask.
+    * 
+    * This corresponds to which 16-byte offset this "row" came from in the 
+    * original table.
+    */
+    uint8_t script_safe_escape_table_masks[16];
+
+} SIMD_State;
+
+static SIMD_State simd_state;
+#endif /* ENABLE_SIMD */
 
 #define GET_STATE_TO(self, state) \
     TypedData_Get_Struct(self, JSON_Generator_State, &JSON_Generator_State_type, state)
@@ -439,6 +492,125 @@ void convert_UTF8_to_JSON_simd_kernel_neon(FBuffer *out_buffer, const char * ptr
 #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+void print_simd_vec1(const char *prefix, __m128i vec) {
+    uint8_t r[16];
+    _mm_storeu_si128((__m128i *) r, vec);
+
+    printf("%s = [ ", prefix);
+    for(int i=0; i<16; i++) {
+        printf("%02x ", r[i]);
+    }
+    printf("]\n");
+}
+
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
+void init_sse42_lookup_tables(void) {
+    for (int high = 0; high < 16; high++) {
+        uint8_t values[16];
+        for (int low = 0; low < 16; low++) {
+            values[low] = escape_table[(high << 4) | low];
+        }
+        __m128i row = _mm_loadu_si128((__m128i*)values);
+
+        if(_mm_testz_si128(row, row)) {
+            // printf("Row %d is all zeros.\n", high);
+            continue;
+        }
+
+        simd_state.escape_table.sse42[simd_state.escape_table_nonzero_rows] = row;
+        simd_state.escape_table_masks[simd_state.escape_table_nonzero_rows] = high;
+        simd_state.escape_table_nonzero_rows++;
+    }
+
+    for (int high = 0; high < 16; high++) {
+        uint8_t values[16];
+        for (int low = 0; low < 16; low++) {
+            values[low] = script_safe_escape_table[(high << 4) | low];
+        }
+
+        __m128i row = _mm_loadu_si128((__m128i*)values);
+
+        if(_mm_testz_si128(row, row)) {
+            // printf("Row %d is all zeros.\n", high);
+            continue;
+        }
+
+        simd_state.script_safe_escape_table.sse42[simd_state.script_safe_escape_table_nonzero_rows] = row;
+        simd_state.script_safe_escape_table_masks[simd_state.script_safe_escape_table_nonzero_rows] = high;
+        simd_state.script_safe_escape_table_nonzero_rows++;
+    }
+}
+
+#ifdef __clang__
+__attribute__((target("sse4.2")))
+#endif /* __clang__ */
+void convert_UTF8_to_JSON_simd_kernel_sse42_lut(FBuffer *out_buffer, const char * ptr, unsigned long len, unsigned long *_beg, unsigned long *_pos, const char *hexdig, char scratch[12], const unsigned char escape_table[256]) {
+    unsigned long beg = *_beg, pos = *_pos;
+
+    __m128i *lookup_tables;
+    uint8_t *masks;
+    int num_tables;
+    if (escape_table == script_safe_escape_table) {
+        lookup_tables = simd_state.script_safe_escape_table.sse42;
+        num_tables = simd_state.script_safe_escape_table_nonzero_rows;
+        masks = simd_state.script_safe_escape_table_masks;
+    } else {
+        lookup_tables = simd_state.escape_table.sse42;
+        num_tables = simd_state.escape_table_nonzero_rows;
+        masks = simd_state.escape_table_masks;
+    }
+
+    while(pos+16 < len) {
+        __m128i chunk             = _mm_loadu_si128((__m128i const*)&ptr[pos]);
+        // print_simd_vec1("chunk", chunk);
+
+        __m128i high_nibbles      = _mm_and_si128(_mm_srli_epi32(chunk, 4), _mm_set1_epi8(0x0F));
+        __m128i result            = _mm_setzero_si128();
+        
+        // For each lookup table.. 
+        for (int i = 0; i < num_tables; i++) {
+            // The mask effectively tells us which lookup table to use. 
+            // TODO precompute the masks?
+            __m128i mask = _mm_cmpeq_epi8(high_nibbles, _mm_set1_epi8(masks[i]));
+
+            __m128i looked_up = _mm_shuffle_epi8(lookup_tables[i], _mm_and_si128(chunk, _mm_set1_epi8(0x0F)));
+            
+            // Blend in the looked up values where the mask matches
+            result = _mm_or_si128(result, _mm_and_si128(mask, looked_up));
+        }
+
+        
+        int needs_escape_mask = _mm_movemask_epi8(_mm_cmpeq_epi8(result, _mm_setzero_si128()));
+        
+        if (needs_escape_mask == 0xffff) {
+            pos += 16;
+            continue;
+        }
+
+        uint8_t r[16];
+        _mm_storeu_si128((__m128i *) r, result);
+
+        for (int i = 0; i < 16; ) {
+            int bit = needs_escape_mask & (1 << i);
+            unsigned char ch = ptr[pos];
+
+            if (RB_LIKELY(bit)) {
+                pos++;
+                i++;
+            } else {
+                unsigned long start = pos;
+                unsigned char ch_len = r[i];
+                PROCESS_BYTE;
+                i += (pos - start);
+            }
+        }
+    }
+    *_beg = beg;
+    *_pos = pos;
+}
 
 #ifdef __clang__
 __attribute__((target("sse4.2")))
@@ -2139,8 +2311,9 @@ void Init_generator(void)
 #endif
 #ifdef HAVE_SIMD_X86_64
         case SIMD_SSE42:
+            init_sse42_lookup_tables();
             convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_simd;
-            convert_UTF8_to_JSON_simd_kernel = convert_UTF8_to_JSON_simd_kernel_sse42;
+            convert_UTF8_to_JSON_simd_kernel = convert_UTF8_to_JSON_simd_kernel_sse42_lut;
             break;
 #ifdef HAVE_TYPE___M256I
         case SIMD_AVX2:
