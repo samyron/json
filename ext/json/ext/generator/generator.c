@@ -65,7 +65,7 @@ typedef struct {
     * This corresponds to which 16-byte offset this "row" came from in the 
     * original table.
     */
-    uint8_t escape_table_masks[16];
+    __m128i escape_table_masks[16];
 
     union {
 #ifdef HAVE_TYPE___M128I
@@ -88,7 +88,7 @@ typedef struct {
     * This corresponds to which 16-byte offset this "row" came from in the 
     * original table.
     */
-    uint8_t script_safe_escape_table_masks[16];
+    __m128i script_safe_escape_table_masks[16];
 
 } SIMD_State;
 
@@ -508,6 +508,26 @@ void print_simd_vec1(const char *prefix, __m128i vec) {
 __attribute__((target("sse4.2")))
 #endif /* __clang__ */
 void init_sse42_lookup_tables(void) {
+    /*
+     * Pre-compute the escape_table and script_safe_escape_table for use with the SSE42 kernel.
+     * 
+     * We're effectively turning a char table[256] into a char table[16][16].
+     *
+     * We will use the top 4 bits (high nibble) of each byte we process to determine which row
+     * in the table to select the value from and the low 4 bits (low nibble) to select the right
+     * index in the row.
+     *
+     * However... we're not actually creating a char table[16][16]. There are many rows in the 
+     * table that are all zeros. In this case, there would be no action to take and we can save
+     * many instructions if we ignore those rows. In order to do that, we have to keep some extra
+     * state.
+     *
+     * If any value within the row is non-zero, we need to keep track of which row it is. This no
+     * longer corresponds to the loop counter, so we store it in a table.
+     *
+     * Additionally, we precompute the vector at each position and store it as well to save some 
+     * instructions when performing the lookups.
+     */
     for (int high = 0; high < 16; high++) {
         uint8_t values[16];
         for (int low = 0; low < 16; low++) {
@@ -516,12 +536,11 @@ void init_sse42_lookup_tables(void) {
         __m128i row = _mm_loadu_si128((__m128i*)values);
 
         if(_mm_testz_si128(row, row)) {
-            // printf("Row %d is all zeros.\n", high);
             continue;
         }
 
         simd_state.escape_table.sse42[simd_state.escape_table_nonzero_rows] = row;
-        simd_state.escape_table_masks[simd_state.escape_table_nonzero_rows] = high;
+        simd_state.escape_table_masks[simd_state.escape_table_nonzero_rows] = _mm_set1_epi8(high);
         simd_state.escape_table_nonzero_rows++;
     }
 
@@ -534,12 +553,11 @@ void init_sse42_lookup_tables(void) {
         __m128i row = _mm_loadu_si128((__m128i*)values);
 
         if(_mm_testz_si128(row, row)) {
-            // printf("Row %d is all zeros.\n", high);
             continue;
         }
 
         simd_state.script_safe_escape_table.sse42[simd_state.script_safe_escape_table_nonzero_rows] = row;
-        simd_state.script_safe_escape_table_masks[simd_state.script_safe_escape_table_nonzero_rows] = high;
+        simd_state.script_safe_escape_table_masks[simd_state.script_safe_escape_table_nonzero_rows] = _mm_set1_epi8(high);
         simd_state.script_safe_escape_table_nonzero_rows++;
     }
 }
@@ -551,7 +569,7 @@ void convert_UTF8_to_JSON_simd_kernel_sse42_lut(FBuffer *out_buffer, const char 
     unsigned long beg = *_beg, pos = *_pos;
 
     __m128i *lookup_tables;
-    uint8_t *masks;
+    __m128i *masks;
     int num_tables;
     if (escape_table == script_safe_escape_table) {
         lookup_tables = simd_state.script_safe_escape_table.sse42;
@@ -563,26 +581,89 @@ void convert_UTF8_to_JSON_simd_kernel_sse42_lut(FBuffer *out_buffer, const char 
         masks = simd_state.escape_table_masks;
     }
 
+    /* 
+     * At a very high level, this is effectively doing what the current convert_UTF8_to_JSON
+     * is doing, however it's looking at 16 bytes at a time. If we determine there is no action
+     * to take for each of these 16 bytes (all of the bytes would be 0 in the escape_table), 
+     * we skip ahead to the next 16 bytes. This algorithm only does byte-by-byte work if any
+     * of the bytes in the chunk need to be escaped.
+     * 
+     * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
+     *
+     * The first chunk of ptr is (truncated to 8 bytes for simplicity): 
+     * [22 54 65 5C 73 74 69 6E] ("  T  e  \  s  t  i  n)
+     *
+     * Next compute the high nibble of each byte. This will determine which row the result of
+     * this byte will be selected from. 
+     * [02 05 06 05 07 07 06 06]
+     * 
+     * Initialize a result to zero:
+     * [00 00 00 00 00 00 00 00]
+     *
+     * Now we loop over each row of the lookup table and perform the following operations:
+     *
+     * Use the high nibbles computed above to determine if the byte at that position is equal
+     * to the row number we're looking at.
+     * 
+     * Let's assume we're at looking at the third row of the escape table. This is the position of
+     * the double quote character. The mask would be:
+     * [02 02 02 02 02 02 02 02]
+     *
+     * We perform a logical AND between this mask and the high nibbles:
+     * [FF 00 00 00 00 00 00 00]
+     *
+     * Next we mask off the high nibble of each byte in the chunk:
+     * [02 04 05 0C 03 04 09 0E]
+     *
+     * And then select the value (using _mm_shuffle_epi8) the corresponding value from the row using
+     * the low nibble as the index into the row.
+     * 
+     * The third row in the escape table is (all 16 bytes shown):
+     * [00 00 09 00 00 00 00 00 00 00 00 00 00 00 00 00]
+     *
+     * The shuffle results in the following:
+     * [09 00 00 00 00 00 00 00 00]
+     *
+     * Next we use the mask computed above to zero out the bytes that aren't applicable for this
+     * row. In this example, those are already all zero.
+     * [09 00 00 00 00 00 00 00 00]
+     * 
+     * Finally we combine this result into the accumulator (the result vector).
+     * [09 00 00 00 00 00 00 00 00]
+     *
+     * We repeat these steps for all rows in the escape table.
+     *
+     * Finally we compare each byte in this result with zero and compute a "move mask".
+     * This mask is a 16-bit integer where each bit is set where indicates the position
+     * in the result that does not equal 0. These are the locations we need to escape
+     * in this chunk.
+     *
+     * If the mask is 0xffff skip to the next chunk, otherwise process the bytes using
+     * the same method as the scalar algorithm.
+     */
+
+
     while(pos+16 < len) {
         __m128i chunk             = _mm_loadu_si128((__m128i const*)&ptr[pos]);
-        // print_simd_vec1("chunk", chunk);
-
         __m128i high_nibbles      = _mm_and_si128(_mm_srli_epi32(chunk, 4), _mm_set1_epi8(0x0F));
         __m128i result            = _mm_setzero_si128();
         
-        // For each lookup table.. 
         for (int i = 0; i < num_tables; i++) {
-            // The mask effectively tells us which lookup table to use. 
-            // TODO precompute the masks?
-            __m128i mask = _mm_cmpeq_epi8(high_nibbles, _mm_set1_epi8(masks[i]));
+            // Create the mask to determine which bytes in this chunk should be selected from this row in the lookup table.
+            __m128i mask = _mm_cmpeq_epi8(high_nibbles, masks[i]);
 
+            /*
+             * Mask of the low nibble (the bottom 4 bits) of each character. This is the position in the row of the lookup
+             * table shuffle will select.
+             */
             __m128i looked_up = _mm_shuffle_epi8(lookup_tables[i], _mm_and_si128(chunk, _mm_set1_epi8(0x0F)));
             
-            // Blend in the looked up values where the mask matches
+            /*
+             * Mask off the values we don't want from this row in the table and merge it into the output.
+             */
             result = _mm_or_si128(result, _mm_and_si128(mask, looked_up));
         }
 
-        
         int needs_escape_mask = _mm_movemask_epi8(_mm_cmpeq_epi8(result, _mm_setzero_si128()));
         
         if (needs_escape_mask == 0xffff) {
@@ -595,13 +676,12 @@ void convert_UTF8_to_JSON_simd_kernel_sse42_lut(FBuffer *out_buffer, const char 
 
         for (int i = 0; i < 16; ) {
             int bit = needs_escape_mask & (1 << i);
-            unsigned char ch = ptr[pos];
-
             if (RB_LIKELY(bit)) {
                 pos++;
                 i++;
             } else {
                 unsigned long start = pos;
+                unsigned char ch = ptr[pos];
                 unsigned char ch_len = r[i];
                 PROCESS_BYTE;
                 i += (pos - start);
