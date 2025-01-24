@@ -193,6 +193,89 @@ static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const un
 
 #define FLUSH_POS(bytes) if (pos > beg) { fbuffer_append(out_buffer, &ptr[beg], pos - beg); } pos += bytes; beg = pos;
 
+    while (pos+8 < len) {
+        uint8_t c1 = ptr[pos   ];
+        uint8_t c2 = ptr[pos + 1];
+        uint8_t c3 = ptr[pos + 2];
+        uint8_t c4 = ptr[pos + 3];
+        uint8_t c5 = ptr[pos + 4];
+        uint8_t c6 = ptr[pos + 5];
+        uint8_t c7 = ptr[pos + 6];
+        uint8_t c8 = ptr[pos + 7];
+
+        unsigned char ch_len1 = escape_table[c1];
+        unsigned char ch_len2 = escape_table[c2];
+        unsigned char ch_len3 = escape_table[c3];
+        unsigned char ch_len4 = escape_table[c4];
+        unsigned char ch_len5 = escape_table[c5];
+        unsigned char ch_len6 = escape_table[c6];
+        unsigned char ch_len7 = escape_table[c7];
+        unsigned char ch_len8 = escape_table[c8];
+
+        if ((ch_len1 | ch_len2 | ch_len3 | ch_len4 | ch_len5 | ch_len6 | ch_len7 | ch_len8) == 0) {
+            pos += 8;
+            continue;
+        }
+
+        unsigned char r[8] = {ch_len1, ch_len2, ch_len3, ch_len4, ch_len5, ch_len6, ch_len7, ch_len8};
+
+        for (int i = 0; i < 8; ) {
+            unsigned long start = pos;
+            unsigned char ch = ptr[pos];
+            unsigned char ch_len = r[i];
+            if (RB_UNLIKELY(ch_len)) {
+                switch (ch_len) {
+                    case 9: {
+                        FLUSH_POS(1);
+                        switch (ch) {
+                            case '"':  fbuffer_append(out_buffer, "\\\"", 2); break;
+                            case '\\': fbuffer_append(out_buffer, "\\\\", 2); break;
+                            case '/':  fbuffer_append(out_buffer, "\\/", 2); break;
+                            case '\b': fbuffer_append(out_buffer, "\\b", 2); break;
+                            case '\f': fbuffer_append(out_buffer, "\\f", 2); break;
+                            case '\n': fbuffer_append(out_buffer, "\\n", 2); break;
+                            case '\r': fbuffer_append(out_buffer, "\\r", 2); break;
+                            case '\t': fbuffer_append(out_buffer, "\\t", 2); break;
+                            default: {
+                                scratch[2] = '0';
+                                scratch[3] = '0';
+                                scratch[4] = hexdig[(ch >> 4) & 0xf];
+                                scratch[5] = hexdig[ch & 0xf];
+                                fbuffer_append(out_buffer, scratch, 6);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    case 11: {
+                        unsigned char b2 = ptr[pos + 1];
+                        if (RB_UNLIKELY(b2 == 0x80)) {
+                            unsigned char b3 = ptr[pos + 2];
+                            if (b3 == 0xA8) {
+                                FLUSH_POS(3);
+                                fbuffer_append(out_buffer, "\\u2028", 6);
+                                break;
+                            } else if (b3 == 0xA9) {
+                                FLUSH_POS(3);
+                                fbuffer_append(out_buffer, "\\u2029", 6);
+                                break;
+                            }
+                        }
+                        ch_len = 3;
+                        // fallthrough
+                    }
+                    default:
+                        pos += ch_len;
+                        break;
+                }
+                i += (pos - start);
+            } else {
+                pos++;
+                i++;
+            }
+        }
+    }
+
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = escape_table[ch];
