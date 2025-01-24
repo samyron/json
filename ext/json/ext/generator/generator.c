@@ -493,17 +493,6 @@ void convert_UTF8_to_JSON_simd_kernel_neon(FBuffer *out_buffer, const char * ptr
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
-void print_simd_vec1(const char *prefix, __m128i vec) {
-    uint8_t r[16];
-    _mm_storeu_si128((__m128i *) r, vec);
-
-    printf("%s = [ ", prefix);
-    for(int i=0; i<16; i++) {
-        printf("%02x ", r[i]);
-    }
-    printf("]\n");
-}
-
 #ifdef __clang__
 __attribute__((target("sse4.2")))
 #endif /* __clang__ */
