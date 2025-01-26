@@ -696,9 +696,6 @@ static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, 
 
     unsigned long beg = 0, pos = 0;
 
-    // printf("\n");
-    // printf("sizeof uintptr_t: %lu", sizeof(uintptr_t));
-
     if (escape_table != script_safe_escape_table) {
 // Taken from: https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
 // TODO revisit for the compiler version check
@@ -714,64 +711,56 @@ static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, 
 #  error "don't know what to do."
 #endif
 
-        /*
-        * Align the pointer to a sizeof(uintptr_t)-byte boundary.
-        * TODO: Use the same alignment technique as 
-        */
-        char *char_ptr;
-        for (char_ptr = (char *) ptr;
-        pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
-        ) {
-            unsigned long start = pos;
-            char ch = *char_ptr;
-            unsigned char ch_len = escape_table[ch];
-            PROCESS_BYTE;
-            // This might process more than one byte. Ensure we increment char_ptr appropriately.
-            char_ptr += (pos - start);
-        }
-
-        uintptr_t maskDoubleQuote = '"' | '"' << 8;
-        uintptr_t maskForwardSlash = '\\' | '\\' << 8;
-        maskDoubleQuote |= maskDoubleQuote << 16;
-        maskForwardSlash |= maskForwardSlash << 16;
+        if ((pos + sizeof(uintptr_t)*2) < len) {
+            uintptr_t maskDoubleQuote = '"' | '"' << 8;
+            uintptr_t maskForwardSlash = '\\' | '\\' << 8;
+            maskDoubleQuote |= maskDoubleQuote << 16;
+            maskForwardSlash |= maskForwardSlash << 16;
 #if SIZEOF_UINTPTR_T == 8
-        maskDoubleQuote |= maskDoubleQuote << 32;
-        maskForwardSlash |= maskForwardSlash << 32;
+            maskDoubleQuote |= maskDoubleQuote << 32;
+            maskForwardSlash |= maskForwardSlash << 32;
 #endif 
-        uintptr_t *lp = (uintptr_t *) char_ptr;
 
-        while (pos + sizeof(uintptr_t) < len) {
-            uintptr_t chunk = *lp;
-
-            uintptr_t tmp1 = chunk ^ maskDoubleQuote;
-            uintptr_t tmp2 = chunk ^ maskForwardSlash;
-
-            uintptr_t has_less_than_0x20 = hasless(chunk, ' ');
-            if (RB_UNLIKELY(has_less_than_0x20)) {
-                goto process_bytes;
-            }
-
-            uintptr_t haszero1 = haszero(tmp1);
-            if (RB_UNLIKELY(haszero1)) {
-                goto process_bytes;
-            }
-
-            uintptr_t haszero2 = haszero(tmp2);
-            if (RB_UNLIKELY(haszero2)) {
-                goto process_bytes;
-            }
-
-            lp++;
-            pos += sizeof(uintptr_t);
-            continue;
-
-process_bytes:
-            for(int i=0; i<sizeof(uintptr_t); i++) {
-                unsigned char ch = ptr[pos];
+            /*
+            * Align the pointer to a sizeof(uintptr_t)-byte boundary.
+            * TODO: Use the same alignment technique as https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
+            */
+            char *char_ptr;
+            align: for (char_ptr = (char *) ptr;
+            pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
+            ) {
+                unsigned long start = pos;
+                char ch = *char_ptr;
                 unsigned char ch_len = escape_table[ch];
-                /* JSON encoding */
-
                 PROCESS_BYTE;
+                // This might process more than one byte. Ensure we increment char_ptr appropriately.
+                char_ptr += (pos - start);
+            }
+
+            uintptr_t *lp = (uintptr_t *) char_ptr;
+
+            while (pos + sizeof(uintptr_t) < len) {
+                uintptr_t chunk = *lp;
+
+                uintptr_t tmp1 = chunk ^ maskDoubleQuote;
+                uintptr_t tmp2 = chunk ^ maskForwardSlash;
+
+                uintptr_t has_less_than_0x20 = hasless(chunk, ' ');
+                uintptr_t haszero1 = haszero(tmp1);
+                uintptr_t haszero2 = haszero(tmp2);
+
+                if ((has_less_than_0x20 | haszero1 | haszero2) != 0) {
+                    for(int i=0; i<sizeof(uintptr_t); i++) {
+                        unsigned char ch = ptr[pos];
+                        unsigned char ch_len = escape_table[ch];
+                        PROCESS_BYTE;
+                    }
+                    goto align;
+                } else {
+                    lp++;
+                    pos += sizeof(uintptr_t);
+                    continue;
+                }
             }
         }
     }
