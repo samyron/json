@@ -55,4 +55,4 @@ def benchmark_encoding(benchmark_name, ruby_obj, check_expected: true, except: [
   puts
 end
 
-benchmark_encoding "long string", (["this is a test of the emergency broadcast system."*5]*500)
+benchmark_encoding "long string with accents", (["this is å test öf the émergéncy bröadcást system."*5]*500)

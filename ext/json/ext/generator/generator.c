@@ -704,29 +704,24 @@ static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, 
 # if SIZEOF_UINTPTR_T == 8
 #define hasless(x,n) (((x)-~0ULL/255*(n))&~(x)&~0ULL/255*128)
 #define haszero(v) (((v) - 0x0101010101010101ULL) & ~(v) & 0x8080808080808080ULL)
+#define MASK_DOUBLEQUOTE  0x2222222222222222ULL
+#define MASK_FORWARDSLASH 0x5c5c5c5c5c5c5c5cULL
 # elif SIZEOF_UINTPTR_T == 4
 #define hasless(x,n) (((x)-~0UL/255*(n))&~(x)&~0UL/255*128)
 #define haszero(v) (((v) - 0x01010101UL) & ~(v) & 0x80808080UL)
+#define MASK_DOUBLEQUOTE  0x22222222UL
+#define MASK_FORWARDSLASH 0x5c5c5c5cUL
 # else
 #  error "don't know what to do."
 #endif
 
         if ((pos + sizeof(uintptr_t)*2) < len) {
-            uintptr_t maskDoubleQuote = '"' | '"' << 8;
-            uintptr_t maskForwardSlash = '\\' | '\\' << 8;
-            maskDoubleQuote |= maskDoubleQuote << 16;
-            maskForwardSlash |= maskForwardSlash << 16;
-#if SIZEOF_UINTPTR_T == 8
-            maskDoubleQuote |= maskDoubleQuote << 32;
-            maskForwardSlash |= maskForwardSlash << 32;
-#endif 
-
             /*
             * Align the pointer to a sizeof(uintptr_t)-byte boundary.
             * TODO: Use the same alignment technique as https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
             */
             char *char_ptr;
-            align: for (char_ptr = (char *) ptr;
+            for (char_ptr = (char *) ptr;
             pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
             ) {
                 unsigned long start = pos;
@@ -742,8 +737,8 @@ static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, 
             while (pos + sizeof(uintptr_t) < len) {
                 uintptr_t chunk = *lp;
 
-                uintptr_t tmp1 = chunk ^ maskDoubleQuote;
-                uintptr_t tmp2 = chunk ^ maskForwardSlash;
+                uintptr_t tmp1 = chunk ^ MASK_DOUBLEQUOTE;
+                uintptr_t tmp2 = chunk ^ MASK_FORWARDSLASH;
 
                 uintptr_t has_less_than_0x20 = hasless(chunk, ' ');
                 uintptr_t haszero1 = haszero(tmp1);
@@ -755,7 +750,21 @@ static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, 
                         unsigned char ch_len = escape_table[ch];
                         PROCESS_BYTE;
                     }
-                    goto align;
+                    /*
+                     * Realign lp as the previous loop may have left us in a position that's 
+                     * no longer aligned on a sizeof(uintptr_t) boundary.
+                     */ 
+                    for (char_ptr = (char *) ptr+pos;
+                    pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
+                    ) {
+                        unsigned long start = pos;
+                        char ch = *char_ptr;
+                        unsigned char ch_len = escape_table[ch];
+                        PROCESS_BYTE;
+                        // This might process more than one byte. Ensure we increment char_ptr appropriately.
+                        char_ptr += (pos - start);
+                    }
+                    lp = (uintptr_t *) char_ptr;
                 } else {
                     lp++;
                     pos += sizeof(uintptr_t);
