@@ -686,7 +686,7 @@ void convert_UTF8_to_JSON_simd_kernel_avx2(FBuffer *out_buffer, const char * ptr
 #endif /* x86_64 support */
 
 
-static void convert_UTF8_to_JSON_old_skool_simd(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -2256,7 +2256,7 @@ void Init_generator(void)
 #endif /* HAVE_TYPE___M256I */
 #endif
         default:
-            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_old_skool_simd;
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_2;
             // convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON;
     }
 }
