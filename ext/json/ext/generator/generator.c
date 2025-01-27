@@ -696,6 +696,84 @@ static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned 
 
     unsigned long beg = 0, pos = 0;
 
+    if (escape_table != script_safe_escape_table) {
+// Taken from: https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
+// TODO revisit for the compiler version check
+
+// These macros from https://graphics.stanford.edu/~seander/bithacks.html
+# if SIZEOF_UINTPTR_T == 8
+#define hasless(x,n) (((x)-~0ULL/255*(n))&~(x)&~0ULL/255*128)
+#define haszero(v) (((v) - 0x0101010101010101ULL) & ~(v) & 0x8080808080808080ULL)
+#define MASK_DOUBLEQUOTE  0x2222222222222222ULL
+#define MASK_FORWARDSLASH 0x5c5c5c5c5c5c5c5cULL
+# elif SIZEOF_UINTPTR_T == 4
+#define hasless(x,n) (((x)-~0UL/255*(n))&~(x)&~0UL/255*128)
+#define haszero(v) (((v) - 0x01010101UL) & ~(v) & 0x80808080UL)
+#define MASK_DOUBLEQUOTE  0x22222222UL
+#define MASK_FORWARDSLASH 0x5c5c5c5cUL
+# else
+#  error "don't know what to do."
+#endif
+
+        if ((pos + SIZEOF_UINTPTR_T*2) < len) {
+            /*
+            * Align the pointer to a sizeof(uintptr_t)-byte boundary.
+            * TODO: Use the same alignment technique as https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
+            */
+            char *char_ptr;
+            for (char_ptr = (char *) ptr; pos < len && (uintptr_t) char_ptr % SIZEOF_UINTPTR_T != 0;) {
+                unsigned long start = pos;
+                char ch = *char_ptr;
+                unsigned char ch_len = escape_table[(uint8_t) ch];
+                PROCESS_BYTE;
+                // This might process more than one byte. Ensure we increment char_ptr appropriately.
+                char_ptr += (pos - start);
+            }
+
+            uintptr_t *lp = (uintptr_t *) char_ptr;
+
+            while (pos + SIZEOF_UINTPTR_T < len) {
+                uintptr_t chunk = *lp;
+
+                uintptr_t tmp1 = chunk ^ MASK_DOUBLEQUOTE;
+                uintptr_t tmp2 = chunk ^ MASK_FORWARDSLASH;
+
+                uintptr_t has_less_than_0x20 = hasless(chunk, ' ');
+                uintptr_t haszero1 = haszero(tmp1);
+                uintptr_t haszero2 = haszero(tmp2);
+
+                if ((has_less_than_0x20 | haszero1 | haszero2) != 0) {
+                    for(size_t i=0; i<sizeof(uintptr_t); i++) {
+                        unsigned char ch = ptr[pos];
+                        unsigned char ch_len = escape_table[ch];
+                        PROCESS_BYTE;
+                    }
+                    /*
+                     * Realign lp as the previous loop may have left us in a position that's 
+                     * no longer aligned on a sizeof(uintptr_t) boundary.
+                     */ 
+                    for (char_ptr = (char *) ptr+pos; pos < len && (uintptr_t) char_ptr % SIZEOF_UINTPTR_T != 0;
+                    ) {
+                        unsigned long start = pos;
+                        char ch = *char_ptr;
+                        unsigned char ch_len = escape_table[(uint8_t) ch];
+                        PROCESS_BYTE;
+                        // This might process more than one byte. Ensure we increment char_ptr appropriately.
+                        char_ptr += (pos - start);
+                    }
+                    lp = (uintptr_t *) char_ptr;
+                } else {
+                    lp++;
+                    pos += SIZEOF_UINTPTR_T;
+                    continue;
+                }
+            }
+        }
+    }
+
+#undef hasless
+#undef haszero
+
     while (pos < len) {
         unsigned char ch = ptr[pos];
         unsigned char ch_len = escape_table[ch];

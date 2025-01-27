@@ -491,6 +491,26 @@ class JSONGeneratorTest < Test::Unit::TestCase
     data = '["This is a "test" of the emergency broadcast system."]'
     json = "\"[\\\"This is a \\\"test\\\" of the emergency broadcast system.\\\"]\""
     assert_equal json, generate(data)
+    #
+    data = '\tThis is a test of the emergency broadcast system.'
+    json = "\"\\\\tThis is a test of the emergency broadcast system.\""
+    assert_equal json, generate(data)
+    #
+    data = 'This\tis a test of the emergency broadcast system.'
+    json = "\"This\\\\tis a test of the emergency broadcast system.\""
+    assert_equal json, generate(data)
+    #
+    data = 'This is\ta test of the emergency broadcast system.'
+    json = "\"This is\\\\ta test of the emergency broadcast system.\""
+    assert_equal json, generate(data)
+    #
+    data = 'This is a test of the emergency broadcast\tsystem.'
+    json = "\"This is a test of the emergency broadcast\\\\tsystem.\""
+    assert_equal json, generate(data)
+    #
+    data = 'This is a test of the emergency broadcast\tsystem.\n'
+    json = "\"This is a test of the emergency broadcast\\\\tsystem.\\\\n\""
+    assert_equal json, generate(data)
   end
 
   def test_string_subclass
