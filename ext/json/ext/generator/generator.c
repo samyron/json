@@ -686,7 +686,7 @@ void convert_UTF8_to_JSON_simd_kernel_avx2(FBuffer *out_buffer, const char * ptr
 #endif /* x86_64 support */
 
 
-static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
+static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
 {
     const char *hexdig = "0123456789abcdef";
     char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
@@ -715,18 +715,16 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
 #  error "don't know what to do."
 #endif
 
-        if ((pos + sizeof(uintptr_t)*2) < len) {
+        if ((pos + SIZEOF_UINTPTR_T*2) < len) {
             /*
             * Align the pointer to a sizeof(uintptr_t)-byte boundary.
             * TODO: Use the same alignment technique as https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
             */
             char *char_ptr;
-            for (char_ptr = (char *) ptr;
-            pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
-            ) {
+            for (char_ptr = (char *) ptr; pos < len && (uintptr_t) char_ptr % SIZEOF_UINTPTR_T != 0;) {
                 unsigned long start = pos;
                 char ch = *char_ptr;
-                unsigned char ch_len = escape_table[ch];
+                unsigned char ch_len = escape_table[(uint8_t) ch];
                 PROCESS_BYTE;
                 // This might process more than one byte. Ensure we increment char_ptr appropriately.
                 char_ptr += (pos - start);
@@ -734,7 +732,7 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
 
             uintptr_t *lp = (uintptr_t *) char_ptr;
 
-            while (pos + sizeof(uintptr_t) < len) {
+            while (pos + SIZEOF_UINTPTR_T < len) {
                 uintptr_t chunk = *lp;
 
                 uintptr_t tmp1 = chunk ^ MASK_DOUBLEQUOTE;
@@ -745,7 +743,7 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
                 uintptr_t haszero2 = haszero(tmp2);
 
                 if ((has_less_than_0x20 | haszero1 | haszero2) != 0) {
-                    for(int i=0; i<sizeof(uintptr_t); i++) {
+                    for(size_t i=0; i<sizeof(uintptr_t); i++) {
                         unsigned char ch = ptr[pos];
                         unsigned char ch_len = escape_table[ch];
                         PROCESS_BYTE;
@@ -754,12 +752,11 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
                      * Realign lp as the previous loop may have left us in a position that's 
                      * no longer aligned on a sizeof(uintptr_t) boundary.
                      */ 
-                    for (char_ptr = (char *) ptr+pos;
-                    pos < len && (uintptr_t) char_ptr % sizeof (uintptr_t) != 0;
+                    for (char_ptr = (char *) ptr+pos; pos < len && (uintptr_t) char_ptr % SIZEOF_UINTPTR_T != 0;
                     ) {
                         unsigned long start = pos;
                         char ch = *char_ptr;
-                        unsigned char ch_len = escape_table[ch];
+                        unsigned char ch_len = escape_table[(uint8_t) ch];
                         PROCESS_BYTE;
                         // This might process more than one byte. Ensure we increment char_ptr appropriately.
                         char_ptr += (pos - start);
@@ -767,7 +764,7 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
                     lp = (uintptr_t *) char_ptr;
                 } else {
                     lp++;
-                    pos += sizeof(uintptr_t);
+                    pos += SIZEOF_UINTPTR_T;
                     continue;
                 }
             }
@@ -776,31 +773,6 @@ static void convert_UTF8_to_JSON_2(FBuffer *out_buffer, VALUE str, const unsigne
 
 #undef hasless
 #undef haszero
-
-    while (pos < len) {
-        unsigned char ch = ptr[pos];
-        unsigned char ch_len = escape_table[ch];
-        /* JSON encoding */
-
-        PROCESS_BYTE;
-    }
-
-    if (beg < len) {
-        fbuffer_append(out_buffer, &ptr[beg], len - beg);
-    }
-
-    RB_GC_GUARD(str);
-}
-
-static void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const unsigned char escape_table[256])
-{
-    const char *hexdig = "0123456789abcdef";
-    char scratch[12] = { '\\', 'u', 0, 0, 0, 0, '\\', 'u' };
-
-    const char *ptr = RSTRING_PTR(str);
-    unsigned long len = RSTRING_LEN(str);
-
-    unsigned long beg = 0, pos = 0;
 
     while (pos < len) {
         unsigned char ch = ptr[pos];
@@ -2256,7 +2228,6 @@ void Init_generator(void)
 #endif /* HAVE_TYPE___M256I */
 #endif
         default:
-            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON_2;
-            // convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON;
+            convert_UTF8_to_JSON_impl = convert_UTF8_to_JSON;
     }
 }
