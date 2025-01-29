@@ -121,7 +121,7 @@ To combine JSON fragments into a bigger JSON document, you can use `JSON::Fragme
 posts_json = cache.fetch_multi(post_ids) do |post_id|
   JSON.generate(Post.find(post_id))
 end
-posts_json.map { |post_json| JSON::Fragment.new(post_json) }
+posts_json.map! { |post_json| JSON::Fragment.new(post_json) }
 JSON.generate({ posts: posts_json, count: posts_json.count })
 ```
 
