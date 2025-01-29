@@ -1,9 +1,11 @@
 require "benchmark/ips"
 require "json"
 require "date"
-require "oj"
-
-Oj.default_options = Oj.default_options.merge(mode: :compat)
+begin
+  require "oj"
+  Oj.default_options = Oj.default_options.merge(mode: :compat)
+rescue LoadError
+end
 
 if ENV["ONLY"]
   RUN = ENV["ONLY"].split(/[,: ]/).map{|x| [x.to_sym, true] }.to_h
@@ -18,11 +20,16 @@ end
 def implementations(ruby_obj)
   state = JSON::State.new(JSON.dump_default_options)
   coder = JSON::Coder.new
-  {
+  implementations = {
     json: ["json", proc { JSON.generate(ruby_obj) }],
     json_coder: ["json_coder", proc { coder.dump(ruby_obj) }],
-    oj: ["oj", proc { Oj.dump(ruby_obj) }],
   }
+
+  if defined?(Oj)
+    implementations[:oj] = ["oj", proc { Oj.dump(ruby_obj) }]
+  end
+
+  implementations
 end
 
 def benchmark_encoding(benchmark_name, ruby_obj, check_expected: true, except: [])
