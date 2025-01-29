@@ -249,12 +249,12 @@ static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const un
 #define hasless(x,n) (((x)-~0ULL/255*(n))&~(x)&~0ULL/255*128)
 #define haszero(v) (((v) - 0x0101010101010101ULL) & ~(v) & 0x8080808080808080ULL)
 #define MASK_DOUBLEQUOTE  0x2222222222222222ULL
-#define MASK_FORWARDSLASH 0x5c5c5c5c5c5c5c5cULL
+#define MASK_BACKSLASH 0x5c5c5c5c5c5c5c5cULL
 # elif SIZEOF_UINTPTR_T == 4
 #define hasless(x,n) (((x)-~0UL/255*(n))&~(x)&~0UL/255*128)
 #define haszero(v) (((v) - 0x01010101UL) & ~(v) & 0x80808080UL)
 #define MASK_DOUBLEQUOTE  0x22222222UL
-#define MASK_FORWARDSLASH 0x5c5c5c5cUL
+#define MASK_BACKSLASH 0x5c5c5c5cUL
 # else
 #  error "don't know what to do."
 #endif
@@ -288,7 +288,7 @@ static inline void convert_UTF8_to_JSON(FBuffer *out_buffer, VALUE str, const un
                 uintptr_t tmp1 = chunk ^ MASK_DOUBLEQUOTE;
                 uintptr_t haszero1 = haszero(tmp1);
 
-                uintptr_t tmp2 = chunk ^ MASK_FORWARDSLASH;
+                uintptr_t tmp2 = chunk ^ MASK_BACKSLASH;
                 uintptr_t haszero2 = haszero(tmp2);
 
                 if ((has_less_than_0x20 | haszero1 | haszero2) != 0) {
