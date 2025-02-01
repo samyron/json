@@ -4,6 +4,8 @@
 #include <math.h>
 #include <ctype.h>
 
+#include "simd.h"
+
 /* ruby api and some helpers */
 
 typedef struct JSON_Generator_StateStruct {
@@ -166,13 +168,35 @@ static const unsigned char script_safe_escape_table[256] = {
      4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 9, 9,
 };
 
+#ifdef ENABLE_SIMD
+
+struct _simd_state {
+#ifdef HAVE_SIMD_NEON
+    struct {
+        uint8x16x4_t escape_table[4];
+        uint8x16x4_t script_safe_escape_table[4];
+    } neon;
+#endif /* HAVE_SIMD_NEON */
+};
+
+static struct _simd_state simd_state;
+
+#endif /* ENABLE_SIMD */
 
 typedef struct _search_state {
     const char *ptr;
     const char *end;
     const char *cursor;
     FBuffer *buffer;
+
+#ifdef ENABLE_SIMD
+    const char *returned_from;
+    unsigned char maybe_matches[16];
+    unsigned long current_match_index;
+#endif /* ENABLE_SIMD */ 
 } search_state;
+
+unsigned char (*search_escape_impl)(search_state *, const unsigned char escape_table[256]);
 
 static inline void search_flush(search_state *search)
 {
@@ -207,6 +231,227 @@ static inline unsigned char search_escape(search_state *search, const unsigned c
     search_flush(search);
     return 0;
 }
+
+#ifdef ENABLE_SIMD
+#ifdef HAVE_SIMD_NEON
+
+static inline unsigned char search_update_matches_neon_lut(search_state *search, uint8x16x4_t *tables) {
+    while (search->ptr + 16 < search->end) {
+        uint8x16_t chunk = vld1q_u8((const unsigned char *)search->ptr);
+
+        uint8x16_t tmp1   = vqtbl4q_u8(tables[0], chunk);
+        uint8x16_t tmp2   = vqtbl4q_u8(tables[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
+
+        uint8x16_t result = vorrq_u8(tmp1, tmp2);
+        
+        // The top 128 bytes of the escape_table are all 0.
+        // TODO is this a safe to do?
+        if (tables == simd_state.neon.script_safe_escape_table) {
+            uint8x16_t tmp3   = vqtbl4q_u8(tables[2], veorq_u8(chunk, vdupq_n_u8(0x80)));
+            uint8x16_t tmp4   = vqtbl4q_u8(tables[3], veorq_u8(chunk, vdupq_n_u8(0xc0)));
+            result = vorrq_u8(result, vorrq_u8(tmp3, tmp4));
+        }
+        
+        if (vmaxvq_u8(result) == 0) {
+            search->ptr += 16;
+            continue;
+        }
+
+        vst1q_u8(search->maybe_matches, result);
+        return 1;
+    }
+
+    return 0;
+}
+
+static unsigned char search_update_matches_neon_rules(search_state *search, const unsigned char escape_table[256]) {
+    const uint8x16_t lower_bound = vdupq_n_u8(' '); 
+    const uint8x16_t backslash   = vdupq_n_u8('\\');
+    const uint8x16_t dblquote    = vdupq_n_u8('\"');
+
+    if (escape_table == script_safe_escape_table) {
+        /*
+        * This works almost exactly the same as what is described above. The difference in this case comes after we know
+        * there is a byte to be escaped. In the previous case, all bytes were handled the same way. In this case, however,
+        * some bytes need to be handled differently. 
+        * 
+        * Since we know each byte in chunk can only match a single case, we logical AND each of the has_backslash,
+        * has_dblquote, and has_forward_slash with a different bit (0x1, 0x2 and 0x4 respectively) and combine
+        * the results with a logical OR. 
+        * 
+        * Now we loop over the result vector and switch on the particular pattern we just created. If we find a 
+        * case we don't know, we simply lookup the byte in the script_safe_escape_table to determine the correct
+        * action.
+        */
+        const uint8x16_t upper_bound     = vdupq_n_u8('~');
+        const uint8x16_t forward_slash   = vdupq_n_u8('/');
+
+        while (search->ptr+16 < search->end) {
+            uint8x16_t chunk             = vld1q_u8((const unsigned char *)search->ptr);
+            uint8x16_t too_low           = vcltq_u8(chunk, lower_bound);
+            uint8x16_t too_high          = vcgtq_u8(chunk, upper_bound);
+
+            uint8x16_t has_backslash     = vceqq_u8(chunk, backslash);
+            uint8x16_t has_dblquote      = vceqq_u8(chunk, dblquote);
+            uint8x16_t has_forward_slash = vceqq_u8(chunk, forward_slash);
+
+            uint8x16_t needs_escape      = vorrq_u8(too_low, too_high);
+            uint8x16_t has_escaped_char  = vorrq_u8(has_forward_slash, vorrq_u8(has_backslash, has_dblquote));
+            needs_escape                 = vorrq_u8(needs_escape, has_escaped_char);
+
+            if (vmaxvq_u8(needs_escape) == 0) {
+                search->ptr += 16;
+                continue;
+            }
+            
+            for(int i=0; i<16; i++) {
+                unsigned char ch = *(search->ptr+i);
+                search->maybe_matches[i] = escape_table[ch];
+            }
+
+            return 1;
+        }
+    } else {
+        /*
+        * The code below implements an SIMD-based algorithm to determine if N bytes at a time
+        * need to be escaped. 
+        * 
+        * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
+        * 
+        * The explanination will be limited to the first 8 bytes of the string for simplicity. However
+        * the vector insructions may work on larger vectors.
+        * 
+        * First, we load three constants 'lower_bound', 'backslash' and 'dblquote" in vector registers.
+        * 
+        * lower_bound: [20 20 20 20 20 20 20 20] 
+        * backslash:   [5C 5C 5C 5C 5C 5C 5C 5C] 
+        * dblquote:    [22 22 22 22 22 22 22 22] 
+        * 
+        * Next we load the first chunk of the ptr: 
+        * [22 54 65 5C 73 74 69 6E] ("  T  e  \  s  t  i  n)
+        * 
+        * First we check if any byte in chunk is less than 32 (0x20). This returns the following vector
+        * as no bytes are less than 32 (0x20):
+        * [0 0 0 0 0 0 0 0]
+        * 
+        * Next, we check if any byte in chunk is equal to a backslash:
+        * [0 0 0 FF 0 0 0 0]
+        * 
+        * Finally we check if any byte in chunk is equal to a double quote:
+        * [FF 0 0 0 0 0 0 0] 
+        * 
+        * Now we have three vectors where each byte indicates if the corresponding byte in chunk
+        * needs to be escaped. We combine these vectors with a series of logical OR instructions.
+        * This is the needs_escape vector and it is equal to:
+        * [FF 0 0 FF 0 0 0 0] 
+        * 
+        * For ARM Neon specifically, we check if the maximum number in the vector is 0. The maximum of
+        * the needs_escape vector is FF. Therefore, we know there is at least one byte that needs to be
+        * escaped.
+        * 
+        * If the maximum of the needs_escape vector is 0, none of the bytes need to be escaped and
+        * we advance pos by the width of the vector.
+        * 
+        * To determine how to escape characters, we look at each value in the needs_escape vector and take
+        * the appropriate action.
+        */
+        while (search->ptr+16 < search->end) {
+            uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
+            uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
+            uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+            uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
+            uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
+
+            if (vmaxvq_u8(needs_escape) == 0) {
+                search->ptr += 16;
+                continue;
+            }
+            
+            for(int i=0; i<16; i++) {
+                unsigned char ch = *(search->ptr+i);
+                search->maybe_matches[i] = escape_table[ch];
+            }
+
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// TODO This can likely be made generic if we know the stride width of the vector.
+static inline unsigned char search_return_next_match_neon(search_state *search) {
+    for(; search->current_match_index < 16 && search->ptr < search->end; ) {
+        unsigned char ch_len = search->maybe_matches[search->current_match_index];
+
+        if (RB_UNLIKELY(ch_len)) {
+            if (ch_len & ESCAPE_MASK) {
+                if (RB_UNLIKELY(ch_len == 11)) {
+                    const unsigned char *uptr = (const unsigned char *)search->ptr;
+                    if (!(uptr[1] == 0x80 && (uptr[2] >> 1) == 0x54)) {
+                        search->ptr += 3;
+                        search->current_match_index += 3;
+                        continue;
+                    }
+                }
+                search->returned_from = search->ptr;
+                search_flush(search);
+                return ch_len & CHAR_LENGTH_MASK;
+            } else {
+                search->ptr += ch_len;
+                search->current_match_index += ch_len;
+            }
+        } else {
+            search->ptr++;
+            search->current_match_index++;
+        }
+    }
+    return 0;
+}
+
+// TODO This can likely be made generic if we know the stride width of the vector and make the SIMD kernel a function pointer and which lookup tables to use.
+static inline unsigned char search_escape_neon(search_state *search, const unsigned char escape_table[256])
+{
+    if (RB_UNLIKELY(search->returned_from != NULL)) {
+        search->current_match_index += (search->ptr - search->returned_from);
+        search->returned_from = NULL;
+        unsigned char ch_len = search_return_next_match_neon(search);
+        if (RB_UNLIKELY(ch_len)) {
+            return ch_len;
+        }
+    }
+
+    uint8x16x4_t *tables;
+    if (escape_table == script_safe_escape_table) {
+        tables = simd_state.neon.script_safe_escape_table;
+    } else {
+        tables = simd_state.neon.escape_table;
+    }
+
+    while (search->ptr + 16 < search->end) {
+        if (!search_update_matches_neon_lut(search, tables)) {
+            break;
+        }
+
+        // if (!search_update_matches_neon_rules(search, escape_table)) {
+        //     break;
+        // }
+
+        search->current_match_index=0;
+        unsigned char ch_len = search_return_next_match_neon(search);
+        if (RB_UNLIKELY(ch_len)) {
+            return ch_len;
+        }
+    }
+
+    if (search->ptr < search->end) {
+        return search_escape(search, escape_table);
+    }
+
+    search_flush(search);
+    return 0;
+}
+#endif /* HAVE_SIMD_NEON */
+#endif /* ENABLE_SIMD */
 
 static inline void fast_escape_UTF8_char(search_state *search, unsigned char ch_len) {
     const unsigned char ch = (unsigned char)*search->ptr;
@@ -263,7 +508,7 @@ static inline void fast_escape_UTF8_char(search_state *search, unsigned char ch_
 static inline void convert_UTF8_to_JSON(search_state *search, const unsigned char escape_table[256])
 {
     unsigned char ch_len;
-    while ((ch_len = search_escape(search, escape_table))) {
+    while ((ch_len = search_escape_impl(search, escape_table))) {
         fast_escape_UTF8_char(search, ch_len);
     }
 }
@@ -929,6 +1174,11 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
     search.cursor = search.ptr;
     search.end = search.ptr + len;
 
+#ifdef ENABLE_SIMD
+    search.current_match_index = 0;
+    search.returned_from = NULL;
+#endif /* ENABLE_SIMD */
+
     switch(rb_enc_str_coderange(obj)) {
         case ENC_CODERANGE_7BIT:
         case ENC_CODERANGE_VALID:
@@ -1087,6 +1337,25 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
 
     return Qundef;
 }
+
+/* SIMD Utilities (if enabled) */
+#ifdef ENABLE_SIMD
+
+#ifdef HAVE_SIMD_NEON
+static void initialize_simd_neon(void) {
+    simd_state.neon.escape_table[0] = load_uint8x16_4(escape_table, 0);
+    simd_state.neon.escape_table[1] = load_uint8x16_4(escape_table, 64);
+    simd_state.neon.escape_table[2] = load_uint8x16_4(escape_table, 128);
+    simd_state.neon.escape_table[3] = load_uint8x16_4(escape_table, 192);
+
+    simd_state.neon.script_safe_escape_table[0] = load_uint8x16_4(script_safe_escape_table, 0);
+    simd_state.neon.script_safe_escape_table[1] = load_uint8x16_4(script_safe_escape_table, 64);
+    simd_state.neon.script_safe_escape_table[2] = load_uint8x16_4(script_safe_escape_table, 128);
+    simd_state.neon.script_safe_escape_table[3] = load_uint8x16_4(script_safe_escape_table, 192);
+}
+#endif /* HAVE_NEON_SIMD */
+
+#endif 
 
 static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func, VALUE io)
 {
@@ -1744,4 +2013,20 @@ void Init_generator(void)
     binary_encindex = rb_ascii8bit_encindex();
 
     rb_require("json/ext/generator/state");
+
+
+    switch(find_simd_implementation()) {
+#ifdef ENABLE_SIMD
+#ifdef HAVE_SIMD_NEON
+        case SIMD_NEON:
+        /* Initialize ARM Neon SIMD Implementation. */
+            initialize_simd_neon();
+            search_escape_impl = search_escape_neon;
+            break;
+#endif /* HAVE_SIMD_NEON */
+#endif /* ENABLE_SIMD */
+        default:
+            search_escape_impl = search_escape;
+            break;
+    }
 }
