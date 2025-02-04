@@ -39,30 +39,33 @@ module JSON
         '\\'  =>  '\\\\',
       }.freeze # :nodoc:
 
-      ESCAPE_PATTERN = /[\/"\\\x0-\x1f]/n # :nodoc:
-
       SCRIPT_SAFE_MAP = MAP.merge(
         '/'  =>  '\\/',
-        "\u2028".b => '\u2028',
-        "\u2029".b => '\u2029',
+        "\u2028" => '\u2028',
+        "\u2029" => '\u2029',
       ).freeze
 
-      SCRIPT_SAFE_ESCAPE_PATTERN = Regexp.union(ESCAPE_PATTERN, "\u2028".b, "\u2029".b)
+      SCRIPT_SAFE_ESCAPE_PATTERN = /[\/"\\\x0-\x1f\u2028-\u2029]/
 
       # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
       # UTF16 big endian characters as \u????, and return it.
-      def utf8_to_json(string, script_safe = false) # :nodoc:
-        string = string.b
+      def self.utf8_to_json(string, script_safe = false) # :nodoc:
         if script_safe
-          string.gsub!(SCRIPT_SAFE_ESCAPE_PATTERN) { SCRIPT_SAFE_MAP[$&] || $& }
+          if SCRIPT_SAFE_ESCAPE_PATTERN.match?(string)
+            string.gsub(SCRIPT_SAFE_ESCAPE_PATTERN, SCRIPT_SAFE_MAP)
+          else
+            string
+          end
         else
-          string.gsub!(ESCAPE_PATTERN) { MAP[$&] || $& }
+          if /["\\\x0-\x1f]/.match?(string)
+            string.gsub(/["\\\x0-\x1f]/, MAP)
+          else
+            string
+          end
         end
-        string.force_encoding(::Encoding::UTF_8)
-        string
       end
 
-      def utf8_to_json_ascii(original_string, script_safe = false) # :nodoc:
+      def self.utf8_to_json_ascii(original_string, script_safe = false) # :nodoc:
         string = original_string.b
         map = script_safe ? SCRIPT_SAFE_MAP : MAP
         string.gsub!(/[\/"\\\x0-\x1f]/n) { map[$&] || $& }
@@ -86,12 +89,11 @@ module JSON
         raise GeneratorError.new(e.message, original_string)
       end
 
-      def valid_utf8?(string)
+      def self.valid_utf8?(string)
         encoding = string.encoding
         (encoding == Encoding::UTF_8 || encoding == Encoding::ASCII) &&
           string.valid_encoding?
       end
-      module_function :utf8_to_json, :utf8_to_json_ascii, :valid_utf8?
 
       # This class is used to create State instances, that are use to hold data
       # while generating a JSON text from a Ruby data structure.
@@ -380,8 +382,8 @@ module JSON
           end
           raise GeneratorError.new("source sequence is illegal/malformed utf-8", string) unless string.valid_encoding?
 
-          if /["\\\x0-\x1f]/n.match?(string)
-            buf << string.gsub(/["\\\x0-\x1f]/n, MAP)
+          if /["\\\x0-\x1f]/.match?(string)
+            buf << string.gsub(/["\\\x0-\x1f]/, MAP)
           else
             buf << string
           end
