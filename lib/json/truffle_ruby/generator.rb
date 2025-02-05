@@ -303,7 +303,7 @@ module JSON
         # GeneratorError exception.
         def generate(obj, anIO = nil)
           if @indent.empty? and @space.empty? and @space_before.empty? and @object_nl.empty? and @array_nl.empty? and
-              !@ascii_only and !@script_safe and @max_nesting == 0 and !@strict
+              !@ascii_only and !@script_safe and @max_nesting == 0 and (!@strict || Symbol === obj)
             result = generate_json(obj, ''.dup)
           else
             result = obj.to_json(self)
@@ -364,6 +364,12 @@ module JSON
             end
           when Integer
             buf << obj.to_s
+          when Symbol
+            if @strict
+              fast_serialize_string(obj.name, buf)
+            else
+              buf << obj.to_json(self)
+            end
           else
             # Note: Float is handled this way since Float#to_s is slow anyway
             buf << obj.to_json(self)
@@ -539,10 +545,10 @@ module JSON
             each { |value|
               result << delim unless first
               result << state.indent * depth if indent
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol == value)
                 if state.as_json
                   value = state.as_json.call(value)
-                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol === value
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
                   result << value.to_json(state)
@@ -587,6 +593,17 @@ module JSON
               end
             else
               to_s
+            end
+          end
+        end
+
+        module Symbol
+          def to_json(state = nil, *args)
+            state = State.from_state(state)
+            if state.strict?
+              name.to_json(state, *args)
+            else
+              super
             end
           end
         end

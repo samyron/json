@@ -108,6 +108,8 @@ public final class Generator {
             case FLOAT  : return (Handler<T>) FLOAT_HANDLER;
             case FIXNUM : return (Handler<T>) FIXNUM_HANDLER;
             case BIGNUM : return (Handler<T>) BIGNUM_HANDLER;
+            case SYMBOL :
+                return (Handler<T>) SYMBOL_HANDLER;
             case STRING :
                 if (Helpers.metaclass(object) != runtime.getString()) break;
                 return (Handler<T>) STRING_HANDLER;
@@ -454,6 +456,29 @@ public final class Generator {
                         break;
                     default:
                         throw Utils.buildGeneratorError(context, object, "source sequence is illegal/malformed utf-8").toThrowable();
+                }
+            }
+        };
+
+    static final Handler<RubySymbol> SYMBOL_HANDLER =
+        new Handler<RubySymbol>() {
+            @Override
+            int guessSize(ThreadContext context, Session session, RubySymbol object) {
+                GeneratorState state = session.getState(context);
+                if (state.strict()) {
+                    return STRING_HANDLER.guessSize(context, session, object.asString());
+                } else {
+                    return GENERIC_HANDLER.guessSize(context, session, object);
+                }
+            }
+
+            @Override
+            void generate(ThreadContext context, Session session, RubySymbol object, OutputStream buffer) throws IOException {
+                GeneratorState state = session.getState(context);
+                if (state.strict()) {
+                    STRING_HANDLER.generate(context, session, object.asString(), buffer);
+                } else {
+                    GENERIC_HANDLER.generate(context, session, object, buffer);
                 }
             }
         };
