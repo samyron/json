@@ -253,12 +253,42 @@ static struct _simd_state simd_state;
 #ifdef ENABLE_SIMD
 #ifdef HAVE_SIMD_NEON
 
-static inline unsigned char search_update_matches_neon_lut(search_state *search, uint8x16x4_t *tables) {
+// TODO This can likely be made generic if we know the stride width of the vector.
+static inline unsigned char search_escape_basic_neon_next_match(search_state *search) {
+    for(; search->current_match_index < 16 && search->ptr < search->end; ) {
+        unsigned char ch_len = search->maybe_matches[search->current_match_index];
+
+        if (RB_UNLIKELY(ch_len)) {
+            if (ch_len & ESCAPE_MASK) {
+                if (RB_UNLIKELY(ch_len == 11)) {
+                    const unsigned char *uptr = (const unsigned char *)search->ptr;
+                    if (!(uptr[1] == 0x80 && (uptr[2] >> 1) == 0x54)) {
+                        search->ptr += 3;
+                        search->current_match_index += 3;
+                        continue;
+                    }
+                }
+                search->returned_from = search->ptr;
+                search_flush(search);
+                return ch_len & CHAR_LENGTH_MASK;
+            } else {
+                search->ptr += ch_len;
+                search->current_match_index += ch_len;
+            }
+        } else {
+            search->ptr++;
+            search->current_match_index++;
+        }
+    }
+    return 0;
+}
+
+static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
     while (search->ptr + 16 < search->end) {
         uint8x16_t chunk = vld1q_u8((const unsigned char *)search->ptr);
 
-        uint8x16_t tmp1   = vqtbl4q_u8(tables[0], chunk);
-        uint8x16_t tmp2   = vqtbl4q_u8(tables[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
+        uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table[0], chunk);
+        uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
 
         uint8x16_t result = vorrq_u8(tmp1, tmp2);
         
@@ -268,13 +298,15 @@ static inline unsigned char search_update_matches_neon_lut(search_state *search,
         }
 
         vst1q_u8(search->maybe_matches, result);
-        return 1;
+
+        search->current_match_index=0;
+        return search_escape_basic_neon_next_match(search);
     }
 
     return 0;
 }
 
-static unsigned char search_update_matches_neon_rules(search_state *search) {
+static unsigned char search_escape_basic_neon_advance_rules(search_state *search) {
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
     const uint8x16_t backslash   = vdupq_n_u8('\\');
     const uint8x16_t dblquote    = vdupq_n_u8('\"');
@@ -337,39 +369,10 @@ static unsigned char search_update_matches_neon_rules(search_state *search) {
         uint8x16_t maybe_matches = vandq_u8(needs_escape, vdupq_n_u8(0x9));
         vst1q_u8(search->maybe_matches, maybe_matches);
 
-        return 1;
+        search->current_match_index=0;
+        return search_escape_basic_neon_next_match(search);
     }
     
-    return 0;
-}
-
-// TODO This can likely be made generic if we know the stride width of the vector.
-static inline unsigned char search_return_next_match_neon(search_state *search) {
-    for(; search->current_match_index < 16 && search->ptr < search->end; ) {
-        unsigned char ch_len = search->maybe_matches[search->current_match_index];
-
-        if (RB_UNLIKELY(ch_len)) {
-            if (ch_len & ESCAPE_MASK) {
-                if (RB_UNLIKELY(ch_len == 11)) {
-                    const unsigned char *uptr = (const unsigned char *)search->ptr;
-                    if (!(uptr[1] == 0x80 && (uptr[2] >> 1) == 0x54)) {
-                        search->ptr += 3;
-                        search->current_match_index += 3;
-                        continue;
-                    }
-                }
-                search->returned_from = search->ptr;
-                search_flush(search);
-                return ch_len & CHAR_LENGTH_MASK;
-            } else {
-                search->ptr += ch_len;
-                search->current_match_index += ch_len;
-            }
-        } else {
-            search->ptr++;
-            search->current_match_index++;
-        }
-    }
     return 0;
 }
 
@@ -379,29 +382,20 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (RB_UNLIKELY(search->returned_from != NULL)) {
         search->current_match_index += (search->ptr - search->returned_from);
         search->returned_from = NULL;
-        unsigned char ch_len = search_return_next_match_neon(search);
+        unsigned char ch_len = search_escape_basic_neon_next_match(search);
         if (RB_UNLIKELY(ch_len)) {
             return ch_len;
         }
     }
 
-    // uint8x16x4_t *tables = simd_state.neon.escape_table;
-
-    while (search->ptr + 16 < search->end) {
-        // if (!search_update_matches_neon_lut(search, tables)) {
-        //     break;
-        // }
-
-        if (!search_update_matches_neon_rules(search)) {
-            break;
-        }
-
-        search->current_match_index=0;
-        unsigned char ch_len = search_return_next_match_neon(search);
-        if (RB_UNLIKELY(ch_len)) {
-            return ch_len;
-        }
+    unsigned char ch_len;
+    if ((ch_len = search_escape_basic_neon_advance_lut(search)) != 0) {
+        return ch_len;
     }
+
+    // if ((ch_len = search_escape_basic_neon_advance_rules(search)) != 0) {
+    //     return ch_len;
+    // }
 
     if (search->ptr < search->end) {
         return search_escape_basic(search);
