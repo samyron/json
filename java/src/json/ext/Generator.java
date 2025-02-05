@@ -261,7 +261,17 @@ public final class Generator {
                 double value = object.getValue();
 
                 if (Double.isInfinite(value) || Double.isNaN(value)) {
-                    if (!session.getState(context).allowNaN()) {
+                    GeneratorState state = session.getState(context);
+
+                    if (!state.allowNaN()) {
+                        if (state.strict() && state.getAsJSON() != null) {
+                            IRubyObject castedValue = state.getAsJSON().call(context, object);
+                            if (castedValue != object) {
+                                getHandlerFor(context.runtime, castedValue).generate(context, session, castedValue, buffer);
+                                return;
+                            }
+                        }
+
                         throw Utils.buildGeneratorError(context, object, object + " not allowed in JSON").toThrowable();
                     }
                 }

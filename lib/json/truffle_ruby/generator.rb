@@ -570,18 +570,23 @@ module JSON
 
         module Float
           # Returns a JSON string representation for this Float number.
-          def to_json(state = nil, *)
+          def to_json(state = nil, *args)
             state = State.from_state(state)
-            case
-            when infinite?
+            if infinite? || nan?
               if state.allow_nan?
                 to_s
-              else
-                raise GeneratorError.new("#{self} not allowed in JSON", self)
-              end
-            when nan?
-              if state.allow_nan?
-                to_s
+              elsif state.strict? && state.as_json
+                casted_value = state.as_json.call(self)
+
+                if casted_value.equal?(self)
+                  raise GeneratorError.new("#{self} not allowed in JSON", self)
+                end
+
+                state.check_max_nesting
+                state.depth += 1
+                result = casted_value.to_json(state, *args)
+                state.depth -= 1
+                result
               else
                 raise GeneratorError.new("#{self} not allowed in JSON", self)
               end
