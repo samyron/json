@@ -303,7 +303,7 @@ static unsigned char search_update_matches_neon_rules(search_state *search, cons
                 search->ptr += 16;
                 continue;
             }
-            
+
             for(int i=0; i<16; i++) {
                 unsigned char ch = *(search->ptr+i);
                 search->maybe_matches[i] = escape_table[ch];
@@ -367,10 +367,8 @@ static unsigned char search_update_matches_neon_rules(search_state *search, cons
                 continue;
             }
             
-            for(int i=0; i<16; i++) {
-                unsigned char ch = *(search->ptr+i);
-                search->maybe_matches[i] = escape_table[ch];
-            }
+            uint8x16_t maybe_matches = vandq_u8(needs_escape, vdupq_n_u8(0x9));
+            vst1q_u8(search->maybe_matches, maybe_matches);
 
             return 1;
         }
@@ -428,13 +426,13 @@ static inline unsigned char search_escape_neon(search_state *search, const unsig
     }
 
     while (search->ptr + 16 < search->end) {
-        if (!search_update_matches_neon_lut(search, tables)) {
-            break;
-        }
-
-        // if (!search_update_matches_neon_rules(search, escape_table)) {
+        // if (!search_update_matches_neon_lut(search, tables)) {
         //     break;
         // }
+
+        if (!search_update_matches_neon_rules(search, escape_table)) {
+            break;
+        }
 
         search->current_match_index=0;
         unsigned char ch_len = search_return_next_match_neon(search);
