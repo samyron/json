@@ -17,11 +17,12 @@ SIMD_Implementation find_simd_implementation() {
 
 #define HAVE_SIMD_NEON 1
 
-uint8x16x4_t load_uint8x16_4(const unsigned char *table, int offset) {
+uint8x16x4_t load_uint8x16_4(const unsigned char *table) {
   uint8x16x4_t tab;
-  for(int i=0; i<4; i++) {
-    tab.val[i] = vld1q_u8(table+offset+(i*16));
-  }
+  tab.val[0] = vld1q_u8(table);
+  tab.val[1] = vld1q_u8(table+16);
+  tab.val[2] = vld1q_u8(table+32);
+  tab.val[3] = vld1q_u8(table+48);
   return tab;
 }
 

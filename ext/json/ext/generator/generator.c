@@ -1325,10 +1325,10 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
 
 #ifdef HAVE_SIMD_NEON
 static void initialize_simd_neon(void) {
-    simd_state.neon.escape_table[0] = load_uint8x16_4(escape_table_basic, 0);
-    simd_state.neon.escape_table[1] = load_uint8x16_4(escape_table_basic, 64);
-    simd_state.neon.escape_table[2] = load_uint8x16_4(escape_table_basic, 128);
-    simd_state.neon.escape_table[3] = load_uint8x16_4(escape_table_basic, 192);
+    simd_state.neon.escape_table[0] = load_uint8x16_4(escape_table_basic);
+    simd_state.neon.escape_table[1] = load_uint8x16_4(escape_table_basic+64);
+    simd_state.neon.escape_table[2] = load_uint8x16_4(escape_table_basic+128);
+    simd_state.neon.escape_table[3] = load_uint8x16_4(escape_table_basic+192);
 }
 #endif /* HAVE_NEON_SIMD */
 
