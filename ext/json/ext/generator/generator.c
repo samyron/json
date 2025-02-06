@@ -241,7 +241,7 @@ static inline void escape_UTF8_char(search_state *search, unsigned char ch_len) 
 struct _simd_state {
 #ifdef HAVE_SIMD_NEON
     struct {
-        uint8x16x4_t escape_table[4];
+        uint8x16x4_t escape_table_basic[2];
     } neon;
 #endif /* HAVE_SIMD_NEON */
 };
@@ -287,8 +287,8 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
     while (search->ptr + 16 < search->end) {
         uint8x16_t chunk = vld1q_u8((const unsigned char *)search->ptr);
 
-        uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table[0], chunk);
-        uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
+        uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
+        uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
 
         uint8x16_t result = vorrq_u8(tmp1, tmp2);
         
@@ -1325,10 +1325,8 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
 
 #ifdef HAVE_SIMD_NEON
 static void initialize_simd_neon(void) {
-    simd_state.neon.escape_table[0] = load_uint8x16_4(escape_table_basic);
-    simd_state.neon.escape_table[1] = load_uint8x16_4(escape_table_basic+64);
-    simd_state.neon.escape_table[2] = load_uint8x16_4(escape_table_basic+128);
-    simd_state.neon.escape_table[3] = load_uint8x16_4(escape_table_basic+192);
+    simd_state.neon.escape_table_basic[0] = load_uint8x16_4(escape_table_basic);
+    simd_state.neon.escape_table_basic[1] = load_uint8x16_4(escape_table_basic+64);
 }
 #endif /* HAVE_NEON_SIMD */
 
