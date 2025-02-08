@@ -36,6 +36,16 @@ void print_uint8x16(char *msg, uint8x16_t vec) {
   printf("]\n");
 }
 
+void print_uint8x8(char *msg, uint8x8_t vec) {
+  printf("%s\n[ ", msg);
+  uint8_t store[8] = {0};
+  vst1_u8(store, vec);
+  for(int i=0; i<8; i++) {
+    printf("%3d ", store[i]);
+  }
+  printf("]\n");
+}
+
 #endif /* ARM Neon Support.*/
 
 /* Other SIMD implementation checks here. */
