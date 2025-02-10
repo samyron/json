@@ -5,6 +5,7 @@
 * `strict: true` now accept symbols as values. Previously they'd only be accepted as hash keys.
 * The C extension Parser has been entirely reimplemented from scratch.
 * Introduced `JSON::Coder` as a new API allowing to customize how non native types are serialized in a non-global way.
+* Introduced `JSON::Fragment` to allow assembling cached fragments in a safe way.
 * The Java implementation of the generator received many optimizations.
 
 ### 2024-12-18 (2.9.1)
