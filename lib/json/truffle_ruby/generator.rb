@@ -258,7 +258,7 @@ module JSON
           @object_nl             = opts[:object_nl]     || '' if opts.key?(:object_nl)
           @array_nl              = opts[:array_nl]      || '' if opts.key?(:array_nl)
           @allow_nan             = !!opts[:allow_nan]         if opts.key?(:allow_nan)
-          @as_json               = opts[:as_json].to_proc     if opts.key?(:as_json)
+          @as_json               = opts[:as_json].to_proc     if opts[:as_json]
           @ascii_only            = opts[:ascii_only]          if opts.key?(:ascii_only)
           @depth                 = opts[:depth] || 0
           @buffer_initial_length ||= opts[:buffer_initial_length]

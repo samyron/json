@@ -115,7 +115,7 @@ final class OptionsReader {
 
     RubyProc getProc(String key) {
         IRubyObject value = get(key);
-        if (value == null) return null;
+        if (value == null || value.isNil() || value == runtime.getFalse()) return null;
         return (RubyProc)TypeConverter.convertToType(value, runtime.getProc(), "to_proc");
     }
 }

@@ -1,5 +1,7 @@
 # Changes
 
+* Fix a compatibility issue with `MultiJson.dump(obj, pretty: true)`: `no implicit conversion of false into Proc (TypeError)`.
+
 ### 2025-02-10 (2.10.0)
 
 * `strict: true` now accept symbols as values. Previously they'd only be accepted as hash keys.
