@@ -259,22 +259,9 @@ static inline unsigned char search_escape_basic_neon_next_match(search_state *se
         unsigned char ch_len = search->maybe_matches[search->current_match_index];
 
         if (RB_UNLIKELY(ch_len)) {
-            if (ch_len & ESCAPE_MASK) {
-                if (RB_UNLIKELY(ch_len == 11)) {
-                    const unsigned char *uptr = (const unsigned char *)search->ptr;
-                    if (!(uptr[1] == 0x80 && (uptr[2] >> 1) == 0x54)) {
-                        search->ptr += 3;
-                        search->current_match_index += 3;
-                        continue;
-                    }
-                }
-                search->returned_from = search->ptr;
-                search_flush(search);
-                return ch_len & CHAR_LENGTH_MASK;
-            } else {
-                search->ptr += ch_len;
-                search->current_match_index += ch_len;
-            }
+            search->returned_from = search->ptr;
+            search_flush(search);
+            return 1;
         } else {
             search->ptr++;
             search->current_match_index++;
