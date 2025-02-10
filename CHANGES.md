@@ -1,5 +1,7 @@
 # Changes
 
+### 2025-02-10 (2.10.1)
+
 * Fix a compatibility issue with `MultiJson.dump(obj, pretty: true)`: `no implicit conversion of false into Proc (TypeError)`.
 
 ### 2025-02-10 (2.10.0)
