@@ -369,19 +369,17 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (RB_UNLIKELY(search->returned_from != NULL)) {
         search->current_match_index += (search->ptr - search->returned_from);
         search->returned_from = NULL;
-        unsigned char ch_len = search_escape_basic_neon_next_match(search);
-        if (RB_UNLIKELY(ch_len)) {
-            return ch_len;
+        if (RB_UNLIKELY(search_escape_basic_neon_next_match(search))) {
+            return 1;
         }
     }
 
-    unsigned char ch_len;
-    if ((ch_len = search_escape_basic_neon_advance_lut(search)) != 0) {
-        return ch_len;
+    if (search_escape_basic_neon_advance_lut(search)) {
+        return 1;
     }
 
-    // if ((ch_len = search_escape_basic_neon_advance_rules(search)) != 0) {
-    //     return ch_len;
+    // if (search_escape_basic_neon_advance_rules(search)) {
+    //     return 1;
     // }
 
     if (search->ptr < search->end) {
