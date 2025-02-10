@@ -368,9 +368,12 @@ public class GeneratorState extends RubyObject {
     }
 
     @JRubyMethod(name="as_json=")
-    public IRubyObject as_json_set(ThreadContext context,
-                                   IRubyObject asJSON) {
-        this.asJSON = (RubyProc)TypeConverter.convertToType(asJSON, context.getRuntime().getProc(), "to_proc");
+    public IRubyObject as_json_set(ThreadContext context, IRubyObject asJSON) {
+        if (asJSON.isNil() || asJSON == context.getRuntime().getFalse()) {
+            this.asJSON = null;
+        } else {
+            this.asJSON = (RubyProc)TypeConverter.convertToType(asJSON, context.getRuntime().getProc(), "to_proc");
+        }
         return asJSON;
     }
 
