@@ -153,6 +153,80 @@ static inline unsigned char search_escape_basic(search_state *search)
     return 0;
 }
 
+static inline unsigned char search_escape_basic_optimized(search_state *search) {
+// Taken from: https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
+// TODO revisit for the compiler version check
+
+// These macros from https://graphics.stanford.edu/~seander/bithacks.html
+# if SIZEOF_UINTPTR_T == 8
+#define hasless(x,n) (((x)-~0ULL/255*(n))&~(x)&~0ULL/255*128)
+#define haszero(v) (((v) - 0x0101010101010101ULL) & ~(v) & 0x8080808080808080ULL)
+#define MASK_DOUBLEQUOTE  0x2222222222222222ULL
+#define MASK_BACKSLASH 0x5c5c5c5c5c5c5c5cULL
+# elif SIZEOF_UINTPTR_T == 4
+#define hasless(x,n) (((x)-~0UL/255*(n))&~(x)&~0UL/255*128)
+#define haszero(v) (((v) - 0x01010101UL) & ~(v) & 0x80808080UL)
+#define MASK_DOUBLEQUOTE  0x22222222UL
+#define MASK_BACKSLASH 0x5c5c5c5cUL
+# else
+#  error "don't know what to do."
+#endif
+
+    while (search->ptr < search->end && (uintptr_t) search->ptr % SIZEOF_UINTPTR_T != 0) {
+        if (RB_UNLIKELY(escape_table_basic[(const unsigned char)*search->ptr])) {
+            search_flush(search);
+            return 1;
+        } else {
+            search->ptr++;
+        }
+    }
+
+    /*
+    * Align the pointer to a sizeof(uintptr_t)-byte boundary.
+    * TODO: Use the same alignment technique as https://github.com/ruby/ruby/blob/96a5da67864a15eea7b79e552c7684ddd182f76c/string.c#L671-L748
+    */
+   uintptr_t *aligned_ptr = (uintptr_t *) search->ptr;
+
+    while (aligned_ptr + SIZEOF_UINTPTR_T < (uintptr_t *) search->end) {
+        uintptr_t chunk = *aligned_ptr;
+
+        uintptr_t has_less_than_0x20 = hasless(chunk, ' ');
+
+        /*
+        * This is effectively a memchr(3). Look for both a double quote 
+        * and a forward slash.
+        */
+        uintptr_t tmp1 = chunk ^ MASK_DOUBLEQUOTE;
+        uintptr_t haszero1 = haszero(tmp1);
+
+        uintptr_t tmp2 = chunk ^ MASK_BACKSLASH;
+        uintptr_t haszero2 = haszero(tmp2);
+
+        if ((has_less_than_0x20 | haszero1 | haszero2) != 0) {
+            for(size_t i = 0; i < SIZEOF_UINTPTR_T; i++) {
+                if (RB_UNLIKELY(escape_table_basic[(const unsigned char)*search->ptr])) {
+                    search_flush(search);
+                    return 1;
+                } else {
+                    search->ptr++;
+                }
+            }
+        } else {
+            aligned_ptr++;
+            search->ptr = (const char *) aligned_ptr;
+        }
+    }
+#undef hasless
+#undef haszero
+
+    if (search->ptr < search->end) {
+        return search_escape_basic(search);
+    }
+
+    search_flush(search);
+    return 0;
+}
+
 static inline void escape_UTF8_char_basic(search_state *search) {
     const unsigned char ch = (unsigned char)*search->ptr;
     switch (ch) {
@@ -1986,7 +2060,8 @@ void Init_generator(void)
 #endif /* HAVE_SIMD_NEON */
 #endif /* ENABLE_SIMD */
         default:
-            search_escape_basic_impl = search_escape_basic;
+            // search_escape_basic_impl = search_escape_basic;
+            search_escape_basic_impl = search_escape_basic_optimized;
             break;
     }
 }
