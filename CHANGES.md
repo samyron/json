@@ -1,5 +1,7 @@
 # Changes
 
+* Ensure document snippets that are included in parser errors don't include truncated multibyte characters.
+
 ### 2025-02-10 (2.10.1)
 
 * Fix a compatibility issue with `MultiJson.dump(obj, pretty: true)`: `no implicit conversion of false into Proc (TypeError)`.
