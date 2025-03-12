@@ -5,6 +5,8 @@
 * Fix a potential crash in the C extension parser.
 * Raise a ParserError on all incomplete unicode escape sequence. This was the behavior until `2.10.0` unadvertently changed it.
 * Ensure document snippets that are included in parser errors don't include truncated multibyte characters.
+* Ensure parser error snippets are valid UTF-8.
+* Fix `JSON::GeneratorError#detailed_message` on Ruby < 3.2
 
 ### 2025-02-10 (2.10.1)
 
