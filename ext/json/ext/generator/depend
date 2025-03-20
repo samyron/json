@@ -1,1 +1,2 @@
 generator.o: generator.c $(srcdir)/../fbuffer/fbuffer.h
+generator.o: generator.c $(srcdir)/../vendor/fpconv.c
