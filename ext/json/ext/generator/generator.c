@@ -120,8 +120,10 @@ typedef struct _search_state {
 
 static inline void search_flush(search_state *search)
 {
-    fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
-    search->cursor = search->ptr;
+    if (search->cursor < search->ptr) {
+        fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
+        search->cursor = search->ptr;
+    }
 }
 
 static const unsigned char escape_table_basic[256] = {
@@ -270,14 +272,19 @@ static inline unsigned char search_escape_basic_neon_next_match(search_state *se
     return 0;
 }
 
+static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
+    uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
+    uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
+
+    uint8x16_t result = vorrq_u8(tmp1, tmp2);
+    return result;
+} 
+
+
 static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
     while (search->ptr + 16 < search->end) {
-        uint8x16_t chunk = vld1q_u8((const unsigned char *)search->ptr);
-
-        uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
-        uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
-
-        uint8x16_t result = vorrq_u8(tmp1, tmp2);
+        uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
+        uint8x16_t result = neon_lut_update(chunk);
         
         if (vmaxvq_u8(result) == 0) {
             search->ptr += 16;
@@ -290,14 +297,52 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
         return search_escape_basic_neon_next_match(search);
     }
 
+    // There are fewer than 16 bytes left. 
+    unsigned long remaining = (search->end - search->ptr);
+    if (remaining >= 8) {
+        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
+        search_flush(search);
+
+        FBuffer *buf = search->buffer;
+        fbuffer_inc_capa(buf, 16);
+
+        char *s = (buf->ptr + buf->len);
+
+        memset(s, 'X', 16);
+
+        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
+        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
+        memcpy(s, search->ptr, remaining);
+
+        uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
+        uint8x16_t result = neon_lut_update(chunk);
+        if (vmaxvq_u8(result) == 0) {
+            // Nothing to escape, ensure search_flush doesn't do anything by setting 
+            // search->cursor to search->ptr.
+            buf->len += remaining;
+            search->ptr = search->end;
+            search->cursor = search->end;
+            return 0;
+        }
+    }
+
     return 0;
 }
 
-static unsigned char search_escape_basic_neon_advance_rules(search_state *search) {
+static inline uint8x16_t neon_rules_update(uint8x16_t chunk) {
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
     const uint8x16_t backslash   = vdupq_n_u8('\\');
     const uint8x16_t dblquote    = vdupq_n_u8('\"');
 
+    uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
+    uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
+    uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
+    uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
+
+    return needs_escape;
+}
+
+static unsigned char search_escape_basic_neon_advance_rules(search_state *search) {
     /*
     * The code below implements an SIMD-based algorithm to determine if N bytes at a time
     * need to be escaped. 
@@ -343,10 +388,7 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     */
     while (search->ptr+16 < search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
-        uint8x16_t too_low       = vcltq_u8(chunk, lower_bound);
-        uint8x16_t has_backslash = vceqq_u8(chunk, backslash);
-        uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
-        uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
+        uint8x16_t needs_escape  = neon_rules_update(chunk);
 
         if (vmaxvq_u8(needs_escape) == 0) {
             search->ptr += 16;
@@ -360,6 +402,35 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
         return search_escape_basic_neon_next_match(search);
     }
     
+    // There are fewer than 16 bytes left. 
+    unsigned long remaining = (search->end - search->ptr);
+    if (remaining >= 8) {
+        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
+        search_flush(search);
+
+        FBuffer *buf = search->buffer;
+        fbuffer_inc_capa(buf, 16);
+
+        char *s = (buf->ptr + buf->len);
+
+        memset(s, 'X', 16);
+
+        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
+        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
+        memcpy(s, search->ptr, remaining);
+
+        uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
+        uint8x16_t result = neon_rules_update(chunk);
+        if (vmaxvq_u8(result) == 0) {
+            // Nothing to escape, ensure search_flush doesn't do anything by setting 
+            // search->cursor to search->ptr.
+            buf->len += remaining;
+            search->ptr = search->end;
+            search->cursor = search->end;
+            return 0;
+        }
+    }
+
     return 0;
 }
 
@@ -374,13 +445,16 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         }
     }
 
-    if (search_escape_basic_neon_advance_lut(search)) {
-        return 1;
-    }
+    // TODO Pick an implementation or make them configurable. Right now it looks like the "rules" based approach
+    // might be a bit faster.
 
-    // if (search_escape_basic_neon_advance_rules(search)) {
+    // if (search_escape_basic_neon_advance_lut(search)) {
     //     return 1;
     // }
+
+    if (search_escape_basic_neon_advance_rules(search)) {
+        return 1;
+    }
 
     if (search->ptr < search->end) {
         return search_escape_basic(search);
