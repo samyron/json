@@ -158,8 +158,7 @@ public class GeneratorState extends RubyObject {
             }
         }
 
-        // for other values, return the safe prototype
-        return (GeneratorState)info.getSafeStatePrototype(context).dup();
+        return (GeneratorState)klass.newInstance(context, context.nil);
     }
 
     /**

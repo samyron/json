@@ -117,7 +117,7 @@ module JSON
               return new(opts.to_h)
             end
           end
-          SAFE_STATE_PROTOTYPE.dup
+          new
         end
 
         # Instantiates a new State object, configured by _opts_.
