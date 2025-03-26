@@ -15,6 +15,7 @@ import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
 import org.jruby.RubyInteger;
 import org.jruby.RubyObject;
+import org.jruby.RubyProc;
 import org.jruby.RubyString;
 import org.jruby.anno.JRubyMethod;
 import org.jruby.exceptions.JumpException;
@@ -56,6 +57,7 @@ public class ParserConfig extends RubyObject {
     private boolean allowTrailingComma;
     private boolean symbolizeNames;
     private boolean freeze;
+    private RubyProc onLoadProc;
     private RubyClass objectClass;
     private RubyClass arrayClass;
     private RubyClass decimalClass;
@@ -179,6 +181,7 @@ public class ParserConfig extends RubyObject {
         this.allowTrailingComma = opts.getBool("allow_trailing_comma", false);
         this.symbolizeNames  = opts.getBool("symbolize_names", false);
         this.freeze          = opts.getBool("freeze", false);
+        this.onLoadProc      = opts.getProc("on_load");
         this.createId        = opts.getString("create_id", getCreateId(context));
 
         IRubyObject additions = opts.get("create_additions");
@@ -212,6 +215,14 @@ public class ParserConfig extends RubyObject {
         }
 
         return this;
+    }
+
+    public IRubyObject onLoad(ThreadContext context, IRubyObject object) {
+        if (onLoadProc == null) {
+            return object;
+        } else {
+            return onLoadProc.call(context, object);
+        }
     }
 
     /**
@@ -479,7 +490,7 @@ public class ParserConfig extends RubyObject {
                 return;
             }
             RubyInteger number = createInteger(context, p, new_p);
-            res.update(number, new_p + 1);
+            res.update(config.onLoad(context, number), new_p + 1);
         }
 
         int parseIntegerInternal(int p, int pe) {
@@ -532,7 +543,7 @@ public class ParserConfig extends RubyObject {
             final ByteList num = absSubSequence(p, new_p);
             IRubyObject number = config.decimalFactory.apply(context, num);
 
-            res.update(number, new_p + 1);
+            res.update(config.onLoad(context, number), new_p + 1);
         }
 
         int parseFloatInternal(int p, int pe) {
@@ -618,9 +629,9 @@ public class ParserConfig extends RubyObject {
                      string.setFrozen(true);
                      string = context.runtime.freezeAndDedupString(string);
                   }
-                  res.update(string, p + 1);
+                  res.update(config.onLoad(context, string), p + 1);
                 } else {
-                  res.update(result, p + 1);
+                  res.update(config.onLoad(context, result), p + 1);
                 }
             } else {
                 res.update(null, p + 1);
@@ -688,7 +699,7 @@ public class ParserConfig extends RubyObject {
             %% write exec;
 
             if (cs >= JSON_array_first_final) {
-                res.update(result, p + 1);
+                res.update(config.onLoad(context, result), p + 1);
             } else {
                 throw unexpectedToken(context, p, pe);
             }
@@ -802,7 +813,7 @@ public class ParserConfig extends RubyObject {
                     }
                 }
             }
-            res.update(returnedResult, p + 1);
+            res.update(config.onLoad(context, returnedResult), p + 1);
         }
 
         %%{

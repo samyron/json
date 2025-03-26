@@ -1,5 +1,7 @@
 # Changes
 
+* Fix `JSON.load` proc argument to substitute the parsed object with the return value.
+  This better match `Marshal.load` behavior.
 * Deprecate `JSON.fast_generate` (it's not any faster, so pointless).
 * Deprecate `JSON.load_default_options`.
 * Deprecate `JSON.unsafe_load_default_options`.
