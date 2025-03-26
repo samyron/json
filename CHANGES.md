@@ -1,5 +1,9 @@
 # Changes
 
+* Deprecate `JSON.load_default_options`.
+* Deprecate `JSON.unsafe_load_default_options`.
+* Deprecate `JSON.dump_default_options`.
+
 ### 2025-03-12 (2.10.2)
 
 * Fix a potential crash in the C extension parser.
