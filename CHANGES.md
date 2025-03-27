@@ -10,6 +10,8 @@
 * Remove deprecated `JSON.unparse` method.
 * Remove deprecated `JSON.fast_unparse` method.
 * Remove deprecated `JSON.pretty_unparse` method.
+* Remove deprecated `JSON::UnparserError` constant.
+* Remove outdated `JSON::MissingUnicodeSupport` constant.
 
 ### 2025-03-12 (2.10.2)
 
