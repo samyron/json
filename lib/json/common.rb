@@ -5,9 +5,6 @@ require 'json/version'
 module JSON
   autoload :GenericObject, 'json/generic_object'
 
-  NOT_SET = Object.new.freeze
-  private_constant :NOT_SET
-
   class << self
     # :call-seq:
     #   JSON[object] -> new_array or new_string
@@ -72,15 +69,6 @@ module JSON
       const_set :State, self.state
     ensure
       $VERBOSE = old
-    end
-
-    def create_pretty_state
-      State.new(
-        :indent         => '  ',
-        :space          => ' ',
-        :object_nl      => "\n",
-        :array_nl       => "\n"
-      )
     end
 
     # Returns the JSON generator module that is used by JSON.
@@ -366,6 +354,14 @@ module JSON
     generate(obj, opts)
   end
 
+  PRETTY_GENERATE_OPTIONS = {
+    indent: '  ',
+    space: ' ',
+    object_nl: "\n",
+    array_nl: "\n",
+  }.freeze
+  private_constant :PRETTY_GENERATE_OPTIONS
+
   # :call-seq:
   #   JSON.pretty_generate(obj, opts = nil) -> new_string
   #
@@ -397,22 +393,24 @@ module JSON
   #   }
   #
   def pretty_generate(obj, opts = nil)
-    if State === opts
-      state, opts = opts, nil
-    else
-      state = JSON.create_pretty_state
-    end
+    return state.generate(obj) if State === opts
+
+    options = PRETTY_GENERATE_OPTIONS
+
     if opts
-      if opts.respond_to? :to_hash
-        opts = opts.to_hash
-      elsif opts.respond_to? :to_h
-        opts = opts.to_h
-      else
-        raise TypeError, "can't convert #{opts.class} into Hash"
+      unless opts.is_a?(Hash)
+        if opts.respond_to? :to_hash
+          opts = opts.to_hash
+        elsif opts.respond_to? :to_h
+          opts = opts.to_h
+        else
+          raise TypeError, "can't convert #{opts.class} into Hash"
+        end
       end
-      state.configure(opts)
+      options = options.merge(opts)
     end
-    state.generate(obj)
+
+    State.generate(obj, options, nil)
   end
 
   # Sets or returns default options for the JSON.unsafe_load method.
@@ -836,11 +834,6 @@ module JSON
     end
   end
 
-  # Encodes string using String.encode.
-  def self.iconv(to, from, string)
-    string.encode(to, from)
-  end
-
   # JSON::Coder holds a parser and generator configuration.
   #
   #   module MyApp
@@ -956,16 +949,5 @@ module ::Kernel
     end
 
     JSON.generate(object, args.first)
-  end
-end
-
-# Extends any Class to include _json_creatable?_ method.
-class ::Class
-  # Returns true if this class can be used to create an instance
-  # from a serialised JSON string. The class has to implement a class
-  # method _json_create_ that expects a hash as first parameter. The hash
-  # should include the required data.
-  def json_creatable?
-    respond_to?(:json_create)
   end
 end

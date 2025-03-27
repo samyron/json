@@ -264,6 +264,14 @@ public class ParserConfig extends RubyObject {
         return decimalClass.newInstance(context, context.runtime.newString(num), Block.NULL_BLOCK);
     }
 
+    private static boolean isObjCreateable(final ThreadContext context, IRubyObject klass) {
+        if (klass.respondsTo("json_creatable?")) {
+            return klass.callMethod(context, "json_creatable?").isTrue();
+        } else {
+            return klass.respondsTo("json_create");
+        }
+    }
+
     /**
      * A string parsing session.
      *
@@ -591,8 +599,7 @@ public class ParserConfig extends RubyObject {
                     } catch (JumpException e) { }
                     if (memoArray[1] != null) {
                         RubyClass klass = (RubyClass) memoArray[1];
-                        if (klass.respondsTo("json_creatable?") &&
-                            klass.callMethod(context, "json_creatable?").isTrue()) {
+                        if (isObjCreateable(context, klass)) {
                             if (config.deprecatedCreateAdditions) {
                                 context.runtime.getWarnings().warn("JSON.load implicit support for `create_additions: true` is deprecated and will be removed in 3.0, use JSON.unsafe_load or explicitly pass `create_additions: true`");
                             }
@@ -786,8 +793,7 @@ public class ParserConfig extends RubyObject {
                     // might throw ArgumentError, we let it propagate
                     IRubyObject klass = config.info.jsonModule.get().
                             callMethod(context, "deep_const_get", vKlassName);
-                    if (klass.respondsTo("json_creatable?") &&
-                        klass.callMethod(context, "json_creatable?").isTrue()) {
+                    if (isObjCreateable(context, klass)) {
                         if (config.deprecatedCreateAdditions) {
                             context.runtime.getWarnings().warn("JSON.load implicit support for `create_additions: true` is deprecated and will be removed in 3.0, use JSON.unsafe_load or explicitly pass `create_additions: true`");
                         }
