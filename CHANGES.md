@@ -4,6 +4,7 @@
 * Deprecate `JSON.load_default_options`.
 * Deprecate `JSON.unsafe_load_default_options`.
 * Deprecate `JSON.dump_default_options`.
+* Remove outdated `JSON.iconv`.
 * Remove deprecated `JSON.restore` method.
 * Remove deprecated `JSON.unparse` method.
 * Remove deprecated `JSON.fast_unparse` method.
