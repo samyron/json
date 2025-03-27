@@ -1,5 +1,7 @@
 # Changes
 
+* Optimize Integer generation to be ~1.8x faster.
+* Optimize Float generation to be ~10x faster.
 * Fix `JSON.load` proc argument to substitute the parsed object with the return value.
   This better match `Marshal.load` behavior.
 * Deprecate `JSON.fast_generate` (it's not any faster, so pointless).
