@@ -49,17 +49,12 @@ import static org.jruby.util.ConvertDouble.DoubleConverter;
  */
 public class ParserConfig extends RubyObject {
     private final RuntimeInfo info;
-    private RubyString createId;
-    private boolean createAdditions;
-    private boolean deprecatedCreateAdditions;
     private int maxNesting;
     private boolean allowNaN;
     private boolean allowTrailingComma;
     private boolean symbolizeNames;
     private boolean freeze;
     private RubyProc onLoadProc;
-    private RubyClass objectClass;
-    private RubyClass arrayClass;
     private RubyClass decimalClass;
     BiFunction<ThreadContext, ByteList, IRubyObject> decimalFactory;
     private RubyHash match_string;
@@ -182,25 +177,8 @@ public class ParserConfig extends RubyObject {
         this.symbolizeNames  = opts.getBool("symbolize_names", false);
         this.freeze          = opts.getBool("freeze", false);
         this.onLoadProc      = opts.getProc("on_load");
-        this.createId        = opts.getString("create_id", getCreateId(context));
 
-        IRubyObject additions = opts.get("create_additions");
-        this.createAdditions = false;
-        this.deprecatedCreateAdditions = false;
-
-        if (additions != null) {
-            if (additions.isNil()) {
-                this.createAdditions = true;
-                this.deprecatedCreateAdditions = true;
-            } else {
-                this.createAdditions = opts.getBool("create_additions", false);
-            }
-        }
-
-        this.objectClass     = opts.getClass("object_class", runtime.getHash());
-        this.arrayClass      = opts.getClass("array_class", runtime.getArray());
         this.decimalClass    = opts.getClass("decimal_class", null);
-        this.match_string    = opts.getHash("match_string");
 
         if (decimalClass == null) {
             this.decimalFactory = this::createFloat;
@@ -208,10 +186,6 @@ public class ParserConfig extends RubyObject {
             this.decimalFactory = this::createBigDecimal;
         } else {
             this.decimalFactory = this::createCustomDecimal;
-        }
-
-        if(symbolizeNames && createAdditions) {
-          throw runtime.newArgumentError("options :symbolize_names and :create_additions cannot be used in conjunction");
         }
 
         return this;
@@ -273,14 +247,6 @@ public class ParserConfig extends RubyObject {
 
     private IRubyObject createCustomDecimal(final ThreadContext context, final ByteList num) {
         return decimalClass.newInstance(context, context.runtime.newString(num), Block.NULL_BLOCK);
-    }
-
-    private static boolean isObjCreateable(final ThreadContext context, IRubyObject klass) {
-        if (klass.respondsTo("json_creatable?")) {
-            return klass.callMethod(context, "json_creatable?").isTrue();
-        } else {
-            return klass.respondsTo("json_create");
-        }
     }
 
     /**
@@ -601,25 +567,6 @@ public class ParserConfig extends RubyObject {
             int memo = p;
             %% write exec;
 
-            if (config.createAdditions) {
-                RubyHash matchString = config.match_string;
-                if (matchString != null) {
-                    final IRubyObject[] memoArray = { result, null };
-                    try {
-                      matchString.visitAll(context, MATCH_VISITOR, memoArray);
-                    } catch (JumpException e) { }
-                    if (memoArray[1] != null) {
-                        RubyClass klass = (RubyClass) memoArray[1];
-                        if (isObjCreateable(context, klass)) {
-                            if (config.deprecatedCreateAdditions) {
-                                context.runtime.getWarnings().warn("JSON.load implicit support for `create_additions: true` is deprecated and will be removed in 3.0, use JSON.unsafe_load or explicitly pass `create_additions: true`");
-                            }
-                            result = klass.callMethod(context, "json_create", result);
-                        }
-                    }
-                }
-            }
-
             if (cs >= JSON_string_first_final && result != null) {
                 if (result instanceof RubyString) {
                   RubyString string = (RubyString)result;
@@ -652,11 +599,7 @@ public class ParserConfig extends RubyObject {
                     fhold;
                     fbreak;
                 } else {
-                    if (config.arrayClass == context.runtime.getArray()) {
-                        ((RubyArray)result).append(res.result);
-                    } else {
-                        result.callMethod(context, "<<", res.result);
-                    }
+                    ((RubyArray)result).append(res.result);
                     fexec res.p;
                 }
             }
@@ -687,13 +630,7 @@ public class ParserConfig extends RubyObject {
                     "nesting of " + currentNesting + " is too deep");
             }
 
-            IRubyObject result;
-            if (config.arrayClass == context.runtime.getArray()) {
-                result = RubyArray.newArray(context.runtime);
-            } else {
-                result = config.arrayClass.newInstance(context,
-                        IRubyObject.NULL_ARRAY, Block.NULL_BLOCK);
-            }
+            IRubyObject result = RubyArray.newArray(context.runtime);
 
             %% write init;
             %% write exec;
@@ -719,11 +656,7 @@ public class ParserConfig extends RubyObject {
                     fhold;
                     fbreak;
                 } else {
-                    if (config.objectClass == context.runtime.getHash()) {
-                        ((RubyHash)result).op_aset(context, lastName, res.result);
-                    } else {
-                        Helpers.invoke(context, result, "[]=", lastName, res.result);
-                    }
+                    ((RubyHash)result).op_aset(context, lastName, res.result);
                     fexec res.p;
                 }
             }
@@ -763,7 +696,6 @@ public class ParserConfig extends RubyObject {
         void parseObject(ThreadContext context, ParserResult res, int p, int pe) {
             int cs;
             IRubyObject lastName = null;
-            boolean objectDefault = true;
 
             if (config.maxNesting > 0 && currentNesting > config.maxNesting) {
                 throw newException(context, Utils.M_NESTING_ERROR,
@@ -772,14 +704,7 @@ public class ParserConfig extends RubyObject {
 
             // this is guaranteed to be a RubyHash due to the earlier
             // allocator test at OptionsReader#getClass
-            IRubyObject result;
-            if (config.objectClass == context.runtime.getHash()) {
-                result = RubyHash.newHash(context.runtime);
-            } else {
-                objectDefault = false;
-                result = config.objectClass.newInstance(context,
-                        IRubyObject.NULL_ARRAY, Block.NULL_BLOCK);
-            }
+            IRubyObject result = RubyHash.newHash(context.runtime);
 
             %% write init;
             %% write exec;
@@ -789,31 +714,7 @@ public class ParserConfig extends RubyObject {
                 return;
             }
 
-            IRubyObject returnedResult = result;
-
-            // attempt to de-serialize object
-            if (config.createAdditions) {
-                IRubyObject vKlassName;
-                if (objectDefault) {
-                    vKlassName = ((RubyHash)result).op_aref(context, config.createId);
-                } else {
-                    vKlassName = result.callMethod(context, "[]", config.createId);
-                }
-
-                if (!vKlassName.isNil()) {
-                    // might throw ArgumentError, we let it propagate
-                    IRubyObject klass = config.info.jsonModule.get().
-                            callMethod(context, "deep_const_get", vKlassName);
-                    if (isObjCreateable(context, klass)) {
-                        if (config.deprecatedCreateAdditions) {
-                            context.runtime.getWarnings().warn("JSON.load implicit support for `create_additions: true` is deprecated and will be removed in 3.0, use JSON.unsafe_load or explicitly pass `create_additions: true`");
-                        }
-
-                        returnedResult = klass.callMethod(context, "json_create", result);
-                    }
-                }
-            }
-            res.update(config.onLoad(context, returnedResult), p + 1);
+            res.update(config.onLoad(context, result), p + 1);
         }
 
         %%{
