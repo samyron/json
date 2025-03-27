@@ -1,5 +1,6 @@
 # Changes
 
+* Deprecate `JSON.fast_generate` (it's not any faster, so pointless).
 * Deprecate `JSON.load_default_options`.
 * Deprecate `JSON.unsafe_load_default_options`.
 * Deprecate `JSON.dump_default_options`.
