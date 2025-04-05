@@ -115,6 +115,7 @@ typedef struct _search_state {
     const char *returned_from;
     unsigned char maybe_matches[16];
     unsigned long current_match_index;
+    unsigned long maybe_match_length;
 #endif /* ENABLE_SIMD */ 
 } search_state;
 
@@ -240,24 +241,22 @@ static inline void escape_UTF8_char(search_state *search, unsigned char ch_len) 
 
 #ifdef ENABLE_SIMD
 
-struct _simd_state {
 #ifdef HAVE_SIMD_NEON
+struct _simd_state {
+
     struct {
         uint8x16x4_t escape_table_basic[2];
     } neon;
-#endif /* HAVE_SIMD_NEON */
 };
 
 static struct _simd_state simd_state;
-
+#endif /* HAVE_SIMD_NEON */
 #endif /* ENABLE_SIMD */
 
 #ifdef ENABLE_SIMD
-#ifdef HAVE_SIMD_NEON
-
 // TODO This can likely be made generic if we know the stride width of the vector.
-static inline unsigned char search_escape_basic_neon_next_match(search_state *search) {
-    for(; search->current_match_index < 16 && search->ptr < search->end; ) {
+static inline unsigned char search_escape_basic_simd_next_match(search_state *search) {
+    for(; search->current_match_index < search->maybe_match_length && search->ptr < search->end; ) {
         unsigned char ch_len = search->maybe_matches[search->current_match_index];
 
         if (RB_UNLIKELY(ch_len)) {
@@ -271,6 +270,8 @@ static inline unsigned char search_escape_basic_neon_next_match(search_state *se
     }
     return 0;
 }
+
+#ifdef HAVE_SIMD_NEON
 
 static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
     uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
@@ -293,8 +294,9 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
 
         vst1q_u8(search->maybe_matches, result);
 
-        search->current_match_index=0;
-        return search_escape_basic_neon_next_match(search);
+        search->current_match_index = 0;
+        search->maybe_match_length  = sizeof(uint8x16_t);
+        return search_escape_basic_simd_next_match(search);
     }
 
     // There are fewer than 16 bytes left. 
@@ -398,8 +400,9 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
         uint8x16_t maybe_matches = vandq_u8(needs_escape, vdupq_n_u8(0x9));
         vst1q_u8(search->maybe_matches, maybe_matches);
 
-        search->current_match_index=0;
-        return search_escape_basic_neon_next_match(search);
+        search->current_match_index = 0;
+        search->maybe_match_length  = sizeof(uint8x16_t);
+        return search_escape_basic_simd_next_match(search);
     }
     
     // There are fewer than 16 bytes left. 
@@ -440,7 +443,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (RB_UNLIKELY(search->returned_from != NULL)) {
         search->current_match_index += (search->ptr - search->returned_from);
         search->returned_from = NULL;
-        if (RB_UNLIKELY(search_escape_basic_neon_next_match(search))) {
+        if (RB_UNLIKELY(search_escape_basic_simd_next_match(search))) {
             return 1;
         }
     }
@@ -464,6 +467,109 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     return 0;
 }
 #endif /* HAVE_SIMD_NEON */
+
+#ifdef HAVE_SIMD_SSE2
+
+#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+#ifdef __GNUC__
+#pragma GCC push_options
+#pragma GCC target ("sse2")
+#endif /* __GNUC__ */
+
+#ifdef __clang__
+__attribute__((target("sse2")))
+#endif /* __clang__ */
+static unsigned char search_escape_basic_sse2(search_state *search) {
+    if (RB_UNLIKELY(search->returned_from != NULL)) {
+        search->current_match_index += (search->ptr - search->returned_from);
+        search->returned_from = NULL;
+        if (RB_UNLIKELY(search_escape_basic_simd_next_match(search))) {
+            return 1;
+        }
+    }
+
+    const __m128i lower_bound = _mm_set1_epi8(' '); 
+    const __m128i backslash   = _mm_set1_epi8('\\');
+    const __m128i dblquote    = _mm_set1_epi8('\"');
+
+    while (search->ptr+sizeof(__m128i) < search->end) {
+        __m128i chunk         = _mm_loadu_si128((__m128i const*)search->ptr);
+        __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
+        __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
+        __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
+        __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+
+        int needs_escape_mask = _mm_movemask_epi8(needs_escape);
+
+        if (needs_escape_mask == 0) {
+            search->ptr += sizeof(__m128i);
+            continue;
+        }
+
+        __m128i nines = _mm_set1_epi8(9);
+        __m128i maybe_matches = _mm_and_si128(needs_escape, nines);
+
+        _mm_storeu_si128((__m128i *)search->maybe_matches, maybe_matches);
+
+        search->current_match_index = 0;
+        search->maybe_match_length  = sizeof(__m128i);
+        return search_escape_basic_simd_next_match(search);
+    }
+
+    
+    // There are fewer than 16 bytes left. 
+    unsigned long remaining = (search->end - search->ptr);
+    if (remaining >= 8) {
+        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
+        search_flush(search);
+
+        FBuffer *buf = search->buffer;
+        fbuffer_inc_capa(buf, 16);
+
+        char *s = (buf->ptr + buf->len);
+
+        memset(s, 'X', 16);
+
+        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
+        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
+        memcpy(s, search->ptr, remaining);
+
+        __m128i chunk         = _mm_loadu_si128((__m128i const *) s);
+        __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
+        __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
+        __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
+        __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+
+        int needs_escape_mask = _mm_movemask_epi8(needs_escape);
+
+        if (needs_escape_mask == 0) {
+            // Nothing to escape, ensure search_flush doesn't do anything by setting 
+            // search->cursor to search->ptr.
+            buf->len += remaining;
+            search->ptr = search->end;
+            search->cursor = search->end;
+            return 0;
+        }
+    }
+
+    if (search->ptr < search->end) {
+        return search_escape_basic(search);
+    }
+
+    search_flush(search);
+    return 0;
+}
+
+#ifdef __GNUC__
+#pragma GCC reset_options
+#endif /* __GNUC__ */
+
+#endif /* HAVE_SIMD_SSE2 */
+
 #endif /* ENABLE_SIMD */
 
 static const unsigned char script_safe_escape_table[256] = {
@@ -2058,6 +2164,11 @@ void Init_generator(void)
             search_escape_basic_impl = search_escape_basic_neon;
             break;
 #endif /* HAVE_SIMD_NEON */
+#ifdef HAVE_SIMD_SSE2
+        case SIMD_SSE2:
+            search_escape_basic_impl = search_escape_basic_sse2;
+            break;
+#endif /* HAVE_SIMD_SSE2 */
 #endif /* ENABLE_SIMD */
         default:
             search_escape_basic_impl = search_escape_basic;
