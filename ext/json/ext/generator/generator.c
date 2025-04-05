@@ -254,7 +254,7 @@ static struct _simd_state simd_state;
 #endif /* ENABLE_SIMD */
 
 #ifdef ENABLE_SIMD
-// TODO This can likely be made generic if we know the stride width of the vector.
+
 static inline unsigned char search_escape_basic_simd_next_match(search_state *search) {
     for(; search->current_match_index < search->maybe_match_length && search->ptr < search->end; ) {
         unsigned char ch_len = search->maybe_matches[search->current_match_index];
@@ -283,12 +283,12 @@ static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
 
 
 static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
-    while (search->ptr + 16 < search->end) {
+    while (search->ptr+sizeof(uint8x16_t) < search->end) {
         uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t result = neon_lut_update(chunk);
         
         if (vmaxvq_u8(result) == 0) {
-            search->ptr += 16;
+            search->ptr += sizeof(uint8x16_t);
             continue;
         }
 
@@ -306,11 +306,11 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
         search_flush(search);
 
         FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, 16);
+        fbuffer_inc_capa(buf, sizeof(uint8x16_t));
 
         char *s = (buf->ptr + buf->len);
 
-        memset(s, 'X', 16);
+        memset(s, 'X', sizeof(uint8x16_t));
 
         // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
         // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
@@ -388,16 +388,16 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     * To determine how to escape characters, we look at each value in the needs_escape vector and take
     * the appropriate action.
     */
-    while (search->ptr+16 < search->end) {
+    while (search->ptr+sizeof(uint8x16_t) < search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t needs_escape  = neon_rules_update(chunk);
 
         if (vmaxvq_u8(needs_escape) == 0) {
-            search->ptr += 16;
+            search->ptr += sizeof(uint8x16_t);
             continue;
         }
         
-        // It doesn't matter what the value of each byte in 'maybe_matches' as long as a match is non-zero.
+        // It doesn't matter the value of each byte in 'maybe_matches' as long as a match is non-zero.
         vst1q_u8(search->maybe_matches, needs_escape);
 
         search->current_match_index = 0;
@@ -412,11 +412,11 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
         search_flush(search);
 
         FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, 16);
+        fbuffer_inc_capa(buf, sizeof(uint8x16_t));
 
         char *s = (buf->ptr + buf->len);
 
-        memset(s, 'X', 16);
+        memset(s, 'X', sizeof(uint8x16_t));
 
         // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
         // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
@@ -437,7 +437,6 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     return 0;
 }
 
-// TODO This can likely be made generic if we know the stride width of the vector and make the SIMD kernel a function pointer and which lookup tables to use.
 static inline unsigned char search_escape_basic_neon(search_state *search)
 {
     if (RB_UNLIKELY(search->returned_from != NULL)) {
@@ -527,7 +526,7 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
             continue;
         }
 
-        // It doesn't matter what the value of each byte in 'maybe_matches' as long as a match is non-zero.
+        // It doesn't matter the value of each byte in 'maybe_matches' as long as a match is non-zero.
         _mm_storeu_si128((__m128i *)search->maybe_matches, needs_escape);
 
         search->current_match_index = 0;
@@ -542,11 +541,11 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
         search_flush(search);
 
         FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, 16);
+        fbuffer_inc_capa(buf, sizeof(__m128i));
 
         char *s = (buf->ptr + buf->len);
 
-        memset(s, 'X', 16);
+        memset(s, 'X', sizeof(__m128i));
 
         // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
         // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
