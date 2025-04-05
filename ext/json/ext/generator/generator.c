@@ -470,15 +470,39 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 
 #ifdef HAVE_SIMD_SSE2
 
-#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
-#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
-#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
-#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+// #define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+// #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+// #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+// #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
 #ifdef __GNUC__
 #pragma GCC push_options
 #pragma GCC target ("sse2")
 #endif /* __GNUC__ */
+
+#ifdef __clang__
+__attribute__((target("sse2")))
+#endif /* __clang__ */
+static inline __m128i sse2_update(__m128i chunk) {
+    const __m128i lower_bound = _mm_set1_epi8(' '); 
+    const __m128i backslash   = _mm_set1_epi8('\\');
+    const __m128i dblquote    = _mm_set1_epi8('\"');
+    const __m128i high_bit    = _mm_set1_epi8(0x80);
+
+    // __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
+    
+    // This is a signed comparison. We need special handling for bytes > 127.
+    __m128i too_low       = _mm_cmplt_epi8(chunk, lower_bound);
+
+    // Determine which bytes have the high bit set and remove them from 'too_low'.
+    __m128i high_bit_set  = _mm_cmpeq_epi8(_mm_and_si128(chunk, high_bit), high_bit);
+    too_low               = _mm_andnot_si128(high_bit_set, too_low);
+
+    __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
+    __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
+    __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+    return needs_escape;
+}
 
 #ifdef __clang__
 __attribute__((target("sse2")))
@@ -492,16 +516,9 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
         }
     }
 
-    const __m128i lower_bound = _mm_set1_epi8(' '); 
-    const __m128i backslash   = _mm_set1_epi8('\\');
-    const __m128i dblquote    = _mm_set1_epi8('\"');
-
     while (search->ptr+sizeof(__m128i) < search->end) {
         __m128i chunk         = _mm_loadu_si128((__m128i const*)search->ptr);
-        __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
-        __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
-        __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
-        __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+        __m128i needs_escape  = sse2_update(chunk);
 
         int needs_escape_mask = _mm_movemask_epi8(needs_escape);
 
@@ -510,17 +527,14 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
             continue;
         }
 
-        __m128i nines = _mm_set1_epi8(9);
-        __m128i maybe_matches = _mm_and_si128(needs_escape, nines);
-
-        _mm_storeu_si128((__m128i *)search->maybe_matches, maybe_matches);
+        // It doesn't matter what the value of each byte in 'maybe_matches' as long as a match is non-zero.
+        _mm_storeu_si128((__m128i *)search->maybe_matches, needs_escape);
 
         search->current_match_index = 0;
         search->maybe_match_length  = sizeof(__m128i);
         return search_escape_basic_simd_next_match(search);
     }
 
-    
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= 8) {
@@ -539,10 +553,7 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
         memcpy(s, search->ptr, remaining);
 
         __m128i chunk         = _mm_loadu_si128((__m128i const *) s);
-        __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
-        __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
-        __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
-        __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
+        __m128i needs_escape  = sse2_update(chunk);
 
         int needs_escape_mask = _mm_movemask_epi8(needs_escape);
 
