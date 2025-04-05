@@ -397,8 +397,8 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
             continue;
         }
         
-        uint8x16_t maybe_matches = vandq_u8(needs_escape, vdupq_n_u8(0x9));
-        vst1q_u8(search->maybe_matches, maybe_matches);
+        // It doesn't matter what the value of each byte in 'maybe_matches' as long as a match is non-zero.
+        vst1q_u8(search->maybe_matches, needs_escape);
 
         search->current_match_index = 0;
         search->maybe_match_length  = sizeof(uint8x16_t);
