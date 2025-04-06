@@ -8,6 +8,32 @@ typedef enum {
 
 #ifdef ENABLE_SIMD
 
+#ifdef __clang__
+  #if __has_builtin(__builtin_ctzll)
+    #define HAVE_BUILTIN_CTZLL 1
+  #else
+    #define HAVE_BUILTIN_CTZLL 0
+  #endif
+#elif defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))
+  #define HAVE_BUILTIN_CTZLL 1
+#else
+  #define HAVE_BUILTIN_CTZLL 0
+#endif
+
+static inline uint32_t trailing_zeros(uint64_t input) {
+#if HAVE_BUILTIN_CTZLL
+  return __builtin_ctzll(input);
+#else
+  uint32_t trailing_zeros = 0;
+  uint64_t temp = input;
+  while ((temp & 1) == 0 && temp > 0) {
+    trailing_zeros++;
+    temp >>= 1;
+  }
+  return trailing_zeros;
+#endif
+}
+
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
 

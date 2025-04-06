@@ -114,6 +114,13 @@ typedef struct _search_state {
 #ifdef ENABLE_SIMD
     const char *returned_from;
     unsigned char maybe_matches[16];
+
+#ifdef HAVE_SIMD_NEON
+    uint64_t matches_mask;
+    const char *chunk_base;
+    uint8_t has_matches;
+#endif /* HAVE_SIMD_NEON */
+
     unsigned long current_match_index;
     unsigned long maybe_match_length;
 #endif /* ENABLE_SIMD */ 
@@ -273,14 +280,39 @@ static inline unsigned char search_escape_basic_simd_next_match(search_state *se
 
 #ifdef HAVE_SIMD_NEON
 
+static inline unsigned char neon_mask_next_match(search_state *search) {
+    uint64_t mask = search->matches_mask;
+    if (mask > 0) {
+        uint32_t index = trailing_zeros(mask) >> 2;
+
+        // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
+        // If we want to use a similar approach for full escaping we'll need to ensure:
+        //     search->chunk_base + index >= search->ptr
+        // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
+        // is one byte after the previous match then:
+        //     search->chunk_base + index == search->ptr
+        search->ptr = search->chunk_base + index;
+        mask &= mask - 1;
+        search->matches_mask = mask;
+        search_flush(search);
+        return 1;
+    }
+    return 0;
+}
+
+// See: https://community.arm.com/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
+static inline uint64_t neon_match_mask(uint8x16_t matches) {
+    const uint8x8_t res = vshrn_n_u16(vreinterpretq_u16_u8(matches), 4);
+    const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(res), 0);
+    return mask & 0x8888888888888888ull;
+}
+
 static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
     uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
     uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
-
     uint8x16_t result = vorrq_u8(tmp1, tmp2);
     return result;
 } 
-
 
 static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
     while (search->ptr+sizeof(uint8x16_t) < search->end) {
@@ -292,11 +324,10 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
             continue;
         }
 
-        vst1q_u8(search->maybe_matches, result);
-
-        search->current_match_index = 0;
-        search->maybe_match_length  = sizeof(uint8x16_t);
-        return search_escape_basic_simd_next_match(search);
+        search->matches_mask = neon_match_mask(vceqq_u8(result, vdupq_n_u8(9)));
+        search->has_matches = 1;
+        search->chunk_base = search->ptr;
+        return neon_mask_next_match(search);
     }
 
     // There are fewer than 16 bytes left. 
@@ -396,13 +427,11 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
             search->ptr += sizeof(uint8x16_t);
             continue;
         }
-        
-        // It doesn't matter the value of each byte in 'maybe_matches' as long as a match is non-zero.
-        vst1q_u8(search->maybe_matches, needs_escape);
 
-        search->current_match_index = 0;
-        search->maybe_match_length  = sizeof(uint8x16_t);
-        return search_escape_basic_simd_next_match(search);
+        search->matches_mask = neon_match_mask(needs_escape);
+        search->has_matches = 1;
+        search->chunk_base = search->ptr;
+        return neon_mask_next_match(search);
     }
     
     // There are fewer than 16 bytes left. 
@@ -439,11 +468,17 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
 
 static inline unsigned char search_escape_basic_neon(search_state *search)
 {
-    if (RB_UNLIKELY(search->returned_from != NULL)) {
-        search->current_match_index += (search->ptr - search->returned_from);
-        search->returned_from = NULL;
-        if (RB_UNLIKELY(search_escape_basic_simd_next_match(search))) {
-            return 1;
+    if (RB_UNLIKELY(search->has_matches)) {
+        // There are more matches if search->matches_mask > 0.
+        if (search->matches_mask > 0) {
+            if (RB_LIKELY(neon_mask_next_match(search))) {
+                return 1;
+            }
+        } else {
+            // neon_mask_next_match will only advance search->ptr up to the last matching character. 
+            // Skip over any characters in the last chunk that occur after the last match.
+            search->has_matches = 0;
+            search->ptr = search->chunk_base+sizeof(uint8x16_t);
         }
     }
 
@@ -1331,7 +1366,8 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
 
 #ifdef ENABLE_SIMD
     search.current_match_index = 0;
-    search.returned_from = NULL;
+    search.matches_mask = 0;
+    search.has_matches = 0;
 #endif /* ENABLE_SIMD */
 
     switch(rb_enc_str_coderange(obj)) {
