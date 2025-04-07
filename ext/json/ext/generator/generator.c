@@ -1369,8 +1369,11 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
 
 #ifdef ENABLE_SIMD
     search.current_match_index = 0;
+    search.returned_from = NULL;
+#ifdef HAVE_NEON_SIMD
     search.matches_mask = 0;
     search.has_matches = 0;
+#endif /* HAVE_NEON_SIMD */
 #endif /* ENABLE_SIMD */
 
     switch(rb_enc_str_coderange(obj)) {
