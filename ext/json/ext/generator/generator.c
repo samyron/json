@@ -112,17 +112,16 @@ typedef struct _search_state {
     FBuffer *buffer;
 
 #ifdef ENABLE_SIMD
-    const char *returned_from;
-    unsigned char maybe_matches[16];
+    const char *chunk_base;
+    uint8_t has_matches;
 
 #ifdef HAVE_SIMD_NEON
     uint64_t matches_mask;
-    const char *chunk_base;
-    uint8_t has_matches;
+#elif HAVE_SIMD_SSE2
+    uint16_t matches_mask;
+#else
+#error "Unknown SIMD Implementation."
 #endif /* HAVE_SIMD_NEON */
-
-    unsigned long current_match_index;
-    unsigned long maybe_match_length;
 #endif /* ENABLE_SIMD */ 
 } search_state;
 
@@ -263,29 +262,12 @@ static struct _simd_state simd_state;
 #endif /* ENABLE_SIMD */
 
 #ifdef ENABLE_SIMD
-
-static inline unsigned char search_escape_basic_simd_next_match(search_state *search) {
-    for(; search->current_match_index < search->maybe_match_length && search->ptr < search->end; ) {
-        unsigned char ch_len = search->maybe_matches[search->current_match_index];
-
-        if (RB_UNLIKELY(ch_len)) {
-            search->returned_from = search->ptr;
-            search_flush(search);
-            return 1;
-        } else {
-            search->ptr++;
-            search->current_match_index++;
-        }
-    }
-    return 0;
-}
-
 #ifdef HAVE_SIMD_NEON
 
-static inline unsigned char neon_mask_next_match(search_state *search) {
+static inline unsigned char neon_next_match(search_state *search) {
     uint64_t mask = search->matches_mask;
     if (mask > 0) {
-        uint32_t index = trailing_zeros(mask) >> 2;
+        uint32_t index = trailing_zeros64(mask) >> 2;
 
         // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
         // If we want to use a similar approach for full escaping we'll need to ensure:
@@ -330,7 +312,7 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
         search->matches_mask = neon_match_mask(vceqq_u8(result, vdupq_n_u8(9)));
         search->has_matches = 1;
         search->chunk_base = search->ptr;
-        return neon_mask_next_match(search);
+        return neon_next_match(search);
     }
 
     // There are fewer than 16 bytes left. 
@@ -436,7 +418,7 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
         search->matches_mask = neon_match_mask(needs_escape);
         search->has_matches = 1;
         search->chunk_base = search->ptr;
-        return neon_mask_next_match(search);
+        return neon_next_match(search);
     }
     
     // There are fewer than 16 bytes left. 
@@ -477,11 +459,11 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (RB_UNLIKELY(search->has_matches)) {
         // There are more matches if search->matches_mask > 0.
         if (search->matches_mask > 0) {
-            if (RB_LIKELY(neon_mask_next_match(search))) {
+            if (RB_LIKELY(neon_next_match(search))) {
                 return 1;
             }
         } else {
-            // neon_mask_next_match will only advance search->ptr up to the last matching character. 
+            // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
             search->ptr = search->chunk_base+sizeof(uint8x16_t);
@@ -511,6 +493,26 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 // #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
 // #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 // #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+static inline unsigned char sse2_next_match(search_state *search) {
+    int mask = search->matches_mask;
+    if (mask > 0) {
+        int index = trailing_zeros(mask);
+
+        // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
+        // If we want to use a similar approach for full escaping we'll need to ensure:
+        //     search->chunk_base + index >= search->ptr
+        // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
+        // is one byte after the previous match then:
+        //     search->chunk_base + index == search->ptr
+        search->ptr = search->chunk_base + index;
+        mask &= mask - 1;
+        search->matches_mask = mask;
+        search_flush(search);
+        return 1;
+    }
+    return 0;
+}
 
 #ifdef __GNUC__
 #pragma GCC push_options
@@ -545,11 +547,17 @@ static inline __m128i sse2_update(__m128i chunk) {
 __attribute__((target("sse2")))
 #endif /* __clang__ */
 static unsigned char search_escape_basic_sse2(search_state *search) {
-    if (RB_UNLIKELY(search->returned_from != NULL)) {
-        search->current_match_index += (search->ptr - search->returned_from);
-        search->returned_from = NULL;
-        if (RB_UNLIKELY(search_escape_basic_simd_next_match(search))) {
-            return 1;
+    if (RB_UNLIKELY(search->has_matches)) {
+        // There are more matches if search->matches_mask > 0.
+        if (search->matches_mask > 0) {
+            if (RB_LIKELY(sse2_next_match(search))) {
+                return 1;
+            }
+        } else {
+            // sse2_next_match will only advance search->ptr up to the last matching character. 
+            // Skip over any characters in the last chunk that occur after the last match.
+            search->has_matches = 0;
+            search->ptr = search->chunk_base+sizeof(__m128i);
         }
     }
 
@@ -564,12 +572,10 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
             continue;
         }
 
-        // It doesn't matter the value of each byte in 'maybe_matches' as long as a match is non-zero.
-        _mm_storeu_si128((__m128i *)search->maybe_matches, needs_escape);
-
-        search->current_match_index = 0;
-        search->maybe_match_length  = sizeof(__m128i);
-        return search_escape_basic_simd_next_match(search);
+        search->has_matches = 1;
+        search->matches_mask = needs_escape_mask;
+        search->chunk_base = search->ptr;
+        return sse2_next_match(search);
     }
 
     // There are fewer than 16 bytes left. 
@@ -1368,12 +1374,9 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
     search.end = search.ptr + len;
 
 #ifdef ENABLE_SIMD
-    search.current_match_index = 0;
-    search.returned_from = NULL;
-#ifdef HAVE_NEON_SIMD
     search.matches_mask = 0;
     search.has_matches = 0;
-#endif /* HAVE_NEON_SIMD */
+    search.chunk_base = NULL;
 #endif /* ENABLE_SIMD */
 
     switch(rb_enc_str_coderange(obj)) {

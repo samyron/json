@@ -20,7 +20,7 @@ typedef enum {
   #define HAVE_BUILTIN_CTZLL 0
 #endif
 
-static inline uint32_t trailing_zeros(uint64_t input) {
+static inline uint32_t trailing_zeros64(uint64_t input) {
 #if HAVE_BUILTIN_CTZLL
   return __builtin_ctzll(input);
 #else
@@ -33,6 +33,20 @@ static inline uint32_t trailing_zeros(uint64_t input) {
   return trailing_zeros;
 #endif
 }
+
+static inline int trailing_zeros(int input) {
+  #if HAVE_BUILTIN_CTZLL
+    return __builtin_ctz(input);
+  #else
+    int trailing_zeros = 0;
+    int temp = input;
+    while ((temp & 1) == 0 && temp > 0) {
+      trailing_zeros++;
+      temp >>= 1;
+    }
+    return trailing_zeros;
+  #endif
+  }
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
