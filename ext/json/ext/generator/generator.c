@@ -249,6 +249,7 @@ static inline void escape_UTF8_char(search_state *search, unsigned char ch_len) 
 #ifdef ENABLE_SIMD
 
 #ifdef HAVE_SIMD_NEON
+#ifdef USE_NEON_LUT
 struct _simd_state {
 
     struct {
@@ -257,6 +258,7 @@ struct _simd_state {
 };
 
 static struct _simd_state simd_state;
+#endif /* USE_NEON_LUT */
 #endif /* HAVE_SIMD_NEON */
 #endif /* ENABLE_SIMD */
 
@@ -307,6 +309,7 @@ static inline uint64_t neon_match_mask(uint8x16_t matches) {
     return mask & 0x8888888888888888ull;
 }
 
+#ifdef USE_NEON_LUT
 static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
     uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
     uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
@@ -361,6 +364,8 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
 
     return 0;
 }
+
+#else
 
 static inline uint8x16_t neon_rules_update(uint8x16_t chunk) {
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
@@ -465,6 +470,7 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
 
     return 0;
 }
+#endif /* USE_NEON_LUT */
 
 static inline unsigned char search_escape_basic_neon(search_state *search)
 {
@@ -481,18 +487,15 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             search->ptr = search->chunk_base+sizeof(uint8x16_t);
         }
     }
-
-    // TODO Pick an implementation or make them configurable. Right now it looks like the "rules" based approach
-    // might be a bit faster.
-
-    // if (search_escape_basic_neon_advance_lut(search)) {
-    //     return 1;
-    // }
-
+#ifdef USE_NEON_LUT
+    if (search_escape_basic_neon_advance_lut(search)) {
+        return 1;
+    }
+#else
     if (search_escape_basic_neon_advance_rules(search)) {
         return 1;
     }
-
+#endif /* USE_NEON_LUT */
     if (search->ptr < search->end) {
         return search_escape_basic(search);
     }
@@ -1535,10 +1538,12 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
 #ifdef ENABLE_SIMD
 
 #ifdef HAVE_SIMD_NEON
+#ifdef USE_NEON_LUT
 static void initialize_simd_neon(void) {
     simd_state.neon.escape_table_basic[0] = load_uint8x16_4(escape_table_basic);
     simd_state.neon.escape_table_basic[1] = load_uint8x16_4(escape_table_basic+64);
 }
+#endif /* USE_NEON_LUT */
 #endif /* HAVE_NEON_SIMD */
 
 #endif 
@@ -2206,7 +2211,9 @@ void Init_generator(void)
 #ifdef HAVE_SIMD_NEON
         case SIMD_NEON:
         /* Initialize ARM Neon SIMD Implementation. */
+#ifdef USE_NEON_LUT
             initialize_simd_neon();
+#endif /* USE_NEON_LUT */
             search_escape_basic_impl = search_escape_basic_neon;
             break;
 #endif /* HAVE_SIMD_NEON */
