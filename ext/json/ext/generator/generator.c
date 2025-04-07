@@ -118,7 +118,7 @@ typedef struct _search_state {
 #ifdef HAVE_SIMD_NEON
     uint64_t matches_mask;
 #elif HAVE_SIMD_SSE2
-    uint16_t matches_mask;
+    int matches_mask;
 #else
 #error "Unknown SIMD Implementation."
 #endif /* HAVE_SIMD_NEON */
