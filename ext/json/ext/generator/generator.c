@@ -489,10 +489,10 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 
 #ifdef HAVE_SIMD_SSE2
 
-// #define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
-// #define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
-// #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
-// #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
 static inline unsigned char sse2_next_match(search_state *search) {
     int mask = search->matches_mask;
@@ -526,16 +526,16 @@ static inline __m128i sse2_update(__m128i chunk) {
     const __m128i lower_bound = _mm_set1_epi8(' '); 
     const __m128i backslash   = _mm_set1_epi8('\\');
     const __m128i dblquote    = _mm_set1_epi8('\"');
-    const __m128i high_bit    = _mm_set1_epi8(0x80);
+    // const __m128i high_bit    = _mm_set1_epi8(0x80);
 
-    // __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
+    __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
     
-    // This is a signed comparison. We need special handling for bytes > 127.
-    __m128i too_low       = _mm_cmplt_epi8(chunk, lower_bound);
+    // // This is a signed comparison. We need special handling for bytes > 127.
+    // __m128i too_low       = _mm_cmplt_epi8(chunk, lower_bound);
 
-    // Determine which bytes have the high bit set and remove them from 'too_low'.
-    __m128i high_bit_set  = _mm_cmpeq_epi8(_mm_and_si128(chunk, high_bit), high_bit);
-    too_low               = _mm_andnot_si128(high_bit_set, too_low);
+    // // Determine which bytes have the high bit set and remove them from 'too_low'.
+    // __m128i high_bit_set  = _mm_cmpeq_epi8(_mm_and_si128(chunk, high_bit), high_bit);
+    // too_low               = _mm_andnot_si128(high_bit_set, too_low);
 
     __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
     __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
