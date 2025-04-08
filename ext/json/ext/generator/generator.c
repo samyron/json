@@ -300,7 +300,7 @@ static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
 } 
 
 static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
-    while (search->ptr+sizeof(uint8x16_t) < search->end) {
+    while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t result = neon_lut_update(chunk);
         
@@ -406,8 +406,9 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     * To determine how to escape characters, we look at each value in the needs_escape vector and take
     * the appropriate action.
     */
-    while (search->ptr+sizeof(uint8x16_t) < search->end) {
+    while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
+
         uint8x16_t needs_escape  = neon_rules_update(chunk);
 
         if (vmaxvq_u8(needs_escape) == 0) {
@@ -561,7 +562,7 @@ static unsigned char search_escape_basic_sse2(search_state *search) {
         }
     }
 
-    while (search->ptr+sizeof(__m128i) < search->end) {
+    while (search->ptr+sizeof(__m128i) <= search->end) {
         __m128i chunk         = _mm_loadu_si128((__m128i const*)search->ptr);
         __m128i needs_escape  = sse2_update(chunk);
 
