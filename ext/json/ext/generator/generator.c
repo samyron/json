@@ -547,7 +547,7 @@ static inline __m128i sse2_update(__m128i chunk) {
 #ifdef __clang__
 __attribute__((target("sse2")))
 #endif /* __clang__ */
-static unsigned char search_escape_basic_sse2(search_state *search) {
+static inline unsigned char search_escape_basic_sse2(search_state *search) {
     if (RB_UNLIKELY(search->has_matches)) {
         // There are more matches if search->matches_mask > 0.
         if (search->matches_mask > 0) {
