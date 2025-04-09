@@ -262,6 +262,25 @@ static struct _simd_state simd_state;
 #endif /* ENABLE_SIMD */
 
 #ifdef ENABLE_SIMD
+
+static inline char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len) {
+    // Flush the buffer so everything up until the last 'len' characters are unflushed.
+    search_flush(search);
+
+    FBuffer *buf = search->buffer;
+    fbuffer_inc_capa(buf, vec_len);
+
+    char *s = (buf->ptr + buf->len);
+
+    memset(s, 'X', len);
+
+    // Optimistically copy the remaining 'len' characters to the output FBuffer. If there are no characters
+    // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
+    memcpy(s, search->ptr, len);
+
+    return s;
+}
+
 #ifdef HAVE_SIMD_NEON
 
 static inline unsigned char neon_next_match(search_state *search) {
@@ -318,26 +337,14 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= 8) {
-        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
-        search_flush(search);
-
-        FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, sizeof(uint8x16_t));
-
-        char *s = (buf->ptr + buf->len);
-
-        memset(s, 'X', sizeof(uint8x16_t));
-
-        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
-        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
-        memcpy(s, search->ptr, remaining);
+        char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
         uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
         uint8x16_t result = neon_lut_update(chunk);
         if (vmaxvq_u8(result) == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
-            buf->len += remaining;
+            search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
@@ -425,26 +432,14 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= 8) {
-        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
-        search_flush(search);
-
-        FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, sizeof(uint8x16_t));
-
-        char *s = (buf->ptr + buf->len);
-
-        memset(s, 'X', sizeof(uint8x16_t));
-
-        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
-        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
-        memcpy(s, search->ptr, remaining);
+        char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
         uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
         uint8x16_t result = neon_rules_update(chunk);
         if (vmaxvq_u8(result) == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
-            buf->len += remaining;
+            search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
@@ -582,19 +577,7 @@ static inline unsigned char search_escape_basic_sse2(search_state *search) {
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= 8) {
-        // Flush the buffer so everything up until the last 'remaining' characters are unflushed.
-        search_flush(search);
-
-        FBuffer *buf = search->buffer;
-        fbuffer_inc_capa(buf, sizeof(__m128i));
-
-        char *s = (buf->ptr + buf->len);
-
-        memset(s, 'X', sizeof(__m128i));
-
-        // Optimistically copy the remaining characters to the output FBuffer. If there are no characters
-        // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
-        memcpy(s, search->ptr, remaining);
+        char *s = copy_remaining_bytes(search, sizeof(__m128i), remaining);
 
         __m128i chunk         = _mm_loadu_si128((__m128i const *) s);
         __m128i needs_escape  = sse2_update(chunk);
@@ -604,7 +587,7 @@ static inline unsigned char search_escape_basic_sse2(search_state *search) {
         if (needs_escape_mask == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
-            buf->len += remaining;
+            search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
