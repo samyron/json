@@ -146,7 +146,7 @@ static const unsigned char escape_table_basic[256] = {
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-unsigned char (*search_escape_basic_impl)(search_state *);
+static unsigned char (*search_escape_basic_impl)(search_state *);
 
 static inline unsigned char search_escape_basic(search_state *search)
 {
