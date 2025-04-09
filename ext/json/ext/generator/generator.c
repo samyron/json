@@ -272,7 +272,7 @@ static inline char *copy_remaining_bytes(search_state *search, unsigned long vec
 
     char *s = (buf->ptr + buf->len);
 
-    memset(s, 'X', len);
+    memset(s, 'X', vec_len);
 
     // Optimistically copy the remaining 'len' characters to the output FBuffer. If there are no characters
     // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
