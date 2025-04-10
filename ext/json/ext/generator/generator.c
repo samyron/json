@@ -567,7 +567,11 @@ static inline unsigned char search_escape_basic_sse2(search_state *search) {
             // sse2_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
-            search->ptr = search->chunk_base+sizeof(__m128i);
+            if (RB_UNLIKELY(search->chunk_base+sizeof(__m128i) >= search->end)) {
+                search->ptr = search->end;
+            } else {
+                search->ptr = search->chunk_base+sizeof(__m128i);
+            }
         }
     }
 
@@ -605,6 +609,11 @@ static inline unsigned char search_escape_basic_sse2(search_state *search) {
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
+        }  else {
+            search->has_matches = 1;
+            search->matches_mask = needs_escape_mask;
+            search->chunk_base = search->ptr;
+            return sse2_next_match(search);
         }
     }
 
