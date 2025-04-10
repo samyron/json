@@ -321,14 +321,14 @@ static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
 static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
-        uint8x16_t result = neon_lut_update(chunk);
+        uint8x16_t needs_escape = neon_lut_update(chunk);
         
-        if (vmaxvq_u8(result) == 0) {
+        if (vmaxvq_u8(needs_escape) == 0) {
             search->ptr += sizeof(uint8x16_t);
             continue;
         }
 
-        search->matches_mask = neon_match_mask(vceqq_u8(result, vdupq_n_u8(9)));
+        search->matches_mask = neon_match_mask(vceqq_u8(needs_escape, vdupq_n_u8(9)));
         search->has_matches = 1;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
@@ -336,18 +336,23 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
 
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
-    if (remaining >= 8) {
+    if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
         uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
-        uint8x16_t result = neon_lut_update(chunk);
-        if (vmaxvq_u8(result) == 0) {
+        uint8x16_t needs_escape = neon_lut_update(chunk);
+        if (vmaxvq_u8(needs_escape) == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
             search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
+        } else {
+            search->matches_mask = neon_match_mask(vceqq_u8(needs_escape, vdupq_n_u8(9)));
+            search->has_matches = 1;
+            search->chunk_base = search->ptr;
+            return neon_next_match(search);
         }
     }
 
@@ -431,18 +436,23 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
-    if (remaining >= 8) {
+    if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
         uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
-        uint8x16_t result = neon_rules_update(chunk);
-        if (vmaxvq_u8(result) == 0) {
+        uint8x16_t needs_escape = neon_rules_update(chunk);
+        if (vmaxvq_u8(needs_escape) == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
             search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
+        } else {
+            search->matches_mask = neon_match_mask(needs_escape);
+            search->has_matches = 1;
+            search->chunk_base = search->ptr;
+            return neon_next_match(search);
         }
     }
 
@@ -462,7 +472,11 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
-            search->ptr = search->chunk_base+sizeof(uint8x16_t);
+            if (RB_UNLIKELY(search->chunk_base+sizeof(uint8x16_t) >= search->end)) {
+                search->ptr = search->end;
+            } else {
+                search->ptr = search->chunk_base+sizeof(uint8x16_t);
+            }
         }
     }
 #ifdef USE_NEON_LUT
@@ -576,7 +590,7 @@ static inline unsigned char search_escape_basic_sse2(search_state *search) {
 
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
-    if (remaining >= 8) {
+    if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(__m128i), remaining);
 
         __m128i chunk         = _mm_loadu_si128((__m128i const *) s);

@@ -46,7 +46,9 @@ static inline int trailing_zeros(int input) {
     }
     return trailing_zeros;
   #endif
-  }
+}
+
+#define SIMD_MINIMUM_THRESHOLD 6
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
