@@ -150,6 +150,14 @@ static void fbuffer_append(FBuffer *fb, const char *newstr, unsigned long len)
     }
 }
 
+static inline void fbuffer_append_unsafe(FBuffer *fb, const char *newstr, unsigned long len)
+{
+    if (len > 0) {
+        MEMCPY(fb->ptr + fb->len, newstr, char, len);
+        fb->len += len;
+    }
+}
+
 static void fbuffer_append_str(FBuffer *fb, VALUE str)
 {
     const char *newstr = StringValuePtr(str);
@@ -163,6 +171,12 @@ static void fbuffer_append_str(FBuffer *fb, VALUE str)
 static inline void fbuffer_append_char(FBuffer *fb, char newchr)
 {
     fbuffer_inc_capa(fb, 1);
+    *(fb->ptr + fb->len) = newchr;
+    fb->len++;
+}
+
+static inline void fbuffer_append_char_unsafe(FBuffer *fb, char newchr)
+{
     *(fb->ptr + fb->len) = newchr;
     fb->len++;
 }

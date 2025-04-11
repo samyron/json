@@ -106,6 +106,9 @@ static const unsigned char CHAR_LENGTH_MASK = 7;
 static const unsigned char ESCAPE_MASK = 8;
 
 typedef struct _search_state {
+    void (*search_flush)(struct _search_state *);
+    void (*escape_UTF8_char_basic)(struct _search_state *);
+
     const char *ptr;
     const char *end;
     const char *cursor;
@@ -133,6 +136,14 @@ static inline void search_flush(search_state *search)
     }
 }
 
+static inline void search_flush_unsafe(search_state *search)
+{
+    if (search->cursor < search->ptr) {
+        fbuffer_append_unsafe(search->buffer, search->cursor, search->ptr - search->cursor);
+        search->cursor = search->ptr;
+    }
+}
+
 static const unsigned char escape_table_basic[256] = {
     // ASCII Control Characters
      9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
@@ -152,13 +163,13 @@ static inline unsigned char search_escape_basic(search_state *search)
 {
     while (search->ptr < search->end) {
         if (RB_UNLIKELY(escape_table_basic[(const unsigned char)*search->ptr])) {
-            search_flush(search);
+            search->search_flush(search);
             return 1;
         } else {
             search->ptr++;
         }
     }
-    search_flush(search);
+    search->search_flush(search);
     return 0;
 }
 
@@ -186,6 +197,30 @@ static inline void escape_UTF8_char_basic(search_state *search) {
     search->cursor = search->ptr;
 }
 
+static inline void escape_UTF8_char_basic_unsafe(search_state *search) {
+    const unsigned char ch = (unsigned char)*search->ptr;
+    switch (ch) {
+        case '"':  fbuffer_append_unsafe(search->buffer, "\\\"", 2); break;
+        case '\\': fbuffer_append_unsafe(search->buffer, "\\\\", 2); break;
+        case '/':  fbuffer_append_unsafe(search->buffer, "\\/", 2);  break;
+        case '\b': fbuffer_append_unsafe(search->buffer, "\\b", 2);  break;
+        case '\f': fbuffer_append_unsafe(search->buffer, "\\f", 2);  break;
+        case '\n': fbuffer_append_unsafe(search->buffer, "\\n", 2);  break;
+        case '\r': fbuffer_append_unsafe(search->buffer, "\\r", 2);  break;
+        case '\t': fbuffer_append_unsafe(search->buffer, "\\t", 2);  break;
+        default: {
+            const char *hexdig = "0123456789abcdef";
+            char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
+            scratch[4] = hexdig[(ch >> 4) & 0xf];
+            scratch[5] = hexdig[ch & 0xf];
+            fbuffer_append_unsafe(search->buffer, scratch, 6);
+            break;
+        }
+    }
+    search->ptr++;
+    search->cursor = search->ptr;
+}
+
 /* Converts in_string to a JSON string (without the wrapping '"'
  * characters) in FBuffer out_buffer.
  *
@@ -205,7 +240,7 @@ static inline void escape_UTF8_char_basic(search_state *search) {
 static inline void convert_UTF8_to_JSON(search_state *search)
 {
     while (search_escape_basic_impl(search)) {
-        escape_UTF8_char_basic(search);
+        search->escape_UTF8_char_basic(search);
     }
 }
 
@@ -265,7 +300,7 @@ static struct _simd_state simd_state;
 
 static inline char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len) {
     // Flush the buffer so everything up until the last 'len' characters are unflushed.
-    search_flush(search);
+    search->search_flush(search);
 
     FBuffer *buf = search->buffer;
     fbuffer_inc_capa(buf, vec_len);
@@ -297,7 +332,7 @@ static inline unsigned char neon_next_match(search_state *search) {
         search->ptr = search->chunk_base + index;
         mask &= mask - 1;
         search->matches_mask = mask;
-        search_flush(search);
+        search->search_flush(search);
         return 1;
     }
     return 0;
@@ -492,7 +527,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         return search_escape_basic(search);
     }
 
-    search_flush(search);
+    search->search_flush(search);
     return 0;
 }
 #endif /* HAVE_SIMD_NEON */
@@ -1362,20 +1397,32 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
 {
     obj = ensure_valid_encoding(obj);
 
-    fbuffer_append_char(buffer, '"');
-
+    void (*fbuffer_append_char_fn)(FBuffer *, char);
     long len;
     search_state search;
     search.buffer = buffer;
     RSTRING_GETMEM(obj, search.ptr, len);
     search.cursor = search.ptr;
     search.end = search.ptr + len;
+    search.search_flush = search_flush;
+    search.escape_UTF8_char_basic = escape_UTF8_char_basic;
+
+    fbuffer_append_char_fn = fbuffer_append_char;
 
 #ifdef ENABLE_SIMD
     search.matches_mask = 0;
     search.has_matches = 0;
     search.chunk_base = NULL;
+
+    if ( ((unsigned long) (len*6)+2) < buffer->capa - buffer->len) {
+        search.search_flush = search_flush_unsafe;
+        search.escape_UTF8_char_basic = escape_UTF8_char_basic_unsafe;
+        fbuffer_append_char_fn = fbuffer_append_char_unsafe;
+    }
+
 #endif /* ENABLE_SIMD */
+
+    fbuffer_append_char_fn(buffer, '"');
 
     switch(rb_enc_str_coderange(obj)) {
         case ENC_CODERANGE_7BIT:
