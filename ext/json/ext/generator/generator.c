@@ -127,10 +127,8 @@ typedef struct _search_state {
 
 static inline void search_flush(search_state *search)
 {
-    if (search->cursor < search->ptr) {
-        fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
-        search->cursor = search->ptr;
-    }
+    fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
+    search->cursor = search->ptr;
 }
 
 static const unsigned char escape_table_basic[256] = {
