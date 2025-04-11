@@ -144,6 +144,30 @@ static inline void search_flush_unsafe(search_state *search)
     }
 }
 
+static inline void search_flush_unsafe_neon(search_state *search)
+{
+    if (search->cursor < search->ptr) {
+        unsigned long len = search->ptr - search->cursor;
+        char *buf = search->buffer->ptr + search->buffer->len;
+        const char *cursor = search->cursor;
+
+        unsigned long remaining = len;
+        while(remaining >= sizeof(uint8x16_t)) {
+            uint8x16_t chunk = vld1q_u8((unsigned char *)cursor);
+            vst1q_u8((unsigned char *) buf, chunk);
+
+            remaining -= sizeof(uint8x16_t);
+            buf       += sizeof(uint8x16_t);
+            cursor    += sizeof(uint8x16_t);
+        }
+
+        memcpy(buf, cursor, remaining);
+
+        search->buffer->len += len;
+        search->cursor = search->ptr;
+    }
+}
+
 static const unsigned char escape_table_basic[256] = {
     // ASCII Control Characters
      9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
