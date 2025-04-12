@@ -160,28 +160,30 @@ static inline unsigned char search_escape_basic(search_state *search)
     return 0;
 }
 
+#define ESCAPE_UTF8_CHAR_BASIC     const unsigned char ch = (unsigned char)*search->ptr;                \
+switch (ch) {                                                        \
+    case '"':  fbuffer_append(search->buffer, "\\\"", 2); break;     \
+    case '\\': fbuffer_append(search->buffer, "\\\\", 2); break;     \
+    case '/':  fbuffer_append(search->buffer, "\\/", 2);  break;     \
+    case '\b': fbuffer_append(search->buffer, "\\b", 2);  break;     \
+    case '\f': fbuffer_append(search->buffer, "\\f", 2);  break;     \
+    case '\n': fbuffer_append(search->buffer, "\\n", 2);  break;     \
+    case '\r': fbuffer_append(search->buffer, "\\r", 2);  break;     \
+    case '\t': fbuffer_append(search->buffer, "\\t", 2);  break;     \
+    default: {                                                       \
+        const char *hexdig = "0123456789abcdef";                     \
+        char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };             \
+        scratch[4] = hexdig[(ch >> 4) & 0xf];                        \
+        scratch[5] = hexdig[ch & 0xf];                               \
+        fbuffer_append(search->buffer, scratch, 6);                  \
+        break;                                                       \
+    }                                                                \
+}                                                                    \
+search->ptr++;                                                       \
+search->cursor = search->ptr;                                        
+
 static inline void escape_UTF8_char_basic(search_state *search) {
-    const unsigned char ch = (unsigned char)*search->ptr;
-    switch (ch) {
-        case '"':  fbuffer_append(search->buffer, "\\\"", 2); break;
-        case '\\': fbuffer_append(search->buffer, "\\\\", 2); break;
-        case '/':  fbuffer_append(search->buffer, "\\/", 2);  break;
-        case '\b': fbuffer_append(search->buffer, "\\b", 2);  break;
-        case '\f': fbuffer_append(search->buffer, "\\f", 2);  break;
-        case '\n': fbuffer_append(search->buffer, "\\n", 2);  break;
-        case '\r': fbuffer_append(search->buffer, "\\r", 2);  break;
-        case '\t': fbuffer_append(search->buffer, "\\t", 2);  break;
-        default: {
-            const char *hexdig = "0123456789abcdef";
-            char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
-            scratch[4] = hexdig[(ch >> 4) & 0xf];
-            scratch[5] = hexdig[ch & 0xf];
-            fbuffer_append(search->buffer, scratch, 6);
-            break;
-        }
-    }
-    search->ptr++;
-    search->cursor = search->ptr;
+    ESCAPE_UTF8_CHAR_BASIC;
 }
 
 /* Converts in_string to a JSON string (without the wrapping '"'
@@ -283,22 +285,19 @@ static inline char *copy_remaining_bytes(search_state *search, unsigned long vec
 
 static inline unsigned char neon_next_match(search_state *search) {
     uint64_t mask = search->matches_mask;
-    if (mask > 0) {
-        uint32_t index = trailing_zeros64(mask) >> 2;
+    uint32_t index = trailing_zeros64(mask) >> 2;
 
-        // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
-        // If we want to use a similar approach for full escaping we'll need to ensure:
-        //     search->chunk_base + index >= search->ptr
-        // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
-        // is one byte after the previous match then:
-        //     search->chunk_base + index == search->ptr
-        search->ptr = search->chunk_base + index;
-        mask &= mask - 1;
-        search->matches_mask = mask;
-        search_flush(search);
-        return 1;
-    }
-    return 0;
+    // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
+    // If we want to use a similar approach for full escaping we'll need to ensure:
+    //     search->chunk_base + index >= search->ptr
+    // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
+    // is one byte after the previous match then:
+    //     search->chunk_base + index == search->ptr
+    search->ptr = search->chunk_base + index;
+    mask &= mask - 1;
+    search->matches_mask = mask;
+    search_flush(search);
+    return 1;
 }
 
 // See: https://community.arm.com/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
@@ -426,7 +425,16 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
             continue;
         }
 
-        search->matches_mask = neon_match_mask(needs_escape);
+        uint64_t mask = neon_match_mask(needs_escape);
+
+        if (popcount64(mask) >= sizeof(uint8x16_t)/2) {
+            for(unsigned long i = 0; i < sizeof(uint8x16_t); i++) {
+                ESCAPE_UTF8_CHAR_BASIC;
+            }
+            continue;
+        }
+
+        search->matches_mask = mask;
         search->has_matches = 1;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
@@ -446,8 +454,14 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
+        }
+        uint64_t mask = neon_match_mask(needs_escape);
+        if (popcount64(mask) >= sizeof(uint8x16_t)/2) {
+            for(unsigned long i = 0; i < remaining; i++) {
+                ESCAPE_UTF8_CHAR_BASIC;
+            }
         } else {
-            search->matches_mask = neon_match_mask(needs_escape);
+            search->matches_mask = mask;
             search->has_matches = 1;
             search->chunk_base = search->ptr;
             return neon_next_match(search);

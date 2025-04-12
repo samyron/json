@@ -34,6 +34,21 @@ static inline uint32_t trailing_zeros64(uint64_t input) {
 #endif
 }
 
+uint64_t popcount64(uint64_t x) {
+  // Check for ARM NEON support
+  #if defined(__GNUC__) || defined(__clang__)
+      return __builtin_popcountll(x);
+  #elif  defined(__ARM_NEON)
+      #include <arm_neon.h>
+      return vaddv_u8(vcnt_u8(vcreate_u8(x)));
+  #else
+      x = x - ((x >> 1) & 0x5555555555555555ULL);
+      x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
+      x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL;
+      return (x * 0x0101010101010101ULL) >> 56;
+  #endif
+}
+
 static inline int trailing_zeros(int input) {
   #if HAVE_BUILTIN_CTZLL
     return __builtin_ctz(input);
@@ -45,6 +60,20 @@ static inline int trailing_zeros(int input) {
       temp >>= 1;
     }
     return trailing_zeros;
+  #endif
+}
+
+uint32_t popcount32(uint32_t x) {
+  #if defined(__GNUC__) || defined(__clang__)
+    return __builtin_popcount(x);
+  #elif defined(__ARM_NEON)
+      #include <arm_neon.h>
+      return vaddv_u8(vcnt_u8(vcreate_u8((uint64_t)x))) & 0xFF;
+  #else
+      x = x - ((x >> 1) & 0x55555555);
+      x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+      x = (x + (x >> 4)) & 0x0F0F0F0F;
+      return (x * 0x01010101) >> 24;
   #endif
 }
 
