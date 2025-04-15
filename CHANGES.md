@@ -8,6 +8,8 @@
 * Deprecate `JSON.load_default_options`.
 * Deprecate `JSON.unsafe_load_default_options`.
 * Deprecate `JSON.dump_default_options`.
+* Deprecate `Kernel#j`
+* Deprecate `Kernel#jj`
 * Remove outdated `JSON.iconv`.
 * Remove `Class#json_creatable?` monkey patch.
 * Remove deprecated `JSON.restore` method.
