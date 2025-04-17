@@ -125,9 +125,21 @@ typedef struct _search_state {
 #endif /* ENABLE_SIMD */ 
 } search_state;
 
-static inline void search_flush(search_state *search)
+#if (defined(__GNUC__ ) || defined(__clang__))
+#define FORCE_INLINE __attribute__((always_inline))
+#else
+#define FORCE_INLINE
+#endif
+
+static inline FORCE_INLINE void search_flush(search_state *search)
 {
-    if (search->cursor < search->ptr) {
+    // Do not remove this conditional without profiling, specfically escape-heavy text.
+    // escape_UTF8_char_basic will advance search->ptr and search->cursor (effectively a search_flush).
+    // For back-to-back characters that need to be escaped, specifcally for the SIMD code paths, this method
+    // will be called just before calling escape_UTF8_char_basic. There will be no characers to append for the
+    // consecutive characters that need to be escaped. While the fbuffer_append is a no-op if
+    // nothing needs to be flushed, we can save a few memory references with this conditional.
+    if (search->ptr > search->cursor) {
         fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
         search->cursor = search->ptr;
     }
@@ -162,7 +174,8 @@ static inline unsigned char search_escape_basic(search_state *search)
     return 0;
 }
 
-static inline void escape_UTF8_char_basic(search_state *search) {
+static inline void escape_UTF8_char_basic(search_state *search)
+{
     const unsigned char ch = (unsigned char)*search->ptr;
     switch (ch) {
         case '"':  fbuffer_append(search->buffer, "\\\"", 2); break;
@@ -209,7 +222,8 @@ static inline void convert_UTF8_to_JSON(search_state *search)
     }
 }
 
-static inline void escape_UTF8_char(search_state *search, unsigned char ch_len) {
+static inline void escape_UTF8_char(search_state *search, unsigned char ch_len)
+{
     const unsigned char ch = (unsigned char)*search->ptr;
     switch (ch_len) {
         case 1: {
@@ -263,7 +277,8 @@ static struct _simd_state simd_state;
 
 #ifdef ENABLE_SIMD
 
-static inline char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len) {
+static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len)
+{
     // Flush the buffer so everything up until the last 'len' characters are unflushed.
     search_flush(search);
 
@@ -276,49 +291,50 @@ static inline char *copy_remaining_bytes(search_state *search, unsigned long vec
 
     // Optimistically copy the remaining 'len' characters to the output FBuffer. If there are no characters
     // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
-    memcpy(s, search->ptr, len);
+    MEMCPY(s, search->ptr, char, len);
 
     return s;
 }
 
 #ifdef HAVE_SIMD_NEON
 
-static inline unsigned char neon_next_match(search_state *search) {
+static inline FORCE_INLINE unsigned char neon_next_match(search_state *search)
+{
     uint64_t mask = search->matches_mask;
-    if (mask > 0) {
-        uint32_t index = trailing_zeros64(mask) >> 2;
+    uint32_t index = trailing_zeros64(mask) >> 2;
 
-        // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
-        // If we want to use a similar approach for full escaping we'll need to ensure:
-        //     search->chunk_base + index >= search->ptr
-        // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
-        // is one byte after the previous match then:
-        //     search->chunk_base + index == search->ptr
-        search->ptr = search->chunk_base + index;
-        mask &= mask - 1;
-        search->matches_mask = mask;
-        search_flush(search);
-        return 1;
-    }
-    return 0;
+    // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
+    // If we want to use a similar approach for full escaping we'll need to ensure:
+    //     search->chunk_base + index >= search->ptr
+    // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
+    // is one byte after the previous match then:
+    //     search->chunk_base + index == search->ptr
+    search->ptr = search->chunk_base + index;
+    mask &= mask - 1;
+    search->matches_mask = mask;
+    search_flush(search);
+    return 1;
 }
 
 // See: https://community.arm.com/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
-static inline uint64_t neon_match_mask(uint8x16_t matches) {
+static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
+{
     const uint8x8_t res = vshrn_n_u16(vreinterpretq_u16_u8(matches), 4);
     const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(res), 0);
     return mask & 0x8888888888888888ull;
 }
 
 #ifdef USE_NEON_LUT
-static inline uint8x16_t neon_lut_update(uint8x16_t chunk) {
+static inline FORCE_INLINE uint8x16_t neon_lut_update(uint8x16_t chunk)
+{
     uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
     uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
     uint8x16_t result = vorrq_u8(tmp1, tmp2);
     return result;
 } 
 
-static inline unsigned char search_escape_basic_neon_advance_lut(search_state *search) {
+static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_lut(search_state *search)
+{
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t needs_escape = neon_lut_update(chunk);
@@ -328,7 +344,7 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
             continue;
         }
 
-        search->matches_mask = neon_match_mask(vceqq_u8(needs_escape, vdupq_n_u8(9)));
+        search->matches_mask = neon_match_mask(needs_escape);
         search->has_matches = 1;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
@@ -349,7 +365,7 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
             search->cursor = search->end;
             return 0;
         } else {
-            search->matches_mask = neon_match_mask(vceqq_u8(needs_escape, vdupq_n_u8(9)));
+            search->matches_mask = neon_match_mask(needs_escape);
             search->has_matches = 1;
             search->chunk_base = search->ptr;
             return neon_next_match(search);
@@ -361,7 +377,8 @@ static inline unsigned char search_escape_basic_neon_advance_lut(search_state *s
 
 #else
 
-static inline uint8x16_t neon_rules_update(uint8x16_t chunk) {
+static inline FORCE_INLINE uint8x16_t neon_rules_update(uint8x16_t chunk)
+{
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
     const uint8x16_t backslash   = vdupq_n_u8('\\');
     const uint8x16_t dblquote    = vdupq_n_u8('\"');
@@ -374,7 +391,8 @@ static inline uint8x16_t neon_rules_update(uint8x16_t chunk) {
     return needs_escape;
 }
 
-static unsigned char search_escape_basic_neon_advance_rules(search_state *search) {
+static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(search_state *search)
+{
     /*
     * The code below implements an SIMD-based algorithm to determine if N bytes at a time
     * need to be escaped. 
@@ -420,7 +438,6 @@ static unsigned char search_escape_basic_neon_advance_rules(search_state *search
     */
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
-
         uint8x16_t needs_escape  = neon_rules_update(chunk);
 
         if (vmaxvq_u8(needs_escape) == 0) {
@@ -465,9 +482,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (RB_UNLIKELY(search->has_matches)) {
         // There are more matches if search->matches_mask > 0.
         if (search->matches_mask > 0) {
-            if (RB_LIKELY(neon_next_match(search))) {
-                return 1;
-            }
+            return neon_next_match(search);
         } else {
             // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
@@ -479,6 +494,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             }
         }
     }
+
 #ifdef USE_NEON_LUT
     if (search_escape_basic_neon_advance_lut(search)) {
         return 1;
@@ -504,7 +520,8 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
-static inline unsigned char sse2_next_match(search_state *search) {
+static inline unsigned char sse2_next_match(search_state *search)
+{
     int mask = search->matches_mask;
     if (mask > 0) {
         int index = trailing_zeros(mask);
@@ -532,7 +549,8 @@ static inline unsigned char sse2_next_match(search_state *search) {
 #ifdef __clang__
 __attribute__((target("sse2")))
 #endif /* __clang__ */
-static inline __m128i sse2_update(__m128i chunk) {
+static inline __m128i sse2_update(__m128i chunk)
+{
     const __m128i lower_bound = _mm_set1_epi8(' '); 
     const __m128i backslash   = _mm_set1_epi8('\\');
     const __m128i dblquote    = _mm_set1_epi8('\"');
@@ -556,7 +574,8 @@ static inline __m128i sse2_update(__m128i chunk) {
 #ifdef __clang__
 __attribute__((target("sse2")))
 #endif /* __clang__ */
-static inline unsigned char search_escape_basic_sse2(search_state *search) {
+static inline unsigned char search_escape_basic_sse2(search_state *search)
+{
     if (RB_UNLIKELY(search->has_matches)) {
         // There are more matches if search->matches_mask > 0.
         if (search->matches_mask > 0) {
@@ -1549,12 +1568,21 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
 
 /* SIMD Utilities (if enabled) */
 #ifdef ENABLE_SIMD
-
 #ifdef HAVE_SIMD_NEON
 #ifdef USE_NEON_LUT
 static void initialize_simd_neon(void) {
     simd_state.neon.escape_table_basic[0] = load_uint8x16_4(escape_table_basic);
     simd_state.neon.escape_table_basic[1] = load_uint8x16_4(escape_table_basic+64);
+
+    simd_state.neon.escape_table_basic[0].val[0] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[0], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[0].val[1] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[1], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[0].val[2] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[2], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[0].val[3] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[3], vdupq_n_u8(9));
+
+    simd_state.neon.escape_table_basic[1].val[0] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[0], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[1].val[1] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[1], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[1].val[2] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[2], vdupq_n_u8(9));
+    simd_state.neon.escape_table_basic[1].val[3] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[3], vdupq_n_u8(9));
 }
 #endif /* USE_NEON_LUT */
 #endif /* HAVE_NEON_SIMD */
