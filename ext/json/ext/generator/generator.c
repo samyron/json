@@ -520,68 +520,49 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 #define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
 #define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
 
-static inline unsigned char sse2_next_match(search_state *search)
+static inline FORCE_INLINE unsigned char sse2_next_match(search_state *search)
 {
     int mask = search->matches_mask;
-    if (mask > 0) {
-        int index = trailing_zeros(mask);
+    int index = trailing_zeros(mask);
 
-        // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
-        // If we want to use a similar approach for full escaping we'll need to ensure:
-        //     search->chunk_base + index >= search->ptr
-        // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
-        // is one byte after the previous match then:
-        //     search->chunk_base + index == search->ptr
-        search->ptr = search->chunk_base + index;
-        mask &= mask - 1;
-        search->matches_mask = mask;
-        search_flush(search);
-        return 1;
-    }
-    return 0;
+    // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
+    // If we want to use a similar approach for full escaping we'll need to ensure:
+    //     search->chunk_base + index >= search->ptr
+    // However, since we know escape_UTF8_char_basic only increases search->ptr by one, if the next match
+    // is one byte after the previous match then:
+    //     search->chunk_base + index == search->ptr
+    search->ptr = search->chunk_base + index;
+    mask &= mask - 1;
+    search->matches_mask = mask;
+    search_flush(search);
+    return 1;
 }
 
-#ifdef __GNUC__
-#pragma GCC push_options
-#pragma GCC target ("sse2")
-#endif /* __GNUC__ */
+#if defined(__clang__) || defined(__GNUC__)
+#define TARGET_SSE2 __attribute__((target("sse2")))
+#else
+#define TARGET_SSE2
+#endif
 
-#ifdef __clang__
-__attribute__((target("sse2")))
-#endif /* __clang__ */
-static inline __m128i sse2_update(__m128i chunk)
+static inline TARGET_SSE2 FORCE_INLINE __m128i sse2_update(__m128i chunk)
 {
     const __m128i lower_bound = _mm_set1_epi8(' '); 
     const __m128i backslash   = _mm_set1_epi8('\\');
     const __m128i dblquote    = _mm_set1_epi8('\"');
-    // const __m128i high_bit    = _mm_set1_epi8(0x80);
 
     __m128i too_low       = _mm_cmplt_epu8(chunk, lower_bound);
-    
-    // // This is a signed comparison. We need special handling for bytes > 127.
-    // __m128i too_low       = _mm_cmplt_epi8(chunk, lower_bound);
-
-    // // Determine which bytes have the high bit set and remove them from 'too_low'.
-    // __m128i high_bit_set  = _mm_cmpeq_epi8(_mm_and_si128(chunk, high_bit), high_bit);
-    // too_low               = _mm_andnot_si128(high_bit_set, too_low);
-
     __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
     __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
     __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
     return needs_escape;
 }
 
-#ifdef __clang__
-__attribute__((target("sse2")))
-#endif /* __clang__ */
-static inline unsigned char search_escape_basic_sse2(search_state *search)
+static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(search_state *search)
 {
     if (RB_UNLIKELY(search->has_matches)) {
         // There are more matches if search->matches_mask > 0.
         if (search->matches_mask > 0) {
-            if (RB_LIKELY(sse2_next_match(search))) {
-                return 1;
-            }
+            return sse2_next_match(search);
         } else {
             // sse2_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
@@ -643,10 +624,6 @@ static inline unsigned char search_escape_basic_sse2(search_state *search)
     search_flush(search);
     return 0;
 }
-
-#ifdef __GNUC__
-#pragma GCC reset_options
-#endif /* __GNUC__ */
 
 #endif /* HAVE_SIMD_SSE2 */
 
