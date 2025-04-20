@@ -30,8 +30,6 @@ final class RuntimeInfo {
     WeakReference<RubyModule> jsonModule;
     /** JSON::Ext::Generator::State */
     WeakReference<RubyClass> generatorStateClass;
-    /** JSON::SAFE_STATE_PROTOTYPE */
-    WeakReference<GeneratorState> safeStatePrototype;
 
     private RuntimeInfo() {
     }
@@ -66,16 +64,5 @@ final class RuntimeInfo {
             assert cache != null : "Runtime given has not initialized JSON::Ext";
             return cache;
         }
-    }
-
-    public GeneratorState getSafeStatePrototype(ThreadContext context) {
-        if (safeStatePrototype == null) {
-            IRubyObject value = jsonModule.get().getConstant("SAFE_STATE_PROTOTYPE");
-            if (!(value instanceof GeneratorState)) {
-                throw context.runtime.newTypeError(value, generatorStateClass.get());
-            }
-            safeStatePrototype = new WeakReference<>((GeneratorState) value);
-        }
-        return safeStatePrototype.get();
     }
 }

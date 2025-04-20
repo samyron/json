@@ -117,7 +117,7 @@ module JSON
               return new(opts.to_h)
             end
           end
-          SAFE_STATE_PROTOTYPE.dup
+          new
         end
 
         # Instantiates a new State object, configured by _opts_.
@@ -258,7 +258,7 @@ module JSON
           @object_nl             = opts[:object_nl]     || '' if opts.key?(:object_nl)
           @array_nl              = opts[:array_nl]      || '' if opts.key?(:array_nl)
           @allow_nan             = !!opts[:allow_nan]         if opts.key?(:allow_nan)
-          @as_json               = opts[:as_json].to_proc     if opts.key?(:as_json)
+          @as_json               = opts[:as_json].to_proc     if opts[:as_json]
           @ascii_only            = opts[:ascii_only]          if opts.key?(:ascii_only)
           @depth                 = opts[:depth] || 0
           @buffer_initial_length ||= opts[:buffer_initial_length]
@@ -303,7 +303,7 @@ module JSON
         # GeneratorError exception.
         def generate(obj, anIO = nil)
           if @indent.empty? and @space.empty? and @space_before.empty? and @object_nl.empty? and @array_nl.empty? and
-              !@ascii_only and !@script_safe and @max_nesting == 0 and !@strict
+              !@ascii_only and !@script_safe and @max_nesting == 0 and (!@strict || Symbol === obj)
             result = generate_json(obj, ''.dup)
           else
             result = obj.to_json(self)
@@ -364,6 +364,12 @@ module JSON
             end
           when Integer
             buf << obj.to_s
+          when Symbol
+            if @strict
+              fast_serialize_string(obj.name, buf)
+            else
+              buf << obj.to_json(self)
+            end
           else
             # Note: Float is handled this way since Float#to_s is slow anyway
             buf << obj.to_json(self)
@@ -539,10 +545,10 @@ module JSON
             each { |value|
               result << delim unless first
               result << state.indent * depth if indent
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol == value)
                 if state.as_json
                   value = state.as_json.call(value)
-                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol === value
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
                   result << value.to_json(state)
@@ -570,23 +576,39 @@ module JSON
 
         module Float
           # Returns a JSON string representation for this Float number.
-          def to_json(state = nil, *)
+          def to_json(state = nil, *args)
             state = State.from_state(state)
-            case
-            when infinite?
+            if infinite? || nan?
               if state.allow_nan?
                 to_s
-              else
-                raise GeneratorError.new("#{self} not allowed in JSON", self)
-              end
-            when nan?
-              if state.allow_nan?
-                to_s
+              elsif state.strict? && state.as_json
+                casted_value = state.as_json.call(self)
+
+                if casted_value.equal?(self)
+                  raise GeneratorError.new("#{self} not allowed in JSON", self)
+                end
+
+                state.check_max_nesting
+                state.depth += 1
+                result = casted_value.to_json(state, *args)
+                state.depth -= 1
+                result
               else
                 raise GeneratorError.new("#{self} not allowed in JSON", self)
               end
             else
               to_s
+            end
+          end
+        end
+
+        module Symbol
+          def to_json(state = nil, *args)
+            state = State.from_state(state)
+            if state.strict?
+              name.to_json(state, *args)
+            else
+              super
             end
           end
         end

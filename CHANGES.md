@@ -1,8 +1,43 @@
 # Changes
 
+* Optimize Integer generation to be ~1.8x faster.
+* Optimize Float generation to be ~10x faster.
+* Fix `JSON.load` proc argument to substitute the parsed object with the return value.
+  This better match `Marshal.load` behavior.
+* Deprecate `JSON.fast_generate` (it's not any faster, so pointless).
+* Deprecate `JSON.load_default_options`.
+* Deprecate `JSON.unsafe_load_default_options`.
+* Deprecate `JSON.dump_default_options`.
+* Deprecate `Kernel#j`
+* Deprecate `Kernel#jj`
+* Remove outdated `JSON.iconv`.
+* Remove `Class#json_creatable?` monkey patch.
+* Remove deprecated `JSON.restore` method.
+* Remove deprecated `JSON.unparse` method.
+* Remove deprecated `JSON.fast_unparse` method.
+* Remove deprecated `JSON.pretty_unparse` method.
+* Remove deprecated `JSON::UnparserError` constant.
+* Remove outdated `JSON::MissingUnicodeSupport` constant.
+
+### 2025-03-12 (2.10.2)
+
+* Fix a potential crash in the C extension parser.
+* Raise a ParserError on all incomplete unicode escape sequence. This was the behavior until `2.10.0` unadvertently changed it.
+* Ensure document snippets that are included in parser errors don't include truncated multibyte characters.
+* Ensure parser error snippets are valid UTF-8.
+* Fix `JSON::GeneratorError#detailed_message` on Ruby < 3.2
+
+### 2025-02-10 (2.10.1)
+
+* Fix a compatibility issue with `MultiJson.dump(obj, pretty: true)`: `no implicit conversion of false into Proc (TypeError)`.
+
+### 2025-02-10 (2.10.0)
+
+* `strict: true` now accept symbols as values. Previously they'd only be accepted as hash keys.
 * The C extension Parser has been entirely reimplemented from scratch.
 * Introduced `JSON::Coder` as a new API allowing to customize how non native types are serialized in a non-global way.
-
+* Introduced `JSON::Fragment` to allow assembling cached fragments in a safe way.
+* The Java implementation of the generator received many optimizations.
 
 ### 2024-12-18 (2.9.1)
 

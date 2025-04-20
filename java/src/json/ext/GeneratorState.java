@@ -158,8 +158,7 @@ public class GeneratorState extends RubyObject {
             }
         }
 
-        // for other values, return the safe prototype
-        return (GeneratorState)info.getSafeStatePrototype(context).dup();
+        return (GeneratorState)klass.newInstance(context, context.nil);
     }
 
     /**
@@ -368,9 +367,12 @@ public class GeneratorState extends RubyObject {
     }
 
     @JRubyMethod(name="as_json=")
-    public IRubyObject as_json_set(ThreadContext context,
-                                   IRubyObject asJSON) {
-        this.asJSON = (RubyProc)TypeConverter.convertToType(asJSON, context.getRuntime().getProc(), "to_proc");
+    public IRubyObject as_json_set(ThreadContext context, IRubyObject asJSON) {
+        if (asJSON.isNil() || asJSON == context.getRuntime().getFalse()) {
+            this.asJSON = null;
+        } else {
+            this.asJSON = (RubyProc)TypeConverter.convertToType(asJSON, context.getRuntime().getProc(), "to_proc");
+        }
         return asJSON;
     }
 
@@ -565,8 +567,8 @@ public class GeneratorState extends RubyObject {
         return depth;
     }
 
-    public void decreaseDepth() {
-        --depth;
+    public int decreaseDepth() {
+        return --depth;
     }
 
     /**
