@@ -613,6 +613,10 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
             continue;
         }
 
+        if (popcount32(needs_escape_mask) >= sizeof(__m128i)/2) {
+            return sizeof(__m128i);
+        }
+
         search->has_matches = 1;
         search->matches_mask = needs_escape_mask;
         search->chunk_base = search->ptr;
@@ -636,12 +640,16 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
-        }  else {
-            search->has_matches = 1;
-            search->matches_mask = needs_escape_mask;
-            search->chunk_base = search->ptr;
-            return sse2_next_match(search);
         }
+
+        if (popcount32(needs_escape_mask) >= sizeof(__m128i)/2) {
+            return remaining;
+        }
+
+        search->has_matches = 1;
+        search->matches_mask = needs_escape_mask;
+        search->chunk_base = search->ptr;
+        return sse2_next_match(search);
     }
 
     if (search->ptr < search->end) {
