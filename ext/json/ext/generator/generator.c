@@ -159,6 +159,7 @@ static const unsigned char escape_table_basic[256] = {
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
+static SIMD_Implementation SIMD_IMPL;
 static unsigned char (*search_escape_basic_impl)(search_state *);
 
 static inline unsigned char search_escape_basic(search_state *search)
@@ -216,14 +217,38 @@ static inline void escape_UTF8_char_basic(search_state *search)
  * Everything else (should be UTF-8) is just passed through and
  * appended to the result.
  */
+#ifdef HAVE_SIMD_NEON
+static inline unsigned char search_escape_basic_neon(search_state *);
+#endif 
+
 static inline void convert_UTF8_to_JSON(search_state *search)
 {
+#ifdef ENABLE_SIMD
+
+#ifdef HAVE_SIMD_NEON
     unsigned char num_chars = 0;
-    while ((num_chars = search_escape_basic_impl(search))) {
+    if (SIMD_IMPL == SIMD_NEON) {
+        while ((num_chars = search_escape_basic_neon(search))) {
+            do {
+                escape_UTF8_char_basic(search);
+            } while (--num_chars);
+        }
+        return;
+    }
+#endif /* HAVE_SIMD_NEON */
+
+    while ((num_chars = search_escape_basic(search))) {
         do {
             escape_UTF8_char_basic(search);
         } while (--num_chars);
     }
+#else
+    while ((num_chars = search_escape_basic(search))) {
+        do {
+            escape_UTF8_char_basic(search);
+        } while (--num_chars);
+    }
+#endif /* ENABLE_SIMD */
 }
 
 static inline void escape_UTF8_char(search_state *search, unsigned char ch_len)
@@ -2306,7 +2331,7 @@ void Init_generator(void)
     rb_require("json/ext/generator/state");
 
 
-    switch(find_simd_implementation()) {
+    switch((SIMD_IMPL = find_simd_implementation())) {
 #ifdef ENABLE_SIMD
 #ifdef HAVE_SIMD_NEON
         case SIMD_NEON:
