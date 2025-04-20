@@ -48,6 +48,20 @@ static inline int trailing_zeros(int input) {
   #endif
 }
 
+uint32_t popcount32(uint32_t x) {
+  #if defined(__GNUC__) || defined(__clang__)
+    return __builtin_popcount(x);
+  #elif defined(__ARM_NEON)
+      #include <arm_neon.h>
+      return vaddv_u8(vcnt_u8(vcreate_u8((uint64_t)x))) & 0xFF;
+  #else
+      x = x - ((x >> 1) & 0x55555555);
+      x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+      x = (x + (x >> 4)) & 0x0F0F0F0F;
+      return (x * 0x01010101) >> 24;
+  #endif
+}
+
 #define SIMD_MINIMUM_THRESHOLD 6
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)

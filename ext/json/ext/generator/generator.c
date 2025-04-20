@@ -217,8 +217,11 @@ static inline void escape_UTF8_char_basic(search_state *search)
  */
 static inline void convert_UTF8_to_JSON(search_state *search)
 {
-    while (search_escape_basic_impl(search)) {
-        escape_UTF8_char_basic(search);
+    unsigned char num_chars = 0;
+    while ((num_chars = search_escape_basic_impl(search))) {
+        do {
+            escape_UTF8_char_basic(search);
+        } while (--num_chars);
     }
 }
 
@@ -336,12 +339,17 @@ static inline FORCE_INLINE uint8x16_t neon_lut_update(uint8x16_t chunk)
 static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_lut(search_state *search)
 {
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
-        uint8x16_t chunk  = vld1q_u8((const unsigned char *)search->ptr);
+        uint8x16_t chunk        = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t needs_escape = neon_lut_update(chunk);
-        
-        if (vmaxvq_u8(needs_escape) == 0) {
+        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
+
+        if (popcnt == 0) {
             search->ptr += sizeof(uint8x16_t);
             continue;
+        }
+
+        if (popcnt >= (int) sizeof(uint8x16_t)/2) {
+            return sizeof(uint8x16_t);
         }
 
         search->matches_mask = neon_match_mask(needs_escape);
@@ -355,21 +363,27 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_lut(se
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
+        uint8x16_t chunk        = vld1q_u8((const unsigned char *) s);
         uint8x16_t needs_escape = neon_lut_update(chunk);
-        if (vmaxvq_u8(needs_escape) == 0) {
+        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
+
+        if (popcnt == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
             search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
-        } else {
-            search->matches_mask = neon_match_mask(needs_escape);
-            search->has_matches = 1;
-            search->chunk_base = search->ptr;
-            return neon_next_match(search);
         }
+
+        if (popcnt >= sizeof(uint8x16_t)/2) {
+            return remaining;
+        }
+
+        search->matches_mask = neon_match_mask(needs_escape);
+        search->has_matches = 1;
+        search->chunk_base = search->ptr;
+        return neon_next_match(search);
     }
 
     return 0;
@@ -439,10 +453,15 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t needs_escape  = neon_rules_update(chunk);
+        uint8_t popcnt           = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
 
-        if (vmaxvq_u8(needs_escape) == 0) {
+        if (popcnt == 0) {
             search->ptr += sizeof(uint8x16_t);
             continue;
+        }
+        
+        if (popcnt >= sizeof(uint8x16_t)/2) {
+            return sizeof(uint8x16_t);
         }
 
         search->matches_mask = neon_match_mask(needs_escape);
@@ -456,21 +475,27 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint8x16_t chunk = vld1q_u8((const unsigned char *) s);
+        uint8x16_t chunk        = vld1q_u8((const unsigned char *) s);
         uint8x16_t needs_escape = neon_rules_update(chunk);
-        if (vmaxvq_u8(needs_escape) == 0) {
+        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
+
+        if (popcnt == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
             search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
-        } else {
-            search->matches_mask = neon_match_mask(needs_escape);
-            search->has_matches = 1;
-            search->chunk_base = search->ptr;
-            return neon_next_match(search);
         }
+
+        if (popcnt >= sizeof(uint8x16_t)/2) {
+            return remaining;
+        }
+
+        search->matches_mask = neon_match_mask(needs_escape);
+        search->has_matches = 1;
+        search->chunk_base = search->ptr;
+        return neon_next_match(search);
     }
 
     return 0;
@@ -496,12 +521,14 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     }
 
 #ifdef USE_NEON_LUT
-    if (search_escape_basic_neon_advance_lut(search)) {
-        return 1;
+    unsigned char num_chars = 0;    
+    if ((num_chars = search_escape_basic_neon_advance_lut(search))) {
+        return num_chars;
     }
 #else
-    if (search_escape_basic_neon_advance_rules(search)) {
-        return 1;
+    unsigned char num_chars = 0;
+    if ((num_chars = search_escape_basic_neon_advance_rules(search))) {
+        return num_chars;
     }
 #endif /* USE_NEON_LUT */
     if (search->ptr < search->end) {
