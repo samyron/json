@@ -175,7 +175,7 @@ static inline unsigned char search_escape_basic(search_state *search)
     return 0;
 }
 
-static inline void escape_UTF8_char_basic(search_state *search)
+static inline FORCE_INLINE void escape_UTF8_char_basic(search_state *search)
 {
     const unsigned char ch = (unsigned char)*search->ptr;
     switch (ch) {
