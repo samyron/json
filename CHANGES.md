@@ -1,5 +1,11 @@
 # Changes
 
+### 2025-04-24 (2.11.1)
+
+* Add back `JSON.restore`, `JSON.unparse`, `JSON.fast_unparse` and `JSON.pretty_unparse`.
+  These were deprecated 16 years ago, but never emited warnings, only undocumented, so are
+  still used by a few gems.
+
 ### 2025-04-24 (2.11.0)
 
 * Optimize Integer generation to be ~1.8x faster.
