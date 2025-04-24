@@ -68,7 +68,7 @@ uint32_t popcount32(uint32_t x) {
 #include <arm_neon.h>
 
 #define FIND_SIMD_IMPLEMENTATION_DEFINED 1
-static SIMD_Implementation find_simd_implementation() {
+static SIMD_Implementation find_simd_implementation(void) {
     return SIMD_NEON;
 }
 
