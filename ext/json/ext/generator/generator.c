@@ -265,22 +265,6 @@ static inline void escape_UTF8_char(search_state *search, unsigned char ch_len)
 
 #ifdef ENABLE_SIMD
 
-#ifdef HAVE_SIMD_NEON
-#ifdef USE_NEON_LUT
-struct _simd_state {
-
-    struct {
-        uint8x16x4_t escape_table_basic[2];
-    } neon;
-};
-
-static struct _simd_state simd_state;
-#endif /* USE_NEON_LUT */
-#endif /* HAVE_SIMD_NEON */
-#endif /* ENABLE_SIMD */
-
-#ifdef ENABLE_SIMD
-
 static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len)
 {
     // Flush the buffer so everything up until the last 'len' characters are unflushed.
@@ -328,70 +312,6 @@ static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
     return mask & 0x8888888888888888ull;
 }
 
-#ifdef USE_NEON_LUT
-static inline FORCE_INLINE uint8x16_t neon_lut_update(uint8x16_t chunk)
-{
-    uint8x16_t tmp1   = vqtbl4q_u8(simd_state.neon.escape_table_basic[0], chunk);
-    uint8x16_t tmp2   = vqtbl4q_u8(simd_state.neon.escape_table_basic[1], veorq_u8(chunk, vdupq_n_u8(0x40)));
-    uint8x16_t result = vorrq_u8(tmp1, tmp2);
-    return result;
-} 
-
-static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_lut(search_state *search)
-{
-    while (search->ptr+sizeof(uint8x16_t) <= search->end) {
-        uint8x16_t chunk        = vld1q_u8((const unsigned char *)search->ptr);
-        uint8x16_t needs_escape = neon_lut_update(chunk);
-        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
-
-        if (popcnt == 0) {
-            search->ptr += sizeof(uint8x16_t);
-            continue;
-        }
-
-        if (popcnt >= (int) sizeof(uint8x16_t)/2) {
-            return sizeof(uint8x16_t);
-        }
-
-        search->matches_mask = neon_match_mask(needs_escape);
-        search->has_matches = 1;
-        search->chunk_base = search->ptr;
-        return neon_next_match(search);
-    }
-
-    // There are fewer than 16 bytes left. 
-    unsigned long remaining = (search->end - search->ptr);
-    if (remaining >= SIMD_MINIMUM_THRESHOLD) {
-        char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
-
-        uint8x16_t chunk        = vld1q_u8((const unsigned char *) s);
-        uint8x16_t needs_escape = neon_lut_update(chunk);
-        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
-
-        if (popcnt == 0) {
-            // Nothing to escape, ensure search_flush doesn't do anything by setting 
-            // search->cursor to search->ptr.
-            search->buffer->len += remaining;
-            search->ptr = search->end;
-            search->cursor = search->end;
-            return 0;
-        }
-
-        if (popcnt >= sizeof(uint8x16_t)/2) {
-            return remaining;
-        }
-
-        search->matches_mask = neon_match_mask(needs_escape);
-        search->has_matches = 1;
-        search->chunk_base = search->ptr;
-        return neon_next_match(search);
-    }
-
-    return 0;
-}
-
-#else
-
 static inline FORCE_INLINE uint8x16_t neon_rules_update(uint8x16_t chunk)
 {
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
@@ -406,8 +326,24 @@ static inline FORCE_INLINE uint8x16_t neon_rules_update(uint8x16_t chunk)
     return needs_escape;
 }
 
-static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(search_state *search)
+static inline unsigned char search_escape_basic_neon(search_state *search)
 {
+    if (RB_UNLIKELY(search->has_matches)) {
+        // There are more matches if search->matches_mask > 0.
+        if (search->matches_mask > 0) {
+            return neon_next_match(search);
+        } else {
+            // neon_next_match will only advance search->ptr up to the last matching character. 
+            // Skip over any characters in the last chunk that occur after the last match.
+            search->has_matches = 0;
+            if (RB_UNLIKELY(search->chunk_base+sizeof(uint8x16_t) >= search->end)) {
+                search->ptr = search->end;
+            } else {
+                search->ptr = search->chunk_base+sizeof(uint8x16_t);
+            }
+        }
+    }
+
     /*
     * The code below implements an SIMD-based algorithm to determine if N bytes at a time
     * need to be escaped. 
@@ -441,15 +377,12 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(
     * This is the needs_escape vector and it is equal to:
     * [FF 0 0 FF 0 0 0 0] 
     * 
-    * For ARM Neon specifically, we check if the maximum number in the vector is 0. The maximum of
-    * the needs_escape vector is FF. Therefore, we know there is at least one byte that needs to be
-    * escaped.
+    * Next we compute the bitwise AND between each byte and 0x1 and compute the horizontal sum of
+    * the values in the vector. This computes how many bytes need to be escaped within this chunk.
     * 
-    * If the maximum of the needs_escape vector is 0, none of the bytes need to be escaped and
-    * we advance pos by the width of the vector.
-    * 
-    * To determine how to escape characters, we look at each value in the needs_escape vector and take
-    * the appropriate action.
+    * If the sum is zero, no bytes need to be escaped and we can skip 16 bytes.
+    *
+    * If the sum is greater than or equal to 8, then we can assume that at least half of the bytes in chunk.
     */
     while (search->ptr+sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
@@ -470,7 +403,7 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(
         search->chunk_base = search->ptr;
         return neon_next_match(search);
     }
-    
+
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
@@ -499,39 +432,6 @@ static inline FORCE_INLINE unsigned char search_escape_basic_neon_advance_rules(
         return neon_next_match(search);
     }
 
-    return 0;
-}
-#endif /* USE_NEON_LUT */
-
-static inline unsigned char search_escape_basic_neon(search_state *search)
-{
-    if (RB_UNLIKELY(search->has_matches)) {
-        // There are more matches if search->matches_mask > 0.
-        if (search->matches_mask > 0) {
-            return neon_next_match(search);
-        } else {
-            // neon_next_match will only advance search->ptr up to the last matching character. 
-            // Skip over any characters in the last chunk that occur after the last match.
-            search->has_matches = 0;
-            if (RB_UNLIKELY(search->chunk_base+sizeof(uint8x16_t) >= search->end)) {
-                search->ptr = search->end;
-            } else {
-                search->ptr = search->chunk_base+sizeof(uint8x16_t);
-            }
-        }
-    }
-
-#ifdef USE_NEON_LUT
-    unsigned char num_chars = 0;    
-    if ((num_chars = search_escape_basic_neon_advance_lut(search))) {
-        return num_chars;
-    }
-#else
-    unsigned char num_chars = 0;
-    if ((num_chars = search_escape_basic_neon_advance_rules(search))) {
-        return num_chars;
-    }
-#endif /* USE_NEON_LUT */
     if (search->ptr < search->end) {
         return search_escape_basic(search);
     }
@@ -1625,29 +1525,6 @@ static VALUE generate_json_rescue(VALUE d, VALUE exc)
     return Qundef;
 }
 
-/* SIMD Utilities (if enabled) */
-#ifdef ENABLE_SIMD
-#ifdef HAVE_SIMD_NEON
-#ifdef USE_NEON_LUT
-static void initialize_simd_neon(void) {
-    simd_state.neon.escape_table_basic[0] = load_uint8x16_4(escape_table_basic);
-    simd_state.neon.escape_table_basic[1] = load_uint8x16_4(escape_table_basic+64);
-
-    simd_state.neon.escape_table_basic[0].val[0] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[0], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[0].val[1] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[1], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[0].val[2] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[2], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[0].val[3] = vceqq_u8(simd_state.neon.escape_table_basic[0].val[3], vdupq_n_u8(9));
-
-    simd_state.neon.escape_table_basic[1].val[0] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[0], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[1].val[1] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[1], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[1].val[2] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[2], vdupq_n_u8(9));
-    simd_state.neon.escape_table_basic[1].val[3] = vceqq_u8(simd_state.neon.escape_table_basic[1].val[3], vdupq_n_u8(9));
-}
-#endif /* USE_NEON_LUT */
-#endif /* HAVE_NEON_SIMD */
-
-#endif 
-
 static VALUE cState_partial_generate(VALUE self, VALUE obj, generator_func func, VALUE io)
 {
     GET_STATE(self);
@@ -2310,10 +2187,6 @@ void Init_generator(void)
 #ifdef ENABLE_SIMD
 #ifdef HAVE_SIMD_NEON
         case SIMD_NEON:
-        /* Initialize ARM Neon SIMD Implementation. */
-#ifdef USE_NEON_LUT
-            initialize_simd_neon();
-#endif /* USE_NEON_LUT */
             search_escape_basic_impl = search_escape_basic_neon;
             break;
 #endif /* HAVE_SIMD_NEON */

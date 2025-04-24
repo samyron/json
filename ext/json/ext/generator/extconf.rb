@@ -19,10 +19,6 @@ else
           }
         SRC
           $defs.push("-DENABLE_SIMD")
-
-          if enable_config('generator-use-neon-lut', default=false)
-            $defs.push('-DUSE_NEON_LUT')
-          end
       end
     end
 
