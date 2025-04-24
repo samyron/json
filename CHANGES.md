@@ -1,5 +1,7 @@
 # Changes
 
+### 2025-04-24 (2.11.0)
+
 * Optimize Integer generation to be ~1.8x faster.
 * Optimize Float generation to be ~10x faster.
 * Fix `JSON.load` proc argument to substitute the parsed object with the return value.
