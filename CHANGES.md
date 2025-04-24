@@ -1,5 +1,8 @@
 # Changes
 
+* Add back `JSON::PRETTY_STATE_PROTOTYPE`. This constant was private API but is used by popular gems like `multi_json`.
+  It now emits a deprecation warning.
+
 ### 2025-04-24 (2.11.1)
 
 * Add back `JSON.restore`, `JSON.unparse`, `JSON.fast_unparse` and `JSON.pretty_unparse`.
