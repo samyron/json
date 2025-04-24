@@ -83,16 +83,6 @@ uint8x16x4_t load_uint8x16_4(const unsigned char *table) {
   return tab;
 }
 
-void print_uint8x16(char *msg, uint8x16_t vec) {
-  printf("%s\n[ ", msg);
-  uint8_t store[16] = {0};
-  vst1q_u8(store, vec);
-  for(int i=0; i<16; i++) {
-    printf("%3d ", store[i]);
-  }
-  printf("]\n");
-}
-
 #endif /* ARM Neon Support.*/
 
 #if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
@@ -101,17 +91,6 @@ void print_uint8x16(char *msg, uint8x16_t vec) {
 #include <x86intrin.h>
 
 #define HAVE_SIMD_SSE2 1
-
-void print_m128i(const char *prefix, __m128i vec) {
-    uint8_t r[16];
-    _mm_storeu_si128((__m128i *) r, vec);
-
-    printf("%s = [ ", prefix);
-    for(int i=0; i<16; i++) {
-        printf("%02x ", r[i]);
-    }
-    printf("]\n");
-}
 
 #ifdef HAVE_CPUID_H
 #define FIND_SIMD_IMPLEMENTATION_DEFINED 1
