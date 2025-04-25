@@ -218,11 +218,8 @@ static inline FORCE_INLINE void escape_UTF8_char_basic(search_state *search)
  */
 static inline void convert_UTF8_to_JSON(search_state *search)
 {
-    unsigned char num_chars = 0;
-    while ((num_chars = search_escape_basic_impl(search))) {
-        do {
-            escape_UTF8_char_basic(search);
-        } while (--num_chars);
+    while (search_escape_basic_impl(search)) {
+        escape_UTF8_char_basic(search);
     }
 }
 
@@ -393,10 +390,6 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             search->ptr += sizeof(uint8x16_t);
             continue;
         }
-        
-        if (popcnt >= sizeof(uint8x16_t)/2) {
-            return sizeof(uint8x16_t);
-        }
 
         search->matches_mask = neon_match_mask(needs_escape);
         search->has_matches = 1;
@@ -420,10 +413,6 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
-        }
-
-        if (popcnt >= sizeof(uint8x16_t)/2) {
-            return remaining;
         }
 
         search->matches_mask = neon_match_mask(needs_escape);
@@ -512,10 +501,6 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
         if (needs_escape_mask == 0) {
             search->ptr += sizeof(__m128i);
             continue;
-        }
-
-        if (popcount32(needs_escape_mask) >= sizeof(__m128i)/2) {
-            return sizeof(__m128i);
         }
 
         search->has_matches = 1;
