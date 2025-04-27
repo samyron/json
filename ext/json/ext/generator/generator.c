@@ -279,6 +279,8 @@ static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsi
 
     char *s = (buf->ptr + buf->len);
 
+    // Pad the buffer with dummy characters that won't need escaping.
+    // This seem wateful at first sight, but memset of vector length is very fast.
     memset(s, 'X', vec_len);
 
     // Optimistically copy the remaining 'len' characters to the output FBuffer. If there are no characters
