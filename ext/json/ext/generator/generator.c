@@ -331,8 +331,6 @@ static inline FORCE_INLINE uint8x16_t neon_rules_update(const char *ptr)
     uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
     uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
 
-    vandq_u8(needs_escape, vdupq_n_u8(0x1));
-
     return needs_escape;
 }
 
@@ -390,9 +388,9 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * Next we compute the bitwise AND between each byte and 0x1 and compute the horizontal sum of
     * the values in the vector. This computes how many bytes need to be escaped within this chunk.
     * 
-    * If the sum is zero, no bytes need to be escaped and we can skip 16 bytes.
-    *
-    * If the sum is greater than or equal to 8, then we can assume that at least half of the bytes in chunk.
+    * Finally we compute a mask that indicates which bytes need to be escaped. If the mask is 0 then,
+    * no bytes need to be escaped and we can continue to the next chunk. If the mask is not 0 then we
+    * have at least one byte that needs to be escaped.
     */
     while (search->ptr + sizeof(uint8x16_t) <= search->end) {
         uint8x16_t needs_escape  = neon_rules_update(search->ptr);
