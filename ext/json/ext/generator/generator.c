@@ -340,10 +340,10 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
-            if (RB_UNLIKELY(search->chunk_base+sizeof(uint8x16_t) >= search->end)) {
+            if (RB_UNLIKELY(search->chunk_base + sizeof(uint8x16_t) >= search->end)) {
                 search->ptr = search->end;
             } else {
-                search->ptr = search->chunk_base+sizeof(uint8x16_t);
+                search->ptr = search->chunk_base + sizeof(uint8x16_t);
             }
         }
     }
