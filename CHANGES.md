@@ -1,5 +1,7 @@
 # Changes
 
+* Handle non-string hash keys with broken `to_s` implementations.
+
 ### 2025-04-25 (2.11.3)
 
 * Fix a regression in `JSON.pretty_generate` that could cause indentation to be off once some `#to_json` has been called.
