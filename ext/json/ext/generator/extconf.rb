@@ -7,7 +7,7 @@ else
   append_cflags("-std=c99")
   $defs << "-DJSON_GENERATOR"
 
-  if enable_config('generator-use-simd', default=true)
+  if enable_config('generator-use-simd', default=!ENV["JSON_DISABLE_SIMD"])
     if RbConfig::CONFIG['host_cpu'] =~ /^(arm.*|aarch64.*)/
       # Try to compile a small program using NEON instructions
       if have_header('arm_neon.h')
@@ -31,7 +31,7 @@ else
       SRC
         $defs.push("-DENABLE_SIMD")
     end
-    
+
     have_header('cpuid.h')
   end
 
