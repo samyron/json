@@ -318,8 +318,10 @@ static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
     return mask & 0x8888888888888888ull;
 }
 
-static inline FORCE_INLINE uint8x16_t neon_rules_update(uint8x16_t chunk)
+static inline FORCE_INLINE uint8x16_t neon_rules_update(const char *ptr)
 {
+    uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
+
     const uint8x16_t lower_bound = vdupq_n_u8(' '); 
     const uint8x16_t backslash   = vdupq_n_u8('\\');
     const uint8x16_t dblquote    = vdupq_n_u8('\"');
@@ -391,8 +393,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * If the sum is greater than or equal to 8, then we can assume that at least half of the bytes in chunk.
     */
     while (search->ptr + sizeof(uint8x16_t) <= search->end) {
-        uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
-        uint8x16_t needs_escape  = neon_rules_update(chunk);
+        uint8x16_t needs_escape  = neon_rules_update(search->ptr);
         uint8_t popcnt           = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
 
         if (popcnt == 0) {
@@ -415,8 +416,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint8x16_t chunk        = vld1q_u8((const unsigned char *) s);
-        uint8x16_t needs_escape = neon_rules_update(chunk);
+        uint8x16_t needs_escape = neon_rules_update(s);
         uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
 
         if (popcnt == 0) {
