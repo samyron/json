@@ -331,6 +331,8 @@ static inline FORCE_INLINE uint8x16_t neon_rules_update(const char *ptr)
     uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
     uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
 
+    vandq_u8(needs_escape, vdupq_n_u8(0x1));
+
     return needs_escape;
 }
 
@@ -394,18 +396,13 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     */
     while (search->ptr + sizeof(uint8x16_t) <= search->end) {
         uint8x16_t needs_escape  = neon_rules_update(search->ptr);
-        uint8_t popcnt           = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
+        uint64_t mask = neon_match_mask(needs_escape);
 
-        if (popcnt == 0) {
+        if (!mask) {
             search->ptr += sizeof(uint8x16_t);
             continue;
         }
-        
-        if (popcnt >= sizeof(uint8x16_t)/2) {
-            return sizeof(uint8x16_t);
-        }
-
-        search->matches_mask = neon_match_mask(needs_escape);
+        search->matches_mask = mask;
         search->has_matches = 1;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
@@ -417,19 +414,15 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
         uint8x16_t needs_escape = neon_rules_update(s);
-        uint8_t popcnt          = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
+        uint64_t mask = neon_match_mask(needs_escape);
 
-        if (popcnt == 0) {
+        if (!mask) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
             // search->cursor to search->ptr.
             search->buffer->len += remaining;
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
-        }
-
-        if (popcnt >= sizeof(uint8x16_t)/2) {
-            return remaining;
         }
 
         search->matches_mask = neon_match_mask(needs_escape);
