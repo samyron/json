@@ -356,7 +356,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * 
     * Assume the ptr = "Te\sting!" (the double quotes are included in the string)
     * 
-    * The explanination will be limited to the first 8 bytes of the string for simplicity. However
+    * The explanation will be limited to the first 8 bytes of the string for simplicity. However
     * the vector insructions may work on larger vectors.
     * 
     * First, we load three constants 'lower_bound', 'backslash' and 'dblquote" in vector registers.
@@ -390,7 +390,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     *
     * If the sum is greater than or equal to 8, then we can assume that at least half of the bytes in chunk.
     */
-    while (search->ptr+sizeof(uint8x16_t) <= search->end) {
+    while (search->ptr + sizeof(uint8x16_t) <= search->end) {
         uint8x16_t chunk         = vld1q_u8((const unsigned char *)search->ptr);
         uint8x16_t needs_escape  = neon_rules_update(chunk);
         uint8_t popcnt           = vaddvq_u8(vandq_u8(needs_escape, vdupq_n_u8(0x1)));
@@ -501,15 +501,15 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
             // sse2_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
-            if (RB_UNLIKELY(search->chunk_base+sizeof(__m128i) >= search->end)) {
+            if (RB_UNLIKELY(search->chunk_base + sizeof(__m128i) >= search->end)) {
                 search->ptr = search->end;
             } else {
-                search->ptr = search->chunk_base+sizeof(__m128i);
+                search->ptr = search->chunk_base + sizeof(__m128i);
             }
         }
     }
 
-    while (search->ptr+sizeof(__m128i) <= search->end) {
+    while (search->ptr + sizeof(__m128i) <= search->end) {
         __m128i chunk         = _mm_loadu_si128((__m128i const*)search->ptr);
         __m128i needs_escape  = sse2_update(chunk);
 
