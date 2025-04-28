@@ -316,7 +316,7 @@ static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
     return mask & 0x8888888888888888ull;
 }
 
-static inline FORCE_INLINE uint8x16_t neon_rules_update(const char *ptr)
+static inline FORCE_INLINE uint64_t neon_rules_update(const char *ptr)
 {
     uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
 
@@ -329,7 +329,7 @@ static inline FORCE_INLINE uint8x16_t neon_rules_update(const char *ptr)
     uint8x16_t has_dblquote  = vceqq_u8(chunk, dblquote);
     uint8x16_t needs_escape  = vorrq_u8(too_low, vorrq_u8(has_backslash, has_dblquote));
 
-    return needs_escape;
+    return neon_match_mask(needs_escape);
 }
 
 static inline unsigned char search_escape_basic_neon(search_state *search)
@@ -387,8 +387,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * have at least one byte that needs to be escaped.
     */
     while (search->ptr + sizeof(uint8x16_t) <= search->end) {
-        uint8x16_t needs_escape  = neon_rules_update(search->ptr);
-        uint64_t mask = neon_match_mask(needs_escape);
+        uint64_t mask = neon_rules_update(search->ptr);
 
         if (!mask) {
             search->ptr += sizeof(uint8x16_t);
@@ -406,8 +405,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint8x16_t needs_escape = neon_rules_update(s);
-        uint64_t mask = neon_match_mask(needs_escape);
+        uint64_t mask = neon_rules_update(s);
 
         if (!mask) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
@@ -418,7 +416,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             return 0;
         }
 
-        search->matches_mask = neon_match_mask(needs_escape);
+        search->matches_mask = mask;
         search->has_matches = true;
         search->chunk_end = search->end;
         search->chunk_base = search->ptr;
@@ -465,8 +463,10 @@ static inline FORCE_INLINE unsigned char sse2_next_match(search_state *search)
 #define TARGET_SSE2
 #endif
 
-static inline TARGET_SSE2 FORCE_INLINE __m128i sse2_update(__m128i chunk)
+static inline TARGET_SSE2 FORCE_INLINE int sse2_update(const char *ptr)
 {
+    __m128i chunk         = _mm_loadu_si128((__m128i const*)ptr);
+
     const __m128i lower_bound = _mm_set1_epi8(' '); 
     const __m128i backslash   = _mm_set1_epi8('\\');
     const __m128i dblquote    = _mm_set1_epi8('\"');
@@ -475,7 +475,7 @@ static inline TARGET_SSE2 FORCE_INLINE __m128i sse2_update(__m128i chunk)
     __m128i has_backslash = _mm_cmpeq_epi8(chunk, backslash);
     __m128i has_dblquote  = _mm_cmpeq_epi8(chunk, dblquote);
     __m128i needs_escape  = _mm_or_si128(too_low, _mm_or_si128(has_backslash, has_dblquote));
-    return needs_escape;
+    return _mm_movemask_epi8(needs_escape);
 }
 
 static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(search_state *search)
@@ -497,10 +497,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
     }
 
     while (search->ptr + sizeof(__m128i) <= search->end) {
-        __m128i chunk         = _mm_loadu_si128((__m128i const*)search->ptr);
-        __m128i needs_escape  = sse2_update(chunk);
-
-        int needs_escape_mask = _mm_movemask_epi8(needs_escape);
+        int needs_escape_mask = sse2_update(search->ptr);
 
         if (needs_escape_mask == 0) {
             search->ptr += sizeof(__m128i);
@@ -518,10 +515,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(__m128i), remaining);
 
-        __m128i chunk         = _mm_loadu_si128((__m128i const *) s);
-        __m128i needs_escape  = sse2_update(chunk);
-
-        int needs_escape_mask = _mm_movemask_epi8(needs_escape);
+        int needs_escape_mask = sse2_update(s);
 
         if (needs_escape_mask == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
