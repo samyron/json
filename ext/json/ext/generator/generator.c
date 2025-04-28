@@ -115,7 +115,7 @@ typedef struct _search_state {
 #ifdef ENABLE_SIMD
     const char *chunk_base;
     const char *chunk_end;
-    uint8_t has_matches;
+    bool has_matches;
 
 #ifdef HAVE_SIMD_NEON
     uint64_t matches_mask;
@@ -223,11 +223,8 @@ static inline FORCE_INLINE void escape_UTF8_char_basic(search_state *search)
  */
 static inline void convert_UTF8_to_JSON(search_state *search)
 {
-    unsigned char num_chars = 0;
-    while ((num_chars = search_escape_basic_impl(search))) {
-        do {
-            escape_UTF8_char_basic(search);
-        } while (--num_chars);
+    while (search_escape_basic_impl(search)) {
+        escape_UTF8_char_basic(search);
     }
 }
 
@@ -344,7 +341,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         } else {
             // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
-            search->has_matches = 0;
+            search->has_matches = false;
             search->ptr = search->chunk_end;
         }
     }
@@ -398,7 +395,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             continue;
         }
         search->matches_mask = mask;
-        search->has_matches = 1;
+        search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
         return neon_next_match(search);
@@ -422,7 +419,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         }
 
         search->matches_mask = neon_match_mask(needs_escape);
-        search->has_matches = 1;
+        search->has_matches = true;
         search->chunk_end = search->end;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
@@ -490,7 +487,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
         } else {
             // sse2_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
-            search->has_matches = 0;
+            search->has_matches = false;
             if (RB_UNLIKELY(search->chunk_base + sizeof(__m128i) >= search->end)) {
                 search->ptr = search->end;
             } else {
@@ -510,11 +507,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
             continue;
         }
 
-        if (popcount32(needs_escape_mask) >= sizeof(__m128i)/2) {
-            return sizeof(__m128i);
-        }
-
-        search->has_matches = 1;
+        search->has_matches = true;
         search->matches_mask = needs_escape_mask;
         search->chunk_base = search->ptr;
         return sse2_next_match(search);
@@ -539,11 +532,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
             return 0;
         }
 
-        if (popcount32(needs_escape_mask) >= sizeof(__m128i)/2) {
-            return remaining;
-        }
-
-        search->has_matches = 1;
+        search->has_matches = true;
         search->matches_mask = needs_escape_mask;
         search->chunk_base = search->ptr;
         return sse2_next_match(search);
@@ -1310,7 +1299,7 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
 
 #ifdef ENABLE_SIMD
     search.matches_mask = 0;
-    search.has_matches = 0;
+    search.has_matches = false;
     search.chunk_base = NULL;
 #endif /* ENABLE_SIMD */
 
