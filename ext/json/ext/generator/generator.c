@@ -114,6 +114,7 @@ typedef struct _search_state {
 
 #ifdef ENABLE_SIMD
     const char *chunk_base;
+    const char *chunk_end;
     uint8_t has_matches;
 
 #ifdef HAVE_SIMD_NEON
@@ -344,11 +345,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             // neon_next_match will only advance search->ptr up to the last matching character. 
             // Skip over any characters in the last chunk that occur after the last match.
             search->has_matches = 0;
-            if (RB_UNLIKELY(search->chunk_base + sizeof(uint8x16_t) >= search->end)) {
-                search->ptr = search->end;
-            } else {
-                search->ptr = search->chunk_base + sizeof(uint8x16_t);
-            }
+            search->ptr = search->chunk_end;
         }
     }
 
@@ -403,6 +400,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         search->matches_mask = mask;
         search->has_matches = 1;
         search->chunk_base = search->ptr;
+        search->chunk_end = search->ptr + sizeof(uint8x16_t);
         return neon_next_match(search);
     }
 
@@ -425,6 +423,7 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 
         search->matches_mask = neon_match_mask(needs_escape);
         search->has_matches = 1;
+        search->chunk_end = search->end;
         search->chunk_base = search->ptr;
         return neon_next_match(search);
     }
