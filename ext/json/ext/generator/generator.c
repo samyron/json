@@ -189,15 +189,11 @@ static inline FORCE_INLINE void escape_UTF8_char_basic(search_state *search)
         case '\r': fbuffer_append(search->buffer, "\\r", 2);  break;
         case '\t': fbuffer_append(search->buffer, "\\t", 2);  break;
         default: {
-            if (ch < ' ') {
-                const char *hexdig = "0123456789abcdef";
-                char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
-                scratch[4] = hexdig[(ch >> 4) & 0xf];
-                scratch[5] = hexdig[ch & 0xf];
-                fbuffer_append(search->buffer, scratch, 6);
-            } else {
-                fbuffer_append_char(search->buffer, ch);
-            }
+            const char *hexdig = "0123456789abcdef";
+            char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
+            scratch[4] = hexdig[(ch >> 4) & 0xf];
+            scratch[5] = hexdig[ch & 0xf];
+            fbuffer_append(search->buffer, scratch, 6);
             break;
         }
     }
