@@ -1,6 +1,9 @@
 # Changes
 
+### Unreleased
+
 * Handle non-string hash keys with broken `to_s` implementations.
+* `JSON.generate` now uses SSE2 (x86) or NEON (arm64) instructions when available to escape strings.
 
 ### 2025-04-25 (2.11.3)
 
