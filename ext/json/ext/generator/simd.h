@@ -4,7 +4,7 @@ typedef enum {
     SIMD_SSE2
 } SIMD_Implementation;
 
-#ifdef ENABLE_SIMD
+#ifdef JSON_ENABLE_SIMD
 
 #ifdef __clang__
   #if __has_builtin(__builtin_ctzll)
@@ -101,7 +101,7 @@ static SIMD_Implementation find_simd_implementation(void) {
 #endif /* HAVE_X86INTRIN_H */
 #endif /* X86_64 Support */
 
-#endif /* ENABLE_SIMD */
+#endif /* JSON_ENABLE_SIMD */
 
 #ifndef FIND_SIMD_IMPLEMENTATION_DEFINED
 static SIMD_Implementation find_simd_implementation(void) {

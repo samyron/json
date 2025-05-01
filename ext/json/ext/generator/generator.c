@@ -112,7 +112,7 @@ typedef struct _search_state {
     const char *cursor;
     FBuffer *buffer;
 
-#ifdef ENABLE_SIMD
+#ifdef JSON_ENABLE_SIMD
     const char *chunk_base;
     const char *chunk_end;
     bool has_matches;
@@ -124,7 +124,7 @@ typedef struct _search_state {
 #else
 #error "Unknown SIMD Implementation."
 #endif /* HAVE_SIMD_NEON */
-#endif /* ENABLE_SIMD */ 
+#endif /* JSON_ENABLE_SIMD */
 } search_state;
 
 #if (defined(__GNUC__ ) || defined(__clang__))
@@ -261,7 +261,7 @@ static inline void escape_UTF8_char(search_state *search, unsigned char ch_len)
     search->cursor = (search->ptr += ch_len);
 }
 
-#ifdef ENABLE_SIMD
+#ifdef JSON_ENABLE_SIMD
 
 static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsigned long vec_len, unsigned long len)
 {
@@ -533,7 +533,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
 
 #endif /* HAVE_SIMD_SSE2 */
 
-#endif /* ENABLE_SIMD */
+#endif /* JSON_ENABLE_SIMD */
 
 static const unsigned char script_safe_escape_table[256] = {
     // ASCII Control Characters
@@ -1298,11 +1298,11 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
     search.cursor = search.ptr;
     search.end = search.ptr + len;
 
-#ifdef ENABLE_SIMD
+#ifdef JSON_ENABLE_SIMD
     search.matches_mask = 0;
     search.has_matches = false;
     search.chunk_base = NULL;
-#endif /* ENABLE_SIMD */
+#endif /* JSON_ENABLE_SIMD */
 
     switch(rb_enc_str_coderange(obj)) {
         case ENC_CODERANGE_7BIT:
@@ -2170,7 +2170,7 @@ void Init_generator(void)
 
 
     switch(find_simd_implementation()) {
-#ifdef ENABLE_SIMD
+#ifdef JSON_ENABLE_SIMD
 #ifdef HAVE_SIMD_NEON
         case SIMD_NEON:
             search_escape_basic_impl = search_escape_basic_neon;
@@ -2181,7 +2181,7 @@ void Init_generator(void)
             search_escape_basic_impl = search_escape_basic_sse2;
             break;
 #endif /* HAVE_SIMD_SSE2 */
-#endif /* ENABLE_SIMD */
+#endif /* JSON_ENABLE_SIMD */
         default:
             search_escape_basic_impl = search_escape_basic;
             break;
