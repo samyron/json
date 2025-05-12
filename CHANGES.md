@@ -2,6 +2,9 @@
 
 ### Unreleased
 
+### 2025-05-12 (2.12.0)
+
+* Improve floating point generation to not use scientific notation as much.
 * Include line and column in parser errors. Both in the message and as exception attributes.
 * Handle non-string hash keys with broken `to_s` implementations.
 * `JSON.generate` now uses SSE2 (x86) or NEON (arm64) instructions when available to escape strings.
