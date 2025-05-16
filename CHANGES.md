@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+* Fix for JSON.pretty_generate to use passed state object's generate instead of state class as the required parameters aren't available.
+
 ### 2025-05-12 (2.12.0)
 
 * Improve floating point generation to not use scientific notation as much.
