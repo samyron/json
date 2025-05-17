@@ -233,6 +233,19 @@ the `pp` library's `pp` methods.
 
 ## Development
 
+### Prerequisites
+
+1. Clone the repository
+2. Install dependencies with `bundle install`
+
+### Testing
+
+The full test suite can be run with:
+
+```bash
+bundle exec rake test
+```
+
 ### Release
 
 Update the `lib/json/version.rb` file.
