@@ -1,9 +1,10 @@
 # Changes
 
-* Fix a potential crash in large negative floating point number generation.
-
 ### Unreleased
 
+### 2025-05-23 (2.12.1)
+
+* Fix a potential crash in large negative floating point number generation.
 * Fix for JSON.pretty_generate to use passed state object's generate instead of state class as the required parameters aren't available.
 
 ### 2025-05-12 (2.12.0)
