@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+### 2025-05-23 (2.12.2)
+
+* Fix compiler optimization level.
+
 ### 2025-05-23 (2.12.1)
 
 * Fix a potential crash in large negative floating point number generation.
