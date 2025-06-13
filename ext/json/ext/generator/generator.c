@@ -5,7 +5,7 @@
 #include <math.h>
 #include <ctype.h>
 
-#include "simd.h"
+#include "../simd/simd.h"
 
 /* ruby api and some helpers */
 
