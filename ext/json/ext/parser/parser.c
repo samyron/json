@@ -880,12 +880,6 @@ static bool (*string_scan_impl)(JSON_ParserState *);
 
 #ifdef HAVE_SIMD
 #ifdef HAVE_SIMD_NEON
-static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
-{
-    const uint8x8_t res = vshrn_n_u16(vreinterpretq_u16_u8(matches), 4);
-    const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(res), 0);
-    return mask & 0x8888888888888888ull;
-}
 
 static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
 {
