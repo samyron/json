@@ -880,6 +880,12 @@ static bool (*string_scan_impl)(JSON_ParserState *);
 
 #ifdef HAVE_SIMD
 #ifdef HAVE_SIMD_NEON
+static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
+{
+    const uint8x8_t res = vshrn_n_u16(vreinterpretq_u16_u8(matches), 4);
+    const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(res), 0);
+    return mask & 0x8888888888888888ull;
+}
 
 static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
 {
@@ -892,19 +898,10 @@ static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
 
         uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
         uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
-
-        // Benchmarking this on an M1 Macbook Air shows that this is faster than
-        // using the neon_match_mask function (see the generator.c code) and bit
-        // operations to find the first match.
-        if (vmaxvq_u8(needs_escape)) {
-            unsigned char matches[16];
-            vst1q_u8(matches, needs_escape);
-            for (int i = 0; i < 16; i++) {
-                if (matches[i]) {
-                    state->cursor += i;
-                    return true;
-                }
-            }
+        uint64_t mask = neon_match_mask(needs_escape);
+        if (mask) {
+            state->cursor += trailing_zeros64(mask) >> 2;
+            return true;
         }
 
         state->cursor += sizeof(uint8x16_t);
