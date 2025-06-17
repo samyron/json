@@ -907,6 +907,46 @@ static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
     return 0;
 }
 #endif /* HAVE_SIMD_NEON */
+
+#ifdef HAVE_SIMD_SSE2
+
+#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+#if defined(__clang__) || defined(__GNUC__)
+#define TARGET_SSE2 __attribute__((target("sse2")))
+#else
+#define TARGET_SSE2
+#endif
+
+static inline TARGET_SSE2 FORCE_INLINE bool string_scan_sse2(JSON_ParserState *state)
+{
+    while (state->cursor + sizeof(__m128i) <= state->end) {
+        __m128i chunk = _mm_loadu_si128((__m128i const*)state->cursor);
+
+        // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
+        // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
+        __m128i too_low_or_dbl_quote = _mm_cmplt_epu8(_mm_xor_si128(chunk, _mm_set1_epi8(2)), _mm_set1_epi8(33));
+        __m128i has_backslash = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\\'));
+        __m128i needs_escape  = _mm_or_si128(too_low_or_dbl_quote, has_backslash);
+        int mask = _mm_movemask_epi8(needs_escape);
+        if (mask) {
+            state->cursor += trailing_zeros(mask);
+            return true;
+        }
+
+        state->cursor += sizeof(__m128i);
+    }
+
+    if (state->cursor < state->end) {
+        return string_scan_basic(state);
+    }
+    return 0;
+}
+#endif
+
 #endif /* HAVE_SIMD */
 
 static inline VALUE json_parse_string(JSON_ParserState *state, JSON_ParserConfig *config, bool is_name)
@@ -1471,6 +1511,11 @@ switch(find_simd_implementation()) {
             string_scan_impl = string_scan_neon;
             break;
 #endif /* HAVE_SIMD_NEON */
+#ifdef HAVE_SIMD_SSE2
+        case SIMD_SSE2:
+            string_scan_impl = string_scan_sse2;
+            break;
+#endif /* HAVE_SIMD_SSE2 */
 #endif /* HAVE_SIMD */
         default:
             string_scan_impl = string_scan_basic;
