@@ -881,29 +881,37 @@ static bool (*string_scan_impl)(JSON_ParserState *);
 #ifdef HAVE_SIMD
 #ifdef HAVE_SIMD_NEON
 
+static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
+{
+    JSON_ParserState *s = state;
+    return s->cursor + width <= s->end;
+}
+
+static inline FORCE_INLINE const char *ptr(void *state)
+{
+    return ((JSON_ParserState *) state)->cursor;
+}
+
+static inline FORCE_INLINE void advance_by(void *state, size_t count)
+{
+    ((JSON_ParserState *) state)->cursor += count;
+}
+
+static inline FORCE_INLINE void set_match_mask(void *state, uint64_t mask)
+{
+    advance_by(state, trailing_zeros64(mask) >> 2);
+}
+
 static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
 {
-    while (state->cursor + sizeof(uint8x16_t) <= state->end) {
-        uint8x16_t chunk = vld1q_u8((const unsigned char *)state->cursor);
-
-        // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
-        // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
-        const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
-
-        uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
-        uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
-        uint64_t mask = neon_match_mask(needs_escape);
-        if (mask) {
-            state->cursor += trailing_zeros64(mask) >> 2;
-            return true;
-        }
-
-        state->cursor += sizeof(uint8x16_t);
+    if (neon_vector_scan(state, has_next_vector, ptr, advance_by, set_match_mask)) {
+        return true;
     }
 
     if (state->cursor < state->end) {
         return string_scan_basic(state);
     }
+
     return 0;
 }
 #endif /* HAVE_SIMD_NEON */

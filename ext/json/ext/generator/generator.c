@@ -286,6 +286,28 @@ static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsi
 
 #ifdef HAVE_SIMD_NEON
 
+static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
+{
+    search_state *search = (search_state *) state;
+    return search->ptr + width <= search->end;
+}
+
+static inline FORCE_INLINE const char *ptr(void *state)
+{
+    search_state *search = (search_state *) state;
+    return search->ptr;
+}
+
+static inline FORCE_INLINE void advance_by(void *state, size_t count)
+{
+    ((search_state *) state)->ptr += count;
+}
+
+static inline FORCE_INLINE void set_match_mask(void *state, uint64_t mask)
+{
+    ((search_state *) state)->matches_mask = mask;
+}
+
 static inline FORCE_INLINE unsigned char neon_next_match(search_state *search)
 {
     uint64_t mask = search->matches_mask;
@@ -372,20 +394,15 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * no bytes need to be escaped and we can continue to the next chunk. If the mask is not 0 then we
     * have at least one byte that needs to be escaped.
     */
-    while (search->ptr + sizeof(uint8x16_t) <= search->end) {
-        uint64_t mask = neon_rules_update(search->ptr);
-
-        if (!mask) {
-            search->ptr += sizeof(uint8x16_t);
-            continue;
-        }
-        search->matches_mask = mask;
+    if (neon_vector_scan(search, has_next_vector, ptr, advance_by, set_match_mask)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
         return neon_next_match(search);
     }
 
+    // TODO HANDLE THIS BETTER
+    
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
