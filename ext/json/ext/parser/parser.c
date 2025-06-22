@@ -846,7 +846,7 @@ static inline VALUE json_push_value(JSON_ParserState *state, JSON_ParserConfig *
     return value;
 }
 
-static const bool string_scan[256] = {
+static const bool string_scan_table[256] = {
     // ASCII Control Characters
      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -865,18 +865,8 @@ static const bool string_scan[256] = {
 #define FORCE_INLINE
 #endif
 
-static inline bool FORCE_INLINE string_scan_basic(JSON_ParserState *state)
-{
-    while (state->cursor < state->end) {
-        if (RB_UNLIKELY(string_scan[(unsigned char)*state->cursor])) {
-            return 1;
-        }
-        *state->cursor++;
-    }
-    return 0;
-}
-
-static bool (*string_scan_impl)(JSON_ParserState *);
+// Not used at the moment. 
+static SIMD_Implementation simd_impl = SIMD_NONE;
 
 #ifdef HAVE_SIMD
 #ifdef HAVE_SIMD_NEON
@@ -887,35 +877,41 @@ static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
     return s->cursor + width <= s->end;
 }
 
-static inline FORCE_INLINE const char *ptr(void *state)
-{
-    return ((JSON_ParserState *) state)->cursor;
-}
+static inline FORCE_INLINE const char *ptr(void *state)                           { return ((JSON_ParserState *) state)->cursor; }
+static inline FORCE_INLINE void        advance_by(void *state, size_t count)      { ((JSON_ParserState *) state)->cursor += count; }
+static inline FORCE_INLINE void        set_match_mask(void *state, uint64_t mask) { advance_by(state, trailing_zeros64(mask) >> 2); }
 
-static inline FORCE_INLINE void advance_by(void *state, size_t count)
-{
-    ((JSON_ParserState *) state)->cursor += count;
-}
-
-static inline FORCE_INLINE void set_match_mask(void *state, uint64_t mask)
-{
-    advance_by(state, trailing_zeros64(mask) >> 2);
-}
-
-static inline FORCE_INLINE bool string_scan_neon(JSON_ParserState *state)
-{
-    if (neon_vector_scan(state, has_next_vector, ptr, advance_by, set_match_mask)) {
-        return true;
-    }
-
-    if (state->cursor < state->end) {
-        return string_scan_basic(state);
-    }
-
-    return 0;
-}
 #endif /* HAVE_SIMD_NEON */
 #endif /* HAVE_SIMD */
+
+static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
+{
+#ifdef HAVE_SIMD
+#ifdef HAVE_SIMD_NEON
+    // Do not extract this structor to a global variable or make it static without profiling and
+    // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
+    // inline these methods if this structure is defined like this.
+    NeonStringScanIterator iterator = {
+        .has_next_vector = has_next_vector,
+        .ptr = ptr,
+        .advance_by = advance_by,
+        .set_match_mask = set_match_mask,
+    };
+
+    if (string_scan_simd_neon(state, &iterator)) {
+        return 1;
+    }
+#endif /* HAVE_SIMD_NEON */
+#endif /* HAVE_SIMD */
+
+    while (state->cursor < state->end) {
+        if (RB_UNLIKELY(string_scan_table[(unsigned char)*state->cursor])) {
+            return 1;
+        }
+        *state->cursor++;
+    }
+    return 0;
+}
 
 static inline VALUE json_parse_string(JSON_ParserState *state, JSON_ParserConfig *config, bool is_name)
 {
@@ -923,7 +919,7 @@ static inline VALUE json_parse_string(JSON_ParserState *state, JSON_ParserConfig
     const char *start = state->cursor;
     bool escaped = false;
 
-    while (RB_UNLIKELY(string_scan_impl(state))) {
+    while (RB_UNLIKELY(string_scan(state))) {
         switch (*state->cursor) {
             case '"': {
                 VALUE string = json_decode_string(state, config, start, state->cursor, escaped, is_name);
@@ -1472,16 +1468,9 @@ void Init_parser(void)
     utf8_encindex = rb_utf8_encindex();
     enc_utf8 = rb_utf8_encoding();
 
-switch(find_simd_implementation()) {
 #ifdef HAVE_SIMD
-#ifdef HAVE_SIMD_NEON
-        case SIMD_NEON:
-            string_scan_impl = string_scan_neon;
-            break;
-#endif /* HAVE_SIMD_NEON */
-#endif /* HAVE_SIMD */
-        default:
-            string_scan_impl = string_scan_basic;
-            break;
-    }
+    simd_impl = find_simd_implementation();
+#else
+    simd_impl = SIMD_NONE;
+#endif 
 }

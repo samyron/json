@@ -73,24 +73,35 @@ static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
     return mask & 0x8888888888888888ull;
 }
 
-static inline int FORCE_INLINE neon_vector_scan(void *state, int (*has_next_vector)(void *, size_t), const char *(*ptr)(void *),
-                                                void (*advance_by)(void *, size_t), void (*set_match_mask)(void *, uint64_t))
+typedef struct _neon_string_scan_iterator {
+  int (*has_next_vector)(void *, size_t);
+  const char *(*ptr)(void *);
+  void (*advance_by)(void *, size_t);
+  void (*set_match_mask)(void *, uint64_t);
+} NeonStringScanIterator;
+
+static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
 {
-    while (has_next_vector(state, sizeof(uint8x16_t))) {
-        uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr(state));
+  uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
 
-        // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
-        // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
-        const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
+  // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
+  // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
+  const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
 
-        uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
-        uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
-        uint64_t mask = neon_match_mask(needs_escape);
-        if (mask) {
-            set_match_mask(state, mask);
-            return 1;
-        }
-        advance_by(state, sizeof(uint8x16_t));
+  uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
+  uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
+  return neon_match_mask(needs_escape);
+}
+
+static inline FORCE_INLINE int string_scan_simd_neon(void *state, NeonStringScanIterator *iter)
+{
+    while (iter->has_next_vector(state, sizeof(uint8x16_t))) {
+      uint64_t mask = compute_chunk_mask_neon(iter->ptr(state));
+      if (mask) {
+          iter->set_match_mask(state, mask);
+          return 1;
+      }
+      iter->advance_by(state, sizeof(uint8x16_t));
     }
 
     return 0;

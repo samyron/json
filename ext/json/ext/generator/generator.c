@@ -294,8 +294,7 @@ static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
 
 static inline FORCE_INLINE const char *ptr(void *state)
 {
-    search_state *search = (search_state *) state;
-    return search->ptr;
+    return ((search_state *) state)->ptr;
 }
 
 static inline FORCE_INLINE void advance_by(void *state, size_t count)
@@ -324,20 +323,6 @@ static inline FORCE_INLINE unsigned char neon_next_match(search_state *search)
     search->matches_mask = mask;
     search_flush(search);
     return 1;
-}
-
-static inline FORCE_INLINE uint64_t neon_rules_update(const char *ptr)
-{
-    uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
-
-    // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
-    // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
-    const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
-
-    uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
-    uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
-
-    return neon_match_mask(needs_escape);
 }
 
 static inline unsigned char search_escape_basic_neon(search_state *search)
@@ -394,21 +379,30 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     * no bytes need to be escaped and we can continue to the next chunk. If the mask is not 0 then we
     * have at least one byte that needs to be escaped.
     */
-    if (neon_vector_scan(search, has_next_vector, ptr, advance_by, set_match_mask)) {
+
+    // Do not extract this structor to a global variable or make it static without profiling and
+    // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
+    // inline these methods if this structure is defined like this.
+    NeonStringScanIterator iterator = {
+        .has_next_vector = has_next_vector,
+        .ptr = ptr,
+        .advance_by = advance_by,
+        .set_match_mask = set_match_mask,
+    };
+
+    if (string_scan_simd_neon(search, &iterator)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
         return neon_next_match(search);
     }
-
-    // TODO HANDLE THIS BETTER
     
     // There are fewer than 16 bytes left. 
     unsigned long remaining = (search->end - search->ptr);
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint64_t mask = neon_rules_update(s);
+        uint64_t mask = compute_chunk_mask_neon(s);
 
         if (!mask) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 
