@@ -2,6 +2,9 @@
 
 ### Unreleased
 
+* Add bnew `allow_duplicate_key` parsing options. By default a warning is now emitted when a duplicated key is encountered.
+  In `json 3.0` an error will be raised.
+
 ### 2025-05-23 (2.12.2)
 
 * Fix compiler optimization level.

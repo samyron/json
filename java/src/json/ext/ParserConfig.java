@@ -54,6 +54,8 @@ public class ParserConfig extends RubyObject {
     private int maxNesting;
     private boolean allowNaN;
     private boolean allowTrailingComma;
+    private boolean allowDuplicateKey;
+    private boolean deprecateDuplicateKey;
     private boolean symbolizeNames;
     private boolean freeze;
     private RubyProc onLoadProc;
@@ -177,6 +179,14 @@ public class ParserConfig extends RubyObject {
         this.allowNaN        = opts.getBool("allow_nan", false);
         this.allowTrailingComma = opts.getBool("allow_trailing_comma", false);
         this.symbolizeNames  = opts.getBool("symbolize_names", false);
+        if (opts.hasKey("allow_duplicate_key")) {
+            this.allowDuplicateKey = opts.getBool("allow_duplicate_key", false);
+            this.deprecateDuplicateKey = false;
+        } else {
+            this.allowDuplicateKey = false;
+            this.deprecateDuplicateKey = true;
+        }
+
         this.freeze          = opts.getBool("freeze", false);
         this.onLoadProc      = opts.getProc("on_load");
 
@@ -280,19 +290,23 @@ public class ParserConfig extends RubyObject {
             this.decoder = new StringDecoder();
         }
 
-        private RaiseException unexpectedToken(ThreadContext context, int absStart, int absEnd) {
+        private RaiseException parsingError(ThreadContext context, String message, int absStart, int absEnd) {
             RubyString msg = context.runtime.newString("unexpected token at '")
                     .cat(data, absStart, Math.min(absEnd - absStart, 32))
                     .cat((byte)'\'');
             return newException(context, Utils.M_PARSER_ERROR, msg);
         }
 
+        private RaiseException unexpectedToken(ThreadContext context, int absStart, int absEnd) {
+            return parsingError(context, "unexpected token at '", absStart, absEnd);
+        }
+
         
-// line 314 "ParserConfig.rl"
+// line 328 "ParserConfig.rl"
 
 
         
-// line 296 "ParserConfig.java"
+// line 310 "ParserConfig.java"
 private static byte[] init__JSON_value_actions_0()
 {
 	return new byte [] {
@@ -406,7 +420,7 @@ static final int JSON_value_error = 0;
 static final int JSON_value_en_main = 1;
 
 
-// line 420 "ParserConfig.rl"
+// line 434 "ParserConfig.rl"
 
 
         void parseValue(ThreadContext context, ParserResult res, int p, int pe) {
@@ -414,14 +428,14 @@ static final int JSON_value_en_main = 1;
             IRubyObject result = null;
 
             
-// line 418 "ParserConfig.java"
+// line 432 "ParserConfig.java"
 	{
 	cs = JSON_value_start;
 	}
 
-// line 427 "ParserConfig.rl"
+// line 441 "ParserConfig.rl"
             
-// line 425 "ParserConfig.java"
+// line 439 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -447,13 +461,13 @@ case 1:
 	while ( _nacts-- > 0 ) {
 		switch ( _JSON_value_actions[_acts++] ) {
 	case 9:
-// line 405 "ParserConfig.rl"
+// line 419 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 457 "ParserConfig.java"
+// line 471 "ParserConfig.java"
 		}
 	}
 
@@ -516,25 +530,25 @@ case 1:
 			switch ( _JSON_value_actions[_acts++] )
 			{
 	case 0:
-// line 322 "ParserConfig.rl"
+// line 336 "ParserConfig.rl"
 	{
                 result = context.nil;
             }
 	break;
 	case 1:
-// line 325 "ParserConfig.rl"
+// line 339 "ParserConfig.rl"
 	{
                 result = context.fals;
             }
 	break;
 	case 2:
-// line 328 "ParserConfig.rl"
+// line 342 "ParserConfig.rl"
 	{
                 result = context.tru;
             }
 	break;
 	case 3:
-// line 331 "ParserConfig.rl"
+// line 345 "ParserConfig.rl"
 	{
                 if (config.allowNaN) {
                     result = getConstant(CONST_NAN);
@@ -544,7 +558,7 @@ case 1:
             }
 	break;
 	case 4:
-// line 338 "ParserConfig.rl"
+// line 352 "ParserConfig.rl"
 	{
                 if (config.allowNaN) {
                     result = getConstant(CONST_INFINITY);
@@ -554,7 +568,7 @@ case 1:
             }
 	break;
 	case 5:
-// line 345 "ParserConfig.rl"
+// line 359 "ParserConfig.rl"
 	{
                 if (pe > p + 8 &&
                     absSubSequence(p, p + 9).equals(JSON_MINUS_INFINITY)) {
@@ -583,7 +597,7 @@ case 1:
             }
 	break;
 	case 6:
-// line 371 "ParserConfig.rl"
+// line 385 "ParserConfig.rl"
 	{
                 parseString(context, res, p, pe);
                 if (res.result == null) {
@@ -596,7 +610,7 @@ case 1:
             }
 	break;
 	case 7:
-// line 381 "ParserConfig.rl"
+// line 395 "ParserConfig.rl"
 	{
                 currentNesting++;
                 parseArray(context, res, p, pe);
@@ -611,7 +625,7 @@ case 1:
             }
 	break;
 	case 8:
-// line 393 "ParserConfig.rl"
+// line 407 "ParserConfig.rl"
 	{
                 currentNesting++;
                 parseObject(context, res, p, pe);
@@ -625,7 +639,7 @@ case 1:
                 }
             }
 	break;
-// line 629 "ParserConfig.java"
+// line 643 "ParserConfig.java"
 			}
 		}
 	}
@@ -645,7 +659,7 @@ case 5:
 	break; }
 	}
 
-// line 428 "ParserConfig.rl"
+// line 442 "ParserConfig.rl"
 
             if (cs >= JSON_value_first_final && result != null) {
                 if (config.freeze) {
@@ -658,7 +672,7 @@ case 5:
         }
 
         
-// line 662 "ParserConfig.java"
+// line 676 "ParserConfig.java"
 private static byte[] init__JSON_integer_actions_0()
 {
 	return new byte [] {
@@ -757,7 +771,7 @@ static final int JSON_integer_error = 0;
 static final int JSON_integer_en_main = 1;
 
 
-// line 450 "ParserConfig.rl"
+// line 464 "ParserConfig.rl"
 
 
         void parseInteger(ThreadContext context, ParserResult res, int p, int pe) {
@@ -774,15 +788,15 @@ static final int JSON_integer_en_main = 1;
             int cs;
 
             
-// line 778 "ParserConfig.java"
+// line 792 "ParserConfig.java"
 	{
 	cs = JSON_integer_start;
 	}
 
-// line 466 "ParserConfig.rl"
+// line 480 "ParserConfig.rl"
             int memo = p;
             
-// line 786 "ParserConfig.java"
+// line 800 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -863,13 +877,13 @@ case 1:
 			switch ( _JSON_integer_actions[_acts++] )
 			{
 	case 0:
-// line 444 "ParserConfig.rl"
+// line 458 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 873 "ParserConfig.java"
+// line 887 "ParserConfig.java"
 			}
 		}
 	}
@@ -889,7 +903,7 @@ case 5:
 	break; }
 	}
 
-// line 468 "ParserConfig.rl"
+// line 482 "ParserConfig.rl"
 
             if (cs < JSON_integer_first_final) {
                 return -1;
@@ -909,7 +923,7 @@ case 5:
         }
 
         
-// line 913 "ParserConfig.java"
+// line 927 "ParserConfig.java"
 private static byte[] init__JSON_float_actions_0()
 {
 	return new byte [] {
@@ -1011,7 +1025,7 @@ static final int JSON_float_error = 0;
 static final int JSON_float_en_main = 1;
 
 
-// line 501 "ParserConfig.rl"
+// line 515 "ParserConfig.rl"
 
 
         void parseFloat(ThreadContext context, ParserResult res, int p, int pe) {
@@ -1030,15 +1044,15 @@ static final int JSON_float_en_main = 1;
             int cs;
 
             
-// line 1034 "ParserConfig.java"
+// line 1048 "ParserConfig.java"
 	{
 	cs = JSON_float_start;
 	}
 
-// line 519 "ParserConfig.rl"
+// line 533 "ParserConfig.rl"
             int memo = p;
             
-// line 1042 "ParserConfig.java"
+// line 1056 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -1119,13 +1133,13 @@ case 1:
 			switch ( _JSON_float_actions[_acts++] )
 			{
 	case 0:
-// line 492 "ParserConfig.rl"
+// line 506 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 1129 "ParserConfig.java"
+// line 1143 "ParserConfig.java"
 			}
 		}
 	}
@@ -1145,7 +1159,7 @@ case 5:
 	break; }
 	}
 
-// line 521 "ParserConfig.rl"
+// line 535 "ParserConfig.rl"
 
             if (cs < JSON_float_first_final) {
                 return -1;
@@ -1155,7 +1169,7 @@ case 5:
         }
 
         
-// line 1159 "ParserConfig.java"
+// line 1173 "ParserConfig.java"
 private static byte[] init__JSON_string_actions_0()
 {
 	return new byte [] {
@@ -1257,7 +1271,7 @@ static final int JSON_string_error = 0;
 static final int JSON_string_en_main = 1;
 
 
-// line 560 "ParserConfig.rl"
+// line 574 "ParserConfig.rl"
 
 
         void parseString(ThreadContext context, ParserResult res, int p, int pe) {
@@ -1265,15 +1279,15 @@ static final int JSON_string_en_main = 1;
             IRubyObject result = null;
 
             
-// line 1269 "ParserConfig.java"
+// line 1283 "ParserConfig.java"
 	{
 	cs = JSON_string_start;
 	}
 
-// line 567 "ParserConfig.rl"
+// line 581 "ParserConfig.rl"
             int memo = p;
             
-// line 1277 "ParserConfig.java"
+// line 1291 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -1354,7 +1368,7 @@ case 1:
 			switch ( _JSON_string_actions[_acts++] )
 			{
 	case 0:
-// line 535 "ParserConfig.rl"
+// line 549 "ParserConfig.rl"
 	{
                 int offset = byteList.begin();
                 ByteList decoded = decoder.decode(context, byteList, memo + 1 - offset,
@@ -1369,13 +1383,13 @@ case 1:
             }
 	break;
 	case 1:
-// line 548 "ParserConfig.rl"
+// line 562 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 1379 "ParserConfig.java"
+// line 1393 "ParserConfig.java"
 			}
 		}
 	}
@@ -1395,7 +1409,7 @@ case 5:
 	break; }
 	}
 
-// line 569 "ParserConfig.rl"
+// line 583 "ParserConfig.rl"
 
             if (cs >= JSON_string_first_final && result != null) {
                 if (result instanceof RubyString) {
@@ -1416,7 +1430,7 @@ case 5:
         }
 
         
-// line 1420 "ParserConfig.java"
+// line 1434 "ParserConfig.java"
 private static byte[] init__JSON_array_actions_0()
 {
 	return new byte [] {
@@ -1583,7 +1597,7 @@ static final int JSON_array_error = 0;
 static final int JSON_array_en_main = 1;
 
 
-// line 623 "ParserConfig.rl"
+// line 637 "ParserConfig.rl"
 
 
         void parseArray(ThreadContext context, ParserResult res, int p, int pe) {
@@ -1597,14 +1611,14 @@ static final int JSON_array_en_main = 1;
             IRubyObject result = RubyArray.newArray(context.runtime);
 
             
-// line 1601 "ParserConfig.java"
+// line 1615 "ParserConfig.java"
 	{
 	cs = JSON_array_start;
 	}
 
-// line 636 "ParserConfig.rl"
+// line 650 "ParserConfig.rl"
             
-// line 1608 "ParserConfig.java"
+// line 1622 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -1647,7 +1661,7 @@ case 1:
 	case 0: {
 		_widec = 65536 + (data[p] - 0);
 		if ( 
-// line 594 "ParserConfig.rl"
+// line 608 "ParserConfig.rl"
  config.allowTrailingComma  ) _widec += 65536;
 		break;
 	}
@@ -1717,7 +1731,7 @@ case 1:
 			switch ( _JSON_array_actions[_acts++] )
 			{
 	case 0:
-// line 596 "ParserConfig.rl"
+// line 610 "ParserConfig.rl"
 	{
                 parseValue(context, res, p, pe);
                 if (res.result == null) {
@@ -1730,13 +1744,13 @@ case 1:
             }
 	break;
 	case 1:
-// line 607 "ParserConfig.rl"
+// line 621 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 1740 "ParserConfig.java"
+// line 1754 "ParserConfig.java"
 			}
 		}
 	}
@@ -1756,7 +1770,7 @@ case 5:
 	break; }
 	}
 
-// line 637 "ParserConfig.rl"
+// line 651 "ParserConfig.rl"
 
             if (cs >= JSON_array_first_final) {
                 res.update(config.onLoad(context, result), p + 1);
@@ -1766,7 +1780,7 @@ case 5:
         }
 
         
-// line 1770 "ParserConfig.java"
+// line 1784 "ParserConfig.java"
 private static byte[] init__JSON_object_actions_0()
 {
 	return new byte [] {
@@ -1943,7 +1957,7 @@ static final int JSON_object_error = 0;
 static final int JSON_object_en_main = 1;
 
 
-// line 694 "ParserConfig.rl"
+// line 721 "ParserConfig.rl"
 
 
         void parseObject(ThreadContext context, ParserResult res, int p, int pe) {
@@ -1960,14 +1974,14 @@ static final int JSON_object_en_main = 1;
             IRubyObject result = RubyHash.newHash(context.runtime);
 
             
-// line 1964 "ParserConfig.java"
+// line 1978 "ParserConfig.java"
 	{
 	cs = JSON_object_start;
 	}
 
-// line 710 "ParserConfig.rl"
+// line 737 "ParserConfig.rl"
             
-// line 1971 "ParserConfig.java"
+// line 1985 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -2010,7 +2024,7 @@ case 1:
 	case 0: {
 		_widec = 65536 + (data[p] - 0);
 		if ( 
-// line 651 "ParserConfig.rl"
+// line 665 "ParserConfig.rl"
  config.allowTrailingComma  ) _widec += 65536;
 		break;
 	}
@@ -2080,7 +2094,7 @@ case 1:
 			switch ( _JSON_object_actions[_acts++] )
 			{
 	case 0:
-// line 653 "ParserConfig.rl"
+// line 667 "ParserConfig.rl"
 	{
                 parseValue(context, res, p, pe);
                 if (res.result == null) {
@@ -2093,7 +2107,7 @@ case 1:
             }
 	break;
 	case 1:
-// line 664 "ParserConfig.rl"
+// line 678 "ParserConfig.rl"
 	{
                 parseString(context, res, p, pe);
                 if (res.result == null) {
@@ -2106,18 +2120,31 @@ case 1:
                     } else {
                         lastName = name;
                     }
+
+                    if (!config.allowDuplicateKey) {
+                        if (((RubyHash)result).hasKey(lastName)) {
+                            if (config.deprecateDuplicateKey) {
+                                context.runtime.getWarnings().warning(
+                                    "detected duplicate keys in JSON object. This will raise an error in json 3.0 unless enabled via `allow_duplicate_key: true`"
+                                );
+                            } else {
+                                throw parsingError(context, "duplicate key", p, pe);
+                            }
+                        }
+                    }
+
                     {p = (( res.p))-1;}
                 }
             }
 	break;
 	case 2:
-// line 680 "ParserConfig.rl"
+// line 707 "ParserConfig.rl"
 	{
                 p--;
                 { p += 1; _goto_targ = 5; if (true)  continue _goto;}
             }
 	break;
-// line 2121 "ParserConfig.java"
+// line 2148 "ParserConfig.java"
 			}
 		}
 	}
@@ -2137,7 +2164,7 @@ case 5:
 	break; }
 	}
 
-// line 711 "ParserConfig.rl"
+// line 738 "ParserConfig.rl"
 
             if (cs < JSON_object_first_final) {
                 res.update(null, p + 1);
@@ -2148,7 +2175,7 @@ case 5:
         }
 
         
-// line 2152 "ParserConfig.java"
+// line 2179 "ParserConfig.java"
 private static byte[] init__JSON_actions_0()
 {
 	return new byte [] {
@@ -2251,7 +2278,7 @@ static final int JSON_error = 0;
 static final int JSON_en_main = 1;
 
 
-// line 740 "ParserConfig.rl"
+// line 767 "ParserConfig.rl"
 
 
         public IRubyObject parseImplementation(ThreadContext context) {
@@ -2261,16 +2288,16 @@ static final int JSON_en_main = 1;
             ParserResult res = new ParserResult();
 
             
-// line 2265 "ParserConfig.java"
+// line 2292 "ParserConfig.java"
 	{
 	cs = JSON_start;
 	}
 
-// line 749 "ParserConfig.rl"
+// line 776 "ParserConfig.rl"
             p = byteList.begin();
             pe = p + byteList.length();
             
-// line 2274 "ParserConfig.java"
+// line 2301 "ParserConfig.java"
 	{
 	int _klen;
 	int _trans = 0;
@@ -2351,7 +2378,7 @@ case 1:
 			switch ( _JSON_actions[_acts++] )
 			{
 	case 0:
-// line 726 "ParserConfig.rl"
+// line 753 "ParserConfig.rl"
 	{
                 parseValue(context, res, p, pe);
                 if (res.result == null) {
@@ -2363,7 +2390,7 @@ case 1:
                 }
             }
 	break;
-// line 2367 "ParserConfig.java"
+// line 2394 "ParserConfig.java"
 			}
 		}
 	}
@@ -2383,7 +2410,7 @@ case 5:
 	break; }
 	}
 
-// line 752 "ParserConfig.rl"
+// line 779 "ParserConfig.rl"
 
             if (cs >= JSON_first_final && p == pe) {
                 return result;

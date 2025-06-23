@@ -52,6 +52,8 @@ public class ParserConfig extends RubyObject {
     private int maxNesting;
     private boolean allowNaN;
     private boolean allowTrailingComma;
+    private boolean allowDuplicateKey;
+    private boolean deprecateDuplicateKey;
     private boolean symbolizeNames;
     private boolean freeze;
     private RubyProc onLoadProc;
@@ -175,6 +177,14 @@ public class ParserConfig extends RubyObject {
         this.allowNaN        = opts.getBool("allow_nan", false);
         this.allowTrailingComma = opts.getBool("allow_trailing_comma", false);
         this.symbolizeNames  = opts.getBool("symbolize_names", false);
+        if (opts.hasKey("allow_duplicate_key")) {
+            this.allowDuplicateKey = opts.getBool("allow_duplicate_key", false);
+            this.deprecateDuplicateKey = false;
+        } else {
+            this.allowDuplicateKey = false;
+            this.deprecateDuplicateKey = true;
+        }
+
         this.freeze          = opts.getBool("freeze", false);
         this.onLoadProc      = opts.getProc("on_load");
 
@@ -278,11 +288,15 @@ public class ParserConfig extends RubyObject {
             this.decoder = new StringDecoder();
         }
 
-        private RaiseException unexpectedToken(ThreadContext context, int absStart, int absEnd) {
+        private RaiseException parsingError(ThreadContext context, String message, int absStart, int absEnd) {
             RubyString msg = context.runtime.newString("unexpected token at '")
                     .cat(data, absStart, Math.min(absEnd - absStart, 32))
                     .cat((byte)'\'');
             return newException(context, Utils.M_PARSER_ERROR, msg);
+        }
+
+        private RaiseException unexpectedToken(ThreadContext context, int absStart, int absEnd) {
+            return parsingError(context, "unexpected token at '", absStart, absEnd);
         }
 
         %%{
@@ -673,6 +687,19 @@ public class ParserConfig extends RubyObject {
                     } else {
                         lastName = name;
                     }
+
+                    if (!config.allowDuplicateKey) {
+                        if (((RubyHash)result).hasKey(lastName)) {
+                            if (config.deprecateDuplicateKey) {
+                                context.runtime.getWarnings().warning(
+                                    "detected duplicate keys in JSON object. This will raise an error in json 3.0 unless enabled via `allow_duplicate_key: true`"
+                                );
+                            } else {
+                                throw parsingError(context, "duplicate key", p, pe);
+                            }
+                        }
+                    }
+
                     fexec res.p;
                 }
             }

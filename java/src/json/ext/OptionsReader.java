@@ -53,6 +53,13 @@ final class OptionsReader {
         return opts == null ? null : opts.fastARef(runtime.newSymbol(key));
     }
 
+    boolean hasKey(String key) {
+        if (opts == null) {
+            return false;
+        }
+        return opts.hasKey(runtime.newSymbol(key));
+    }
+
     boolean getBool(String key, boolean defaultValue) {
         IRubyObject value = get(key);
         return value == null ? defaultValue : value.isTrue();
