@@ -869,7 +869,6 @@ static const bool string_scan_table[256] = {
 static SIMD_Implementation simd_impl = SIMD_NONE;
 
 #ifdef HAVE_SIMD
-#ifdef HAVE_SIMD_NEON
 
 static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
 {
@@ -879,8 +878,11 @@ static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
 
 static inline FORCE_INLINE const char *ptr(void *state)                           { return ((JSON_ParserState *) state)->cursor; }
 static inline FORCE_INLINE void        advance_by(void *state, size_t count)      { ((JSON_ParserState *) state)->cursor += count; }
-static inline FORCE_INLINE void        set_match_mask(void *state, uint64_t mask) { advance_by(state, trailing_zeros64(mask) >> 2); }
 
+#ifdef HAVE_SIMD_NEON
+static inline FORCE_INLINE void        set_match_mask(void *state, uint64_t mask) { advance_by(state, trailing_zeros64(mask) >> 2); }
+#elif defined(HAVE_SIMD_SSE2)
+static inline FORCE_INLINE void        set_match_mask(void *state, int mask)      { advance_by(state, trailing_zeros(mask)); }
 #endif /* HAVE_SIMD_NEON */
 #endif /* HAVE_SIMD */
 
@@ -896,14 +898,27 @@ static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
         .ptr = ptr,
         .advance_by = advance_by,
         .set_match_mask = set_match_mask,
+        .state = state
     };
 
-    if (string_scan_simd_neon(state, &iterator)) {
+    if (string_scan_simd_neon(&iterator)) {
         return 1;
     }
 #elif defined(HAVE_SIMD_SSE2)
-    /* TODO FILL THIS OUT */
-#endif
+    if (simd_impl == SIMD_SSE2) {
+        SSE2StringScanIterator iterator = {
+            .has_next_vector = has_next_vector,
+            .ptr = ptr,
+            .advance_by = advance_by,
+            .set_match_mask = set_match_mask,
+            .state = state
+        };
+
+        if (string_scan_simd_sse2(&iterator)) {
+            return 1;
+        }
+    }
+#endif /* HAVE_SIMD_NEON or HAVE_SIMD_SSE2 */
 #endif /* HAVE_SIMD */
 
     while (state->cursor < state->end) {
@@ -914,45 +929,6 @@ static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
     }
     return 0;
 }
-
-#ifdef HAVE_SIMD_SSE2
-
-#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
-#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
-#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
-#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
-
-#if defined(__clang__) || defined(__GNUC__)
-#define TARGET_SSE2 __attribute__((target("sse2")))
-#else
-#define TARGET_SSE2
-#endif
-
-static inline TARGET_SSE2 FORCE_INLINE bool string_scan_sse2(JSON_ParserState *state)
-{
-    while (state->cursor + sizeof(__m128i) <= state->end) {
-        __m128i chunk = _mm_loadu_si128((__m128i const*)state->cursor);
-
-        // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
-        // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
-        __m128i too_low_or_dbl_quote = _mm_cmplt_epu8(_mm_xor_si128(chunk, _mm_set1_epi8(2)), _mm_set1_epi8(33));
-        __m128i has_backslash = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\\'));
-        __m128i needs_escape  = _mm_or_si128(too_low_or_dbl_quote, has_backslash);
-        int mask = _mm_movemask_epi8(needs_escape);
-        if (mask) {
-            state->cursor += trailing_zeros(mask);
-            return true;
-        }
-
-        state->cursor += sizeof(__m128i);
-    }
-
-    if (state->cursor < state->end) {
-        return string_scan_basic(state);
-    }
-    return 0;
-}
-#endif
 
 static inline VALUE json_parse_string(JSON_ParserState *state, JSON_ParserConfig *config, bool is_name)
 {

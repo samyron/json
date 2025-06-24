@@ -284,8 +284,6 @@ static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsi
     return s;
 }
 
-#ifdef HAVE_SIMD_NEON
-
 static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
 {
     search_state *search = (search_state *) state;
@@ -301,6 +299,8 @@ static inline FORCE_INLINE void advance_by(void *state, size_t count)
 {
     ((search_state *) state)->ptr += count;
 }
+
+#ifdef HAVE_SIMD_NEON
 
 static inline FORCE_INLINE void set_match_mask(void *state, uint64_t mask)
 {
@@ -388,9 +388,10 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         .ptr = ptr,
         .advance_by = advance_by,
         .set_match_mask = set_match_mask,
+        .state = search
     };
 
-    if (string_scan_simd_neon(search, &iterator)) {
+    if (string_scan_simd_neon(&iterator)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
@@ -431,10 +432,11 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 
 #ifdef HAVE_SIMD_SSE2
 
-#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
-#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
-#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
-#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+static inline FORCE_INLINE void set_match_mask(void *state, int mask)
+{
+    ((search_state *) state)->matches_mask = mask;
+}
+
 
 static inline FORCE_INLINE unsigned char sse2_next_match(search_state *search)
 {
@@ -460,18 +462,6 @@ static inline FORCE_INLINE unsigned char sse2_next_match(search_state *search)
 #define TARGET_SSE2
 #endif
 
-static inline TARGET_SSE2 FORCE_INLINE int sse2_update(const char *ptr)
-{
-    __m128i chunk         = _mm_loadu_si128((__m128i const*)ptr);
-
-    // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
-    // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
-    __m128i too_low_or_dbl_quote = _mm_cmplt_epu8(_mm_xor_si128(chunk, _mm_set1_epi8(2)), _mm_set1_epi8(33));
-    __m128i has_backslash = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\\'));
-    __m128i needs_escape  = _mm_or_si128(too_low_or_dbl_quote, has_backslash);
-    return _mm_movemask_epi8(needs_escape);
-}
-
 static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(search_state *search)
 {
     if (RB_UNLIKELY(search->has_matches)) {
@@ -490,17 +480,18 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
         }
     }
 
-    while (search->ptr + sizeof(__m128i) <= search->end) {
-        int needs_escape_mask = sse2_update(search->ptr);
+    SSE2StringScanIterator iterator = {
+        .has_next_vector = has_next_vector,
+        .ptr = ptr,
+        .advance_by = advance_by,
+        .set_match_mask = set_match_mask,
+        .state = search
+    };
 
-        if (needs_escape_mask == 0) {
-            search->ptr += sizeof(__m128i);
-            continue;
-        }
-
+    if (string_scan_simd_sse2(&iterator)) {
         search->has_matches = true;
-        search->matches_mask = needs_escape_mask;
         search->chunk_base = search->ptr;
+        search->chunk_end = search->ptr + sizeof(__m128i);
         return sse2_next_match(search);
     }
 
@@ -509,7 +500,7 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(__m128i), remaining);
 
-        int needs_escape_mask = sse2_update(s);
+        int needs_escape_mask = compute_chunk_mask_sse2(s);
 
         if (needs_escape_mask == 0) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting 

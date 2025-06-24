@@ -46,6 +46,13 @@ static inline int trailing_zeros(int input) {
   #endif
 }
 
+#if (defined(__GNUC__ ) || defined(__clang__))
+#define FORCE_INLINE __attribute__((always_inline))
+#else
+#define FORCE_INLINE
+#endif
+
+
 #define SIMD_MINIMUM_THRESHOLD 6
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
@@ -58,12 +65,6 @@ static SIMD_Implementation find_simd_implementation(void) {
 
 #define HAVE_SIMD 1
 #define HAVE_SIMD_NEON 1
-
-#if (defined(__GNUC__ ) || defined(__clang__))
-#define FORCE_INLINE __attribute__((always_inline))
-#else
-#define FORCE_INLINE
-#endif
 
 // See: https://community.arm.com/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
 static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
@@ -78,6 +79,7 @@ typedef struct _neon_string_scan_iterator {
   const char *(*ptr)(void *);
   void (*advance_by)(void *, size_t);
   void (*set_match_mask)(void *, uint64_t);
+  void *state;
 } NeonStringScanIterator;
 
 static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
@@ -93,8 +95,9 @@ static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
   return neon_match_mask(needs_escape);
 }
 
-static inline FORCE_INLINE int string_scan_simd_neon(void *state, NeonStringScanIterator *iter)
+static inline FORCE_INLINE int string_scan_simd_neon(NeonStringScanIterator *iter)
 {
+    void *state = iter->state;
     while (iter->has_next_vector(state, sizeof(uint8x16_t))) {
       uint64_t mask = compute_chunk_mask_neon(iter->ptr(state));
       if (mask) {
@@ -128,6 +131,51 @@ uint8x16x4_t load_uint8x16_4(const unsigned char *table) {
 
 #ifdef HAVE_CPUID_H
 #define FIND_SIMD_IMPLEMENTATION_DEFINED 1
+
+#if defined(__clang__) || defined(__GNUC__)
+#define TARGET_SSE2 __attribute__((target("sse2")))
+#else
+#define TARGET_SSE2
+#endif
+
+#define _mm_cmpge_epu8(a, b) _mm_cmpeq_epi8(_mm_max_epu8(a, b), a)
+#define _mm_cmple_epu8(a, b) _mm_cmpge_epu8(b, a)
+#define _mm_cmpgt_epu8(a, b) _mm_xor_si128(_mm_cmple_epu8(a, b), _mm_set1_epi8(-1))
+#define _mm_cmplt_epu8(a, b) _mm_cmpgt_epu8(b, a)
+
+static inline TARGET_SSE2 FORCE_INLINE int compute_chunk_mask_sse2(const char *ptr)
+{
+    __m128i chunk         = _mm_loadu_si128((__m128i const*)ptr);
+    // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
+    // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
+    __m128i too_low_or_dbl_quote = _mm_cmplt_epu8(_mm_xor_si128(chunk, _mm_set1_epi8(2)), _mm_set1_epi8(33));
+    __m128i has_backslash = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\\'));
+    __m128i needs_escape  = _mm_or_si128(too_low_or_dbl_quote, has_backslash);
+    return _mm_movemask_epi8(needs_escape);
+}
+
+typedef struct _sse2_string_scan_iterator {
+  int (*has_next_vector)(void *, size_t);
+  const char *(*ptr)(void *);
+  void (*advance_by)(void *, size_t);
+  void (*set_match_mask)(void *, int);
+  void *state;
+} SSE2StringScanIterator;
+
+static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(SSE2StringScanIterator *iter)
+{
+    void *state = iter->state;
+    while (iter->has_next_vector(state, sizeof(__m128i))) {
+      int mask = compute_chunk_mask_sse2(iter->ptr(state));
+      if (mask) {
+          iter->set_match_mask(state, mask);
+          return 1;
+      }
+      iter->advance_by(state, sizeof(__m128i));
+    }
+
+    return 0;
+}
 
 #include <cpuid.h>
 #endif /* HAVE_CPUID_H */
