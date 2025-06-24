@@ -897,11 +897,10 @@ static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
         .has_next_vector = has_next_vector,
         .ptr = ptr,
         .advance_by = advance_by,
-        .set_match_mask = set_match_mask,
-        .state = state
+        .set_match_mask = set_match_mask
     };
 
-    if (string_scan_simd_neon(&iterator)) {
+    if (string_scan_simd_neon(&iterator, state)) {
         return 1;
     }
 #elif defined(HAVE_SIMD_SSE2)
@@ -910,11 +909,10 @@ static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
             .has_next_vector = has_next_vector,
             .ptr = ptr,
             .advance_by = advance_by,
-            .set_match_mask = set_match_mask,
-            .state = state
+            .set_match_mask = set_match_mask
         };
 
-        if (string_scan_simd_sse2(&iterator)) {
+        if (string_scan_simd_sse2(&iterator, state)) {
             return 1;
         }
     }

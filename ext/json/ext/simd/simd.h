@@ -79,7 +79,6 @@ typedef struct _neon_string_scan_iterator {
   const char *(*ptr)(void *);
   void (*advance_by)(void *, size_t);
   void (*set_match_mask)(void *, uint64_t);
-  void *state;
 } NeonStringScanIterator;
 
 static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
@@ -95,9 +94,8 @@ static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
   return neon_match_mask(needs_escape);
 }
 
-static inline FORCE_INLINE int string_scan_simd_neon(NeonStringScanIterator *iter)
+static inline FORCE_INLINE int string_scan_simd_neon(NeonStringScanIterator *iter, void *state)
 {
-    void *state = iter->state;
     while (iter->has_next_vector(state, sizeof(uint8x16_t))) {
       uint64_t mask = compute_chunk_mask_neon(iter->ptr(state));
       if (mask) {
@@ -159,12 +157,11 @@ typedef struct _sse2_string_scan_iterator {
   const char *(*ptr)(void *);
   void (*advance_by)(void *, size_t);
   void (*set_match_mask)(void *, int);
-  void *state;
 } SSE2StringScanIterator;
 
-static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(SSE2StringScanIterator *iter)
+static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(SSE2StringScanIterator *iter, void *state)
 {
-    void *state = iter->state;
+    // void *state = iter->state;
     while (iter->has_next_vector(state, sizeof(__m128i))) {
       int mask = compute_chunk_mask_sse2(iter->ptr(state));
       if (mask) {

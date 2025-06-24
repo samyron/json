@@ -387,11 +387,10 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
         .has_next_vector = has_next_vector,
         .ptr = ptr,
         .advance_by = advance_by,
-        .set_match_mask = set_match_mask,
-        .state = search
+        .set_match_mask = set_match_mask
     };
 
-    if (string_scan_simd_neon(&iterator)) {
+    if (string_scan_simd_neon(&iterator, search)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
@@ -484,11 +483,10 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
         .has_next_vector = has_next_vector,
         .ptr = ptr,
         .advance_by = advance_by,
-        .set_match_mask = set_match_mask,
-        .state = search
+        .set_match_mask = set_match_mask
     };
 
-    if (string_scan_simd_sse2(&iterator)) {
+    if (string_scan_simd_sse2(&iterator, search)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(__m128i);
