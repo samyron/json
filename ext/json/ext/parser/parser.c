@@ -893,16 +893,24 @@ static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
     // Do not extract this structor to a global variable or make it static without profiling and
     // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
     // inline these methods if this structure is defined like this.
-    NeonStringScanIterator iterator = {
-        .has_next_vector = has_next_vector,
-        .ptr = ptr,
-        .advance_by = advance_by,
-        .set_match_mask = set_match_mask
-    };
+    // NeonStringScanIterator iterator = {
+    //     .has_next_vector = has_next_vector,
+    //     .ptr = ptr,
+    //     .advance_by = advance_by,
+    //     .set_match_mask = set_match_mask
 
-    if (string_scan_simd_neon(&iterator, state)) {
+    // };
+
+    // if (string_scan_simd_neon(&iterator, state)) {
+    //     return 1;
+    // }
+
+    uint64_t mask = 0;
+    if (string_scan_simd_neon2(&state->cursor, state->end, &mask)) {
+        state->cursor += trailing_zeros64(mask) >> 2;
         return 1;
     }
+
 #elif defined(HAVE_SIMD_SSE2)
     if (simd_impl == SIMD_SSE2) {
         SSE2StringScanIterator iterator = {

@@ -108,6 +108,19 @@ static inline FORCE_INLINE int string_scan_simd_neon(NeonStringScanIterator *ite
     return 0;
 }
 
+static inline FORCE_INLINE int string_scan_simd_neon2(const char **ptr, const char *end, uint64_t *mask)
+{
+    while(*ptr + sizeof(uint8x16_t) <= end) {
+      uint64_t chunk_mask = compute_chunk_mask_neon(*ptr);
+      if (chunk_mask) {
+          *mask = chunk_mask;
+          return 1;
+      }
+      *ptr += sizeof(uint8x16_t);
+    }
+    return 0;
+}
+
 uint8x16x4_t load_uint8x16_4(const unsigned char *table) {
   uint8x16x4_t tab;
   tab.val[0] = vld1q_u8(table);

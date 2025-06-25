@@ -383,17 +383,19 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     // Do not extract this structor to a global variable or make it static without profiling and
     // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
     // inline these methods if this structure is defined like this.
-    NeonStringScanIterator iterator = {
-        .has_next_vector = has_next_vector,
-        .ptr = ptr,
-        .advance_by = advance_by,
-        .set_match_mask = set_match_mask
-    };
+    // NeonStringScanIterator iterator = {
+    //     .has_next_vector = has_next_vector,
+    //     .ptr = ptr,
+    //     .advance_by = advance_by,
+    //     .set_match_mask = set_match_mask
+    // };
 
-    if (string_scan_simd_neon(&iterator, search)) {
+    uint64_t mask = 0;
+    if (string_scan_simd_neon2(&search->ptr, search->end, &mask)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
+        search->matches_mask = mask;
         return neon_next_match(search);
     }
     
