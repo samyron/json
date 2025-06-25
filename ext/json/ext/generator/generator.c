@@ -284,28 +284,7 @@ static inline FORCE_INLINE char *copy_remaining_bytes(search_state *search, unsi
     return s;
 }
 
-static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
-{
-    search_state *search = (search_state *) state;
-    return search->ptr + width <= search->end;
-}
-
-static inline FORCE_INLINE const char *ptr(void *state)
-{
-    return ((search_state *) state)->ptr;
-}
-
-static inline FORCE_INLINE void advance_by(void *state, size_t count)
-{
-    ((search_state *) state)->ptr += count;
-}
-
 #ifdef HAVE_SIMD_NEON
-
-static inline FORCE_INLINE void set_match_mask(void *state, uint64_t mask)
-{
-    ((search_state *) state)->matches_mask = mask;
-}
 
 static inline FORCE_INLINE unsigned char neon_next_match(search_state *search)
 {
@@ -383,17 +362,13 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
     // Do not extract this structor to a global variable or make it static without profiling and
     // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
     // inline these methods if this structure is defined like this.
-    NeonStringScanIterator iterator = {
-        .has_next_vector = has_next_vector,
-        .ptr = ptr,
-        .advance_by = advance_by,
-        .set_match_mask = set_match_mask
-    };
 
-    if (string_scan_simd_neon(&iterator, search)) {
+    uint64_t mask = 0;
+    if (string_scan_simd_neon(&search->ptr, search->end, &mask)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
+        search->matches_mask = mask;
         return neon_next_match(search);
     }
     
@@ -430,12 +405,6 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 #endif /* HAVE_SIMD_NEON */
 
 #ifdef HAVE_SIMD_SSE2
-
-static inline FORCE_INLINE void set_match_mask(void *state, int mask)
-{
-    ((search_state *) state)->matches_mask = mask;
-}
-
 
 static inline FORCE_INLINE unsigned char sse2_next_match(search_state *search)
 {
@@ -479,17 +448,12 @@ static inline TARGET_SSE2 FORCE_INLINE unsigned char search_escape_basic_sse2(se
         }
     }
 
-    SSE2StringScanIterator iterator = {
-        .has_next_vector = has_next_vector,
-        .ptr = ptr,
-        .advance_by = advance_by,
-        .set_match_mask = set_match_mask
-    };
-
-    if (string_scan_simd_sse2(&iterator, search)) {
+    int mask = 0;
+    if (string_scan_simd_sse2(&search->ptr, search->end, &mask)) {
         search->has_matches = true;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(__m128i);
+        search->matches_mask = mask;
         return sse2_next_match(search);
     }
 
