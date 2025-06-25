@@ -144,7 +144,7 @@ static inline TARGET_SSE2 FORCE_INLINE int compute_chunk_mask_sse2(const char *p
     return _mm_movemask_epi8(needs_escape);
 }
 
-static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(const char **ptr, const char *end, uint64_t *mask)
+static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(const char **ptr, const char *end, int *mask)
 {
     while (*ptr + sizeof(__m128i) <= end) {
       int chunk_mask = compute_chunk_mask_sse2(*ptr);
