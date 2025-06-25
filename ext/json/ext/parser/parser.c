@@ -865,62 +865,26 @@ static const bool string_scan_table[256] = {
 #define FORCE_INLINE
 #endif
 
-// Not used at the moment. 
-static SIMD_Implementation simd_impl = SIMD_NONE;
-
 #ifdef HAVE_SIMD
-
-static inline FORCE_INLINE int has_next_vector(void *state, size_t width)
-{
-    JSON_ParserState *s = state;
-    return s->cursor + width <= s->end;
-}
-
-static inline FORCE_INLINE const char *ptr(void *state)                           { return ((JSON_ParserState *) state)->cursor; }
-static inline FORCE_INLINE void        advance_by(void *state, size_t count)      { ((JSON_ParserState *) state)->cursor += count; }
-
-#ifdef HAVE_SIMD_NEON
-static inline FORCE_INLINE void        set_match_mask(void *state, uint64_t mask) { advance_by(state, trailing_zeros64(mask) >> 2); }
-#elif defined(HAVE_SIMD_SSE2)
-static inline FORCE_INLINE void        set_match_mask(void *state, int mask)      { advance_by(state, trailing_zeros(mask)); }
-#endif /* HAVE_SIMD_NEON */
+static SIMD_Implementation simd_impl = SIMD_NONE;
 #endif /* HAVE_SIMD */
 
 static inline bool FORCE_INLINE string_scan(JSON_ParserState *state)
 {
 #ifdef HAVE_SIMD
 #if defined(HAVE_SIMD_NEON)
-    // Do not extract this structor to a global variable or make it static without profiling and
-    // verifying that it does not cause performance regressions. clang 17 and gcc 14 currently
-    // inline these methods if this structure is defined like this.
-    // NeonStringScanIterator iterator = {
-    //     .has_next_vector = has_next_vector,
-    //     .ptr = ptr,
-    //     .advance_by = advance_by,
-    //     .set_match_mask = set_match_mask
-
-    // };
-
-    // if (string_scan_simd_neon(&iterator, state)) {
-    //     return 1;
-    // }
-
-    uint64_t mask = 0;
-    if (string_scan_simd_neon2(&state->cursor, state->end, &mask)) {
+    
+uint64_t mask = 0;
+    if (string_scan_simd_neon(&state->cursor, state->end, &mask)) {
         state->cursor += trailing_zeros64(mask) >> 2;
         return 1;
     }
 
 #elif defined(HAVE_SIMD_SSE2)
     if (simd_impl == SIMD_SSE2) {
-        SSE2StringScanIterator iterator = {
-            .has_next_vector = has_next_vector,
-            .ptr = ptr,
-            .advance_by = advance_by,
-            .set_match_mask = set_match_mask
-        };
-
-        if (string_scan_simd_sse2(&iterator, state)) {
+        int mask = 0;
+        if (string_scan_simd_sse2(&state->cursor, state->end, &mask)) {
+            state->cursor += trailing_zeros(mask);
             return 1;
         }
     }

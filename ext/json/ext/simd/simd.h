@@ -74,13 +74,6 @@ static inline FORCE_INLINE uint64_t neon_match_mask(uint8x16_t matches)
     return mask & 0x8888888888888888ull;
 }
 
-typedef struct _neon_string_scan_iterator {
-  int (*has_next_vector)(void *, size_t);
-  const char *(*ptr)(void *);
-  void (*advance_by)(void *, size_t);
-  void (*set_match_mask)(void *, uint64_t);
-} NeonStringScanIterator;
-
 static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
 {
   uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
@@ -94,21 +87,7 @@ static inline FORCE_INLINE uint64_t compute_chunk_mask_neon(const char *ptr)
   return neon_match_mask(needs_escape);
 }
 
-static inline FORCE_INLINE int string_scan_simd_neon(NeonStringScanIterator *iter, void *state)
-{
-    while (iter->has_next_vector(state, sizeof(uint8x16_t))) {
-      uint64_t mask = compute_chunk_mask_neon(iter->ptr(state));
-      if (mask) {
-          iter->set_match_mask(state, mask);
-          return 1;
-      }
-      iter->advance_by(state, sizeof(uint8x16_t));
-    }
-
-    return 0;
-}
-
-static inline FORCE_INLINE int string_scan_simd_neon2(const char **ptr, const char *end, uint64_t *mask)
+static inline FORCE_INLINE int string_scan_simd_neon(const char **ptr, const char *end, uint64_t *mask)
 {
     while(*ptr + sizeof(uint8x16_t) <= end) {
       uint64_t chunk_mask = compute_chunk_mask_neon(*ptr);
@@ -165,23 +144,15 @@ static inline TARGET_SSE2 FORCE_INLINE int compute_chunk_mask_sse2(const char *p
     return _mm_movemask_epi8(needs_escape);
 }
 
-typedef struct _sse2_string_scan_iterator {
-  int (*has_next_vector)(void *, size_t);
-  const char *(*ptr)(void *);
-  void (*advance_by)(void *, size_t);
-  void (*set_match_mask)(void *, int);
-} SSE2StringScanIterator;
-
-static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(SSE2StringScanIterator *iter, void *state)
+static inline TARGET_SSE2 FORCE_INLINE int string_scan_simd_sse2(const char **ptr, const char *end, uint64_t *mask)
 {
-    // void *state = iter->state;
-    while (iter->has_next_vector(state, sizeof(__m128i))) {
-      int mask = compute_chunk_mask_sse2(iter->ptr(state));
-      if (mask) {
-          iter->set_match_mask(state, mask);
+    while (*ptr + sizeof(__m128i) <= end) {
+      int chunk_mask = compute_chunk_mask_sse2(*ptr);
+      if (chunk_mask) {
+          *mask = chunk_mask;
           return 1;
       }
-      iter->advance_by(state, sizeof(__m128i));
+      *ptr += sizeof(__m128i);
     }
 
     return 0;
