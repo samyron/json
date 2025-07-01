@@ -77,6 +77,7 @@ rb_hash_bulk_insert(long count, const VALUE *pairs, VALUE hash)
 #define JSON_RVALUE_CACHE_CAPA 63
 typedef struct rvalue_cache_struct {
     int length;
+    uint32_t hashes[JSON_RVALUE_CACHE_CAPA];
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
 
@@ -99,11 +100,13 @@ static inline VALUE build_symbol(const char *str, const long length)
     return rb_str_intern(build_interned_string(str, length));
 }
 
-static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring)
+static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring, uint32_t str_hash)
 {
     MEMMOVE(&cache->entries[index + 1], &cache->entries[index], VALUE, cache->length - index);
+    MEMMOVE(&cache->hashes[index + 1], &cache->hashes[index], uint32_t, cache->length - index);
     cache->length++;
     cache->entries[index] = rstring;
+    cache->hashes[index] = str_hash;
 }
 
 static inline int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
@@ -114,6 +117,16 @@ static inline int rstring_cache_cmp(const char *str, const long length, VALUE rs
     } else {
         return (int)(length - rstring_length);
     }
+}
+
+static uint32_t fnv1a32(const char *str, const long length)
+{
+    uint32_t result = 0x811c9dc5;
+    for (long i = 0; i < length; i++) {
+        result ^= (unsigned char)str[i];
+        result *= 0x01000193;
+    }
+    return result;
 }
 
 static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
@@ -131,6 +144,8 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
         return Qfalse;
     }
 
+    uint32_t str_hash = fnv1a32(str, length);
+
     int low = 0;
     int high = cache->length - 1;
     int mid = 0;
@@ -139,14 +154,18 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
     while (low <= high) {
         mid = (high + low) >> 1;
         VALUE entry = cache->entries[mid];
-        last_cmp = rstring_cache_cmp(str, length, entry);
+        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
 
-        if (last_cmp == 0) {
-            return entry;
+        if (last_cmp < 0) {
+            high = mid - 1;
         } else if (last_cmp > 0) {
             low = mid + 1;
         } else {
-            high = mid - 1;
+            if (rstring_cache_cmp(str, length, entry) == 0) {
+                return entry;
+            } else {
+                return Qfalse;
+            }
         }
     }
 
@@ -163,7 +182,7 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
             mid += 1;
         }
 
-        rvalue_cache_insert_at(cache, mid, rstring);
+        rvalue_cache_insert_at(cache, mid, rstring, str_hash);
     }
     return rstring;
 }
@@ -183,6 +202,8 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
         return Qfalse;
     }
 
+    uint32_t str_hash = fnv1a32(str, length);
+
     int low = 0;
     int high = cache->length - 1;
     int mid = 0;
@@ -191,14 +212,18 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
     while (low <= high) {
         mid = (high + low) >> 1;
         VALUE entry = cache->entries[mid];
-        last_cmp = rstring_cache_cmp(str, length, rb_sym2str(entry));
+        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
 
-        if (last_cmp == 0) {
-            return entry;
+        if (last_cmp < 0) {
+            high = mid - 1;
         } else if (last_cmp > 0) {
             low = mid + 1;
         } else {
-            high = mid - 1;
+            if (rstring_cache_cmp(str, length, entry) == 0) {
+                return entry;
+            } else {
+                return Qfalse;
+            }
         }
     }
 
@@ -215,7 +240,7 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
             mid += 1;
         }
 
-        rvalue_cache_insert_at(cache, mid, rsymbol);
+        rvalue_cache_insert_at(cache, mid, rsymbol, str_hash);
     }
     return rsymbol;
 }
