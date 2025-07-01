@@ -129,6 +129,21 @@ static uint32_t fnv1a32(const char *str, const long length)
     return result;
 }
 
+const uint32_t* sb_lower_bound(const uint32_t *arr, size_t size, uint32_t value) {
+    const uint32_t *first = arr;
+    size_t length = size;
+    
+    while (length > 0) {
+        size_t rem = length % 2;
+        length /= 2;
+        if (first[length] < value) {
+            first += length + rem;
+        }
+    }
+    
+    return first;
+}
+
 static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     if (RB_UNLIKELY(length > JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH)) {
@@ -145,29 +160,40 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
     }
 
     uint32_t str_hash = fnv1a32(str, length);
+    int idx = (int)(sb_lower_bound(cache->hashes, cache->length, str_hash) - cache->hashes);
 
-    int low = 0;
-    int high = cache->length - 1;
-    int mid = 0;
-    int last_cmp = 0;
-
-    while (low <= high) {
-        mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
-
-        if (last_cmp < 0) {
-            high = mid - 1;
-        } else if (last_cmp > 0) {
-            low = mid + 1;
+    // Check if the hash at idx matches
+    if (idx < cache->length && cache->hashes[idx] == str_hash) {
+        VALUE entry = cache->entries[idx];
+        if (rstring_cache_cmp(str, length, entry) == 0) {
+            return entry;
         } else {
-            if (rstring_cache_cmp(str, length, entry) == 0) {
-                return entry;
-            } else {
-                return Qfalse;
-            }
+            return Qfalse;
         }
     }
+
+    // int low = 0;
+    // int high = cache->length - 1;
+    // int mid = 0;
+    // int last_cmp = 0;
+
+    // while (low <= high) {
+    //     mid = (high + low) >> 1;
+    //     VALUE entry = cache->entries[mid];
+    //     last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+
+    //     if (last_cmp < 0) {
+    //         high = mid - 1;
+    //     } else if (last_cmp > 0) {
+    //         low = mid + 1;
+    //     } else {
+    //         if (rstring_cache_cmp(str, length, entry) == 0) {
+    //             return entry;
+    //         } else {
+    //             return Qfalse;
+    //         }
+    //     }
+    // }
 
     if (RB_UNLIKELY(memchr(str, '\\', length))) {
         // We assume the overwhelming majority of names don't need to be escaped.
@@ -178,71 +204,76 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
     VALUE rstring = build_interned_string(str, length);
 
     if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        if (last_cmp > 0) {
-            mid += 1;
-        }
-
-        rvalue_cache_insert_at(cache, mid, rstring, str_hash);
+        rvalue_cache_insert_at(cache, idx, rstring, str_hash);
     }
+
+    // if (cache->length < JSON_RVALUE_CACHE_CAPA) {
+    //     if (last_cmp > 0) {
+    //         mid += 1;
+    //     }
+
+    //     rvalue_cache_insert_at(cache, mid, rstring, str_hash);
+    // }
     return rstring;
 }
 
 static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
-    if (RB_UNLIKELY(length > JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH)) {
-        // Common names aren't likely to be very long. So we just don't
-        // cache names above an arbitrary threshold.
-        return Qfalse;
-    }
+    return Qfalse;
+    // if (RB_UNLIKELY(length > JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH)) {
+    //     // Common names aren't likely to be very long. So we just don't
+    //     // cache names above an arbitrary threshold.
+    //     return Qfalse;
+    // }
 
-    if (RB_UNLIKELY(!isalpha((unsigned char)str[0]))) {
-        // Simple heuristic, if the first character isn't a letter,
-        // we're much less likely to see this string again.
-        // We mostly want to cache strings that are likely to be repeated.
-        return Qfalse;
-    }
+    // if (RB_UNLIKELY(!isalpha((unsigned char)str[0]))) {
+    //     // Simple heuristic, if the first character isn't a letter,
+    //     // we're much less likely to see this string again.
+    //     // We mostly want to cache strings that are likely to be repeated.
+    //     return Qfalse;
+    // }
 
-    uint32_t str_hash = fnv1a32(str, length);
+    // uint32_t str_hash = fnv1a32(str, length);
 
-    int low = 0;
-    int high = cache->length - 1;
-    int mid = 0;
-    int last_cmp = 0;
+    // int low = 0;
+    // int high = cache->length - 1;
+    // int mid = 0;
+    // int last_cmp = 0;
 
-    while (low <= high) {
-        mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+    // while (low <= high) {
+    //     mid = (high + low) >> 1;
+    //     VALUE entry = cache->entries[mid];
+    //     last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
 
-        if (last_cmp < 0) {
-            high = mid - 1;
-        } else if (last_cmp > 0) {
-            low = mid + 1;
-        } else {
-            if (rstring_cache_cmp(str, length, entry) == 0) {
-                return entry;
-            } else {
-                return Qfalse;
-            }
-        }
-    }
+    //     if (last_cmp < 0) {
+    //         high = mid - 1;
+    //     } else if (last_cmp > 0) {
+    //         low = mid + 1;
+    //     } else {
+    //         if (rstring_cache_cmp(str, length, entry) == 0) {
+    //             return entry;
+    //         } else {
+    //             return Qfalse;
+    //         }
+    //     }
+    // }
 
-    if (RB_UNLIKELY(memchr(str, '\\', length))) {
-        // We assume the overwhelming majority of names don't need to be escaped.
-        // But if they do, we have to fallback to the slow path.
-        return Qfalse;
-    }
+    // if (RB_UNLIKELY(memchr(str, '\\', length))) {
+    //     // We assume the overwhelming majority of names don't need to be escaped.
+    //     // But if they do, we have to fallback to the slow path.
+    //     return Qfalse;
+    // }
 
-    VALUE rsymbol = build_symbol(str, length);
+    // VALUE rsymbol = build_symbol(str, length);
 
-    if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        if (last_cmp > 0) {
-            mid += 1;
-        }
+    // if (cache->length < JSON_RVALUE_CACHE_CAPA) {
+    //     if (last_cmp > 0) {
+    //         mid += 1;
+    //     }
 
-        rvalue_cache_insert_at(cache, mid, rsymbol, str_hash);
-    }
-    return rsymbol;
+    //     rvalue_cache_insert_at(cache, mid, rsymbol, str_hash);
+    // }
+    // return rsymbol;
 }
 
 /* rvalue stack */
