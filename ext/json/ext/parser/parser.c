@@ -153,14 +153,17 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
 
     while (low <= high) {
         mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+        // last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+        // last_cmp = (int64_t)((int64_t) str_hash - (int64_t) cache->hashes[mid]);
 
-        if (last_cmp < 0) {
+        if (str_hash < cache->hashes[mid]) {
+            last_cmp = -1;
             high = mid - 1;
-        } else if (last_cmp > 0) {
+        } else if (str_hash > cache->hashes[mid]) {
+            last_cmp = 1;
             low = mid + 1;
         } else {
+            VALUE entry = cache->entries[mid];
             if (rstring_cache_cmp(str, length, entry) == 0) {
                 return entry;
             } else {
@@ -211,14 +214,17 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
 
     while (low <= high) {
         mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+        // last_cmp = (str_hash == cache->hashes[mid]) ? 0 : (str_hash < cache->hashes[mid] ? -1 : 1);
+        // last_cmp = (int64_t)((int64_t) str_hash - (int64_t) cache->hashes[mid]);
 
-        if (last_cmp < 0) {
+        if (str_hash < cache->hashes[mid]) {
+            last_cmp = -1;
             high = mid - 1;
-        } else if (last_cmp > 0) {
+        } else if (str_hash > cache->hashes[mid]) {
+            last_cmp = 1;
             low = mid + 1;
         } else {
+            VALUE entry = cache->entries[mid];
             if (rstring_cache_cmp(str, length, entry) == 0) {
                 return entry;
             } else {
