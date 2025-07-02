@@ -129,7 +129,7 @@ static uint32_t fnv1a32(const char *str, const long length)
     return result;
 }
 
-const uint32_t* sb_lower_bound(const uint32_t *arr, size_t size, uint32_t value) {
+static inline const uint32_t* sb_lower_bound(const uint32_t *arr, size_t size, uint32_t value) {
     const uint32_t *first = arr;
     size_t length = size;
     
