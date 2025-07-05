@@ -228,17 +228,18 @@ class StringEncoder extends ByteListTranscoder {
     }
 
     void encodeBasic(ByteList src) throws IOException {
-        EscapeScanner.State state = new EscapeScanner.State();
-        state.ptrBytes = src.unsafeBytes();
-        state.ptr = src.begin();
-        state.len = src.realSize();
-        state.beg = 0;
-        state.pos = 0;
+        // EscapeScanner.State state = new EscapeScanner.State();
+        // state.ptrBytes = src.unsafeBytes();
+        // state.ptr = src.begin();
+        // state.len = src.realSize();
+        // state.beg = 0;
+        // state.pos = 0;
 
         byte[] hexdig = HEX;
         byte[] scratch = aux;
 
         EscapeScanner scanner = EscapeScanner.basicScanner();
+        EscapeScanner.State state = scanner.createState(src.unsafeBytes(), src.begin(), src.realSize(), 0);
 
         while(scanner.scan(state)) {
             int ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);

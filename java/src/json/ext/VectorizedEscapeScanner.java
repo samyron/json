@@ -1,32 +1,31 @@
 package json.ext;
 
 import java.io.IOException;
+import javax.naming.directory.NoSuchAttributeException;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
+import jdk.jfr.RecordingState;
 
 public class VectorizedEscapeScanner implements EscapeScanner {
     public static EscapeScanner.ScalarEscapeScanner FALLBACK = new EscapeScanner.ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
 
-    // private VectorMask<Byte> needsEscape = null;
-    // private int chunkStart = 0;
-
     @Override
-    public boolean scan(State state) throws IOException {
+    public boolean scan(State _state) throws IOException {
         VectorSpecies<Byte> species = ByteVector.SPECIES_PREFERRED;
         
-        // if (needsEscape != null) {
-        //     if (needsEscape.anyTrue()) {
-        //         int firstEscapeIndex = needsEscape.firstTrue();
-        //         needsEscape = needsEscape.andNot(VectorMask.fromLong(species, 1L << firstEscapeIndex));
-        //         state.pos = chunkStart + firstEscapeIndex;
-        //         return true;
-        //     } else {
-        //         needsEscape = null;
-        //     }
-        // }
+        VectorizedState state = (VectorizedState) _state;
+
+        if (state.hasMatches) {
+            if (state.mask > 0) {
+                return nextMatch(state);
+            } else {
+                state.hasMatches = false;
+                state.pos = state.chunkStart + species.length();
+            }
+        }
 
         while ((state.ptr + state.pos) + species.length() < state.len) {
             ByteVector chunk = ByteVector.fromArray(species, state.ptrBytes, state.ptr + state.pos);
@@ -41,17 +40,41 @@ public class VectorizedEscapeScanner implements EscapeScanner {
 
             VectorMask<Byte> needsEscape = chunk.eq(ByteVector.broadcast(species, '\\')).or(tooLowOrDblQuote).and(negative);
             if (needsEscape.anyTrue()) {
-                // chunkStart = state.ptr + state.pos;
-                int firstEscapeIndex = needsEscape.firstTrue();
-                // Clear the bit at firstEscapeIndex to avoid scanning the same byte again
-                // needsEscape = needsEscape.andNot(VectorMask.fromLong(species, 1L << firstEscapeIndex));
-                state.pos += firstEscapeIndex;
-                return true;
+                state.hasMatches = true;
+                state.chunkStart = state.ptr + state.pos;
+                state.mask = needsEscape.toLong();
+
+                return nextMatch(state);
             }
 
             state.pos += species.length();
         }
 
         return FALLBACK.scan(state);
+    }
+
+    private boolean nextMatch(VectorizedState state) {
+        int index = Long.numberOfTrailingZeros(state.mask);
+        state.mask &= (state.mask - 1);
+        state.pos = state.chunkStart + index;
+        return true;
+    }
+
+    @Override
+    public EscapeScanner.State createState(byte[] ptrBytes, int ptr, int len, int beg) {
+        VectorizedState state = new VectorizedState();
+        state.ptrBytes = ptrBytes;
+        state.ptr = ptr;
+        state.len = len;
+        state.beg = beg;
+        state.pos = 0; 
+        return state;
+    }
+
+    private static class VectorizedState extends State {
+        private long mask;
+        private int chunkStart = 0;
+        // private int lastMatchingIndex;
+        private boolean hasMatches;
     }
 }
