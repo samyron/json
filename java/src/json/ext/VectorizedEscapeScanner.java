@@ -1,13 +1,11 @@
 package json.ext;
 
 import java.io.IOException;
-import javax.naming.directory.NoSuchAttributeException;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
-import jdk.jfr.RecordingState;
 
 public class VectorizedEscapeScanner implements EscapeScanner {
     public static EscapeScanner.ScalarEscapeScanner FALLBACK = new EscapeScanner.ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
@@ -29,11 +27,10 @@ public class VectorizedEscapeScanner implements EscapeScanner {
 
         while ((state.ptr + state.pos) + species.length() < state.len) {
             ByteVector chunk = ByteVector.fromArray(species, state.ptrBytes, state.ptr + state.pos);
-            ByteVector zero = ByteVector.broadcast(species, 0);
 
             // bytes are unsigned in java, so we need to check for negative values
             // to determine if we have a byte that is less than 0 (>= 128).
-            VectorMask<Byte> negative = zero.lt(chunk);
+            VectorMask<Byte> negative = ByteVector.zero(species).lt(chunk);
 
             VectorMask<Byte> tooLowOrDblQuote = chunk.lanewise(VectorOperators.XOR, ByteVector.broadcast(species, 2))
                 .lt(ByteVector.broadcast(species, 33));
