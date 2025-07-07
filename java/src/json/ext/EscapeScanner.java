@@ -14,19 +14,27 @@ interface EscapeScanner {
     }
 
     static class VectorSupport {
-        private static String VECTORIZED_ESCAPE_SCANNER_CLASS = "json.ext.vectorized.VectorizedEscapeScanner";
+        private static String VECTORIZED_ESCAPE_SCANNER_CLASS = "json.ext.VectorizedEscapeScanner";
+        private static String VECTORIZED_SCANNER_PROP = "json.enableVectorizedEscapeScanner";
+        private static String VECTORIZED_SCANNER_DEFAULT = "false";
         static final EscapeScanner VECTORIZED_ESCAPE_SCANNER;
 
         static {
             EscapeScanner scanner = null;
-            try {
-                Class<?> vectorEscapeScannerClass = EscapeScanner.class.getClassLoader().loadClass(VECTORIZED_ESCAPE_SCANNER_CLASS);
-                Constructor<?> vectorizedEscapeScannerConstructor = vectorEscapeScannerClass.getDeclaredConstructor();
-                scanner = (EscapeScanner) vectorizedEscapeScannerConstructor.newInstance();
-            } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                // Fallback to the ScalarEscapeScanner if we cannot load the VectorizedEscapeScanner.
-                System.err.println("Failed to load VectorizedEscapeScanner, falling back to ScalarEscapeScanner: " + e.getMessage());
-                scanner = null;
+            String enableVectorizedScanner = System.getProperty(VECTORIZED_SCANNER_PROP, VECTORIZED_SCANNER_DEFAULT);
+            if ("true".equalsIgnoreCase(enableVectorizedScanner) || "1".equalsIgnoreCase(enableVectorizedScanner)) {
+                try {
+                    Class<?> vectorEscapeScannerClass = EscapeScanner.class.getClassLoader().loadClass(VECTORIZED_ESCAPE_SCANNER_CLASS);
+                    Constructor<?> vectorizedEscapeScannerConstructor = vectorEscapeScannerClass.getDeclaredConstructor();
+                    scanner = (EscapeScanner) vectorizedEscapeScannerConstructor.newInstance();
+                } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                    // Fallback to the ScalarEscapeScanner if we cannot load the VectorizedEscapeScanner.
+                    System.err.println("Failed to load VectorizedEscapeScanner, falling back to ScalarEscapeScanner:");
+                    e.printStackTrace();
+                    scanner = null;
+                }
+            } else {
+                System.err.println("VectorizedEscapeScanner disabled.");
             }
             VECTORIZED_ESCAPE_SCANNER = scanner;
         }
