@@ -16,6 +16,7 @@ JAVA_DIR            = "java/src/json/ext"
 JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
 JAVA_PARSER_SRC     = "#{JAVA_DIR}/ParserConfig.java"
 JAVA_SOURCES        = FileList["#{JAVA_DIR}/*.java"]
+JAVA_VEC_SOURCES    = FileList["#{JAVA_DIR}/vectorized/*.java"]
 JAVA_CLASSES        = []
 JRUBY_PARSER_JAR    = File.expand_path("lib/json/ext/parser.jar")
 JRUBY_GENERATOR_JAR = File.expand_path("lib/json/ext/generator.jar")
@@ -68,7 +69,8 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
       classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * ':'
       obj = src.sub(/\.java\Z/, '.class')
       file obj => src do
-        sh 'javac', '--enable-preview', '--add-modules', 'jdk.incubator.vector', '-classpath', classpath, '-source', '21', '-target', '21', src
+        sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src
+        # '--enable-preview', '--add-modules', 'jdk.incubator.vector', 
       end
       JAVA_CLASSES << obj
     end

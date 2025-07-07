@@ -1,4 +1,4 @@
-package json.ext;
+package json.ext.vectorized;
 
 import java.io.IOException;
 

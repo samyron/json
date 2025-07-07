@@ -15,22 +15,19 @@ interface EscapeScanner {
     }
 
     static class VectorSupport {
+        private static String VECTORIZED_ESCAPE_SCANNER_CLASS = "json.ext.vectorized.VectorizedEscapeScanner";
         static final EscapeScanner VECTORIZED_ESCAPE_SCANNER;
 
         static {
-            Optional<Module> vectorModule = ModuleLayer.boot().findModule("jdk.incubator.vector");
             EscapeScanner scanner = null;
-            if (vectorModule.isPresent()) {
-                try {
-                    Class<?> vectorEscapeScannerClass = EscapeScanner.class.getClassLoader().loadClass("json.ext.VectorizedEscapeScanner");
-                    Constructor<?> vectorizedEscapeScannerConstructor = vectorEscapeScannerClass.getDeclaredConstructor();
-                    scanner = (EscapeScanner) vectorizedEscapeScannerConstructor.newInstance();
-                } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                    // Fallback to the ScalarEscapeScanner if we cannot load the VectorizedEscapeScanner.
-                    System.err.println("Failed to load VectorizedEscapeScanner, falling back to ScalarEscapeScanner: " + e.getMessage());
-                    scanner = null;
-                }
-                
+            try {
+                Class<?> vectorEscapeScannerClass = EscapeScanner.class.getClassLoader().loadClass(VECTORIZED_ESCAPE_SCANNER_CLASS);
+                Constructor<?> vectorizedEscapeScannerConstructor = vectorEscapeScannerClass.getDeclaredConstructor();
+                scanner = (EscapeScanner) vectorizedEscapeScannerConstructor.newInstance();
+            } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                // Fallback to the ScalarEscapeScanner if we cannot load the VectorizedEscapeScanner.
+                System.err.println("Failed to load VectorizedEscapeScanner, falling back to ScalarEscapeScanner: " + e.getMessage());
+                scanner = null;
             }
             VECTORIZED_ESCAPE_SCANNER = scanner;
         }

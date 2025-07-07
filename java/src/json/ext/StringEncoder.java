@@ -21,10 +21,6 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.util.ByteList;
 import org.jruby.util.StringSupport;
 
-import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.VectorSpecies;
-import json.ext.VectorizedEscapeScanner;
-
 /**
  * An encoder that reads from the given source and outputs its representation
  * to another ByteList. The source string is fully checked for UTF-8 validity,
