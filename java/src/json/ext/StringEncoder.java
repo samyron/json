@@ -224,13 +224,6 @@ class StringEncoder extends ByteListTranscoder {
     }
 
     void encodeBasic(ByteList src) throws IOException {
-        // EscapeScanner.State state = new EscapeScanner.State();
-        // state.ptrBytes = src.unsafeBytes();
-        // state.ptr = src.begin();
-        // state.len = src.realSize();
-        // state.beg = 0;
-        // state.pos = 0;
-
         byte[] hexdig = HEX;
         byte[] scratch = aux;
 
@@ -306,44 +299,6 @@ class StringEncoder extends ByteListTranscoder {
                 state.pos++;
             }
         }
-
-        // while (state.pos < state.len) {
-        //     int ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
-        //     int ch_len = escapeTable[ch];
-        //     /* JSON encoding */
-
-        //     if (ch_len > 0) {
-        //         switch (ch_len) {
-        //             case 9: {
-        //                 state.beg = state.pos = flushPos(state.pos, state.beg, state.ptrBytes, state.ptr, 1);
-        //                 escapeAscii(ch, scratch, hexdig);
-        //                 break;
-        //             }
-        //             case 11: {
-        //                 int b2 = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos + 1]);
-        //                 if (b2 == 0x80) {
-        //                     int b3 = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos + 2]);
-        //                     if (b3 == 0xA8) {
-        //                         state.beg = state.pos = flushPos(state.pos, state.beg, state.ptrBytes, state.ptr, 3);
-        //                         append(BACKSLASH_U2028, 0, 6);
-        //                         break;
-        //                     } else if (b3 == 0xA9) {
-        //                         state.beg = state.pos = flushPos(state.pos, state.beg, state.ptrBytes, state.ptr, 3);
-        //                         append(BACKSLASH_U2029, 0, 6);
-        //                         break;
-        //                     }
-        //                 }
-        //                 ch_len = 3;
-        //                 // fallthrough
-        //             }
-        //             default:
-        //                 state.pos += ch_len;
-        //                 break;
-        //         }
-        //     } else {
-        //         state.pos++;
-        //     }
-        // }
 
         if (state.beg < state.len) {
             append(state.ptrBytes, state.ptr + state.beg, state.len - state.beg);

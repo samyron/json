@@ -30,12 +30,12 @@ class VectorizedEscapeScanner implements EscapeScanner {
 
             // bytes are unsigned in java, so we need to check for negative values
             // to determine if we have a byte that is less than 0 (>= 128).
-            VectorMask<Byte> negative = ByteVector.zero(species).lt(chunk);
+            VectorMask<Byte> nonNegative = ByteVector.zero(species).lt(chunk);
 
             VectorMask<Byte> tooLowOrDblQuote = chunk.lanewise(VectorOperators.XOR, ByteVector.broadcast(species, 2))
                 .lt(ByteVector.broadcast(species, 33));
 
-            VectorMask<Byte> needsEscape = chunk.eq(ByteVector.broadcast(species, '\\')).or(tooLowOrDblQuote).and(negative);
+            VectorMask<Byte> needsEscape = chunk.eq(ByteVector.broadcast(species, '\\')).or(tooLowOrDblQuote).and(nonNegative);
             if (needsEscape.anyTrue()) {
                 state.hasMatches = true;
                 state.chunkStart = state.ptr + state.pos;
