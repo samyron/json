@@ -2,7 +2,6 @@ package json.ext;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
-import java.util.Optional;
 
 interface EscapeScanner {
     static class State {

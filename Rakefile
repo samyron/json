@@ -15,8 +15,8 @@ end rescue nil
 JAVA_DIR            = "java/src/json/ext"
 JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
 JAVA_PARSER_SRC     = "#{JAVA_DIR}/ParserConfig.java"
-JAVA_SOURCES        = FileList["#{JAVA_DIR}/*.java"]
-JAVA_VEC_SOURCES    = FileList["#{JAVA_DIR}/vectorized/*.java"]
+JAVA_SOURCES        = FileList["#{JAVA_DIR}/*.java"].exclude("#{JAVA_DIR}/Vectorized*.java")
+JAVA_VEC_SOURCES    = FileList["#{JAVA_DIR}/Vectorized*.java"]
 JAVA_CLASSES        = []
 JRUBY_PARSER_JAR    = File.expand_path("lib/json/ext/parser.jar")
 JRUBY_GENERATOR_JAR = File.expand_path("lib/json/ext/generator.jar")
@@ -65,12 +65,26 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
 
   JRUBY_JAR = File.join(CONFIG["libdir"], "jruby.jar")
   if File.exist?(JRUBY_JAR)
+    classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * ':'
     JAVA_SOURCES.each do |src|
-      classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * ':'
       obj = src.sub(/\.java\Z/, '.class')
       file obj => src do
-        sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src
-        # '--enable-preview', '--add-modules', 'jdk.incubator.vector', 
+        sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src  
+        # '--enable-preview',
+      end
+      JAVA_CLASSES << obj
+    end
+
+    JAVA_VEC_SOURCES.each do |src|
+      obj = src.sub(/\.java\Z/, '.class')
+      file obj => src do
+        sh 'javac', '--add-modules', 'jdk.incubator.vector', '-classpath', classpath, '--release', '16', src do |success, status| 
+          if success
+            puts "*** 'jdk.incubator.vector' support enabled ***"
+          else
+            puts "*** 'jdk.incubator.vector' support disabled ***"
+          end
+        end
       end
       JAVA_CLASSES << obj
     end

@@ -1,4 +1,4 @@
-package json.ext.vectorized;
+package json.ext;
 
 import java.io.IOException;
 
@@ -7,7 +7,7 @@ import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
-public class VectorizedEscapeScanner implements EscapeScanner {
+class VectorizedEscapeScanner implements EscapeScanner {
     public static EscapeScanner.ScalarEscapeScanner FALLBACK = new EscapeScanner.ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
 
     @Override
