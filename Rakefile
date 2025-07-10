@@ -56,7 +56,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   ].find { |c| File.directory?(c) }
   if ENV['JAVA_HOME']
     warn " *** JAVA_HOME is set to #{ENV['JAVA_HOME'].inspect}"
-    ENV['PATH'] = ENV['PATH'].split(/path_separator/).unshift(java_path = "#{ENV['JAVA_HOME']}/bin") * path_separator
+    ENV['PATH'] = ENV['PATH'].split(path_separator).unshift(java_path = "#{ENV['JAVA_HOME']}/bin") * path_separator
     warn " *** java binaries are assumed to be in #{java_path.inspect}"
   else
     warn " *** JAVA_HOME was not set or could not be guessed!"
