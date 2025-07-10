@@ -64,6 +64,20 @@ interface EscapeScanner {
         return new ScalarEscapeScanner(escapeTable);
     }
 
+    public static class BasicScanner implements EscapeScanner {
+        @Override
+        public boolean scan(EscapeScanner.State state) throws java.io.IOException {
+            while (state.pos < state.len) {
+                state.ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
+                if (state.ch >= 0 && (state.ch < ' ' || state.ch == '\"' || state.ch == '\\')) {
+                    return true;
+                }
+                state.pos++;
+            }
+            return false;
+        }
+    }
+
     public static class ScalarEscapeScanner implements EscapeScanner {
         private final byte[] escapeTable;
 
