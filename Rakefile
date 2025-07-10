@@ -48,6 +48,8 @@ desc "Generate parser with ragel"
 task :ragel => [JAVA_PARSER_SRC]
 
 if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
+  require 'java'
+  path_sep = java.lang.System.getProperty("path.separator")
   ENV['JAVA_HOME'] ||= [
     '/usr/local/java/jdk',
     '/usr/lib/jvm/java-6-openjdk',
@@ -55,7 +57,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   ].find { |c| File.directory?(c) }
   if ENV['JAVA_HOME']
     warn " *** JAVA_HOME is set to #{ENV['JAVA_HOME'].inspect}"
-    ENV['PATH'] = ENV['PATH'].split(/:/).unshift(java_path = "#{ENV['JAVA_HOME']}/bin") * ':'
+    ENV['PATH'] = ENV['PATH'].split(/path_sep/).unshift(java_path = "#{ENV['JAVA_HOME']}/bin") * path_sep
     warn " *** java binaries are assumed to be in #{java_path.inspect}"
   else
     warn " *** JAVA_HOME was not set or could not be guessed!"
@@ -65,7 +67,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   JRUBY_JAR = File.join(CONFIG["libdir"], "jruby.jar")
   if File.exist?(JRUBY_JAR)
     JAVA_SOURCES.each do |src|
-      classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * ':'
+      classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * path_sep
       obj = src.sub(/\.java\Z/, '.class')
       file obj => src do
         sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src
