@@ -2,8 +2,11 @@
 
 ### Unreleased
 
-* Add bnew `allow_duplicate_key` parsing options. By default a warning is now emitted when a duplicated key is encountered.
+### 2025-05-23 (2.13.0)
+
+* Add new `allow_duplicate_key` parsing options. By default a warning is now emitted when a duplicated key is encountered.
   In `json 3.0` an error will be raised.
+* Optimize parsing further using SIMD to scan strings.
 
 ### 2025-05-23 (2.12.2)
 
