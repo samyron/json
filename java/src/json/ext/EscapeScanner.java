@@ -40,6 +40,10 @@ interface EscapeScanner {
         }
     }
 
+    default boolean meetsMinimumLengthTreshold(int length) {
+        return true;
+    }
+
     boolean scan(EscapeScanner.State state) throws java.io.IOException;
 
     default State createState(byte[] ptrBytes, int ptr, int len, int beg) {

@@ -109,6 +109,8 @@ class StringEncoder extends ByteListTranscoder {
             4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 9, 9,
     };
 
+    private static final EscapeScanner BASIC_SCANNER = EscapeScanner.basicScanner();
+
     private static final byte[] BACKSLASH_U2028 = "\\u2028".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] BACKSLASH_U2029 = "\\u2029".getBytes(StandardCharsets.US_ASCII);
 
@@ -224,16 +226,11 @@ class StringEncoder extends ByteListTranscoder {
     }
 
     void encodeBasic(ByteList src) throws IOException {
-        byte[] hexdig = HEX;
-        byte[] scratch = aux;
+        EscapeScanner.State state = BASIC_SCANNER.createState(src.unsafeBytes(), src.begin(), src.realSize(), 0);
 
-        EscapeScanner scanner = EscapeScanner.basicScanner();
-        EscapeScanner.State state = scanner.createState(src.unsafeBytes(), src.begin(), src.realSize(), 0);
-
-        while(scanner.scan(state)) {
-            int ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
+        while(BASIC_SCANNER.scan(state)) {
             state.beg = state.pos = flushPos(state.pos, state.beg, state.ptrBytes, state.ptr, 1);
-            escapeAscii(ch, scratch, hexdig);
+            escapeAscii(state.ch, aux, HEX);
         }
 
         if (state.beg < state.len) {
