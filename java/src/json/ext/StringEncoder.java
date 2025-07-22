@@ -28,14 +28,14 @@ import org.jruby.util.StringSupport;
  */
 class StringEncoder extends ByteListTranscoder {
     protected static final int CHAR_LENGTH_MASK = 7;
-    private static final byte[] BACKSLASH_DOUBLEQUOTE = {'\\', '"'};
-    private static final byte[] BACKSLASH_BACKSLASH = {'\\', '\\'};
-    private static final byte[] BACKSLASH_FORWARDSLASH = {'\\', '/'};
-    private static final byte[] BACKSLASH_B = {'\\', 'b'};
-    private static final byte[] BACKSLASH_F = {'\\', 'f'};
-    private static final byte[] BACKSLASH_N = {'\\', 'n'};
-    private static final byte[] BACKSLASH_R = {'\\', 'r'};
-    private static final byte[] BACKSLASH_T = {'\\', 't'};
+    static final byte[] BACKSLASH_DOUBLEQUOTE = {'\\', '"'};
+    static final byte[] BACKSLASH_BACKSLASH = {'\\', '\\'};
+    static final byte[] BACKSLASH_FORWARDSLASH = {'\\', '/'};
+    static final byte[] BACKSLASH_B = {'\\', 'b'};
+    static final byte[] BACKSLASH_F = {'\\', 'f'};
+    static final byte[] BACKSLASH_N = {'\\', 'n'};
+    static final byte[] BACKSLASH_R = {'\\', 'r'};
+    static final byte[] BACKSLASH_T = {'\\', 't'};
     
     static final byte[] ESCAPE_TABLE = {
             // ASCII Control Characters
@@ -132,7 +132,7 @@ class StringEncoder extends ByteListTranscoder {
             new byte[] {'0', '1', '2', '3', '4', '5', '6', '7',
                         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-    private StringEncoder(boolean scriptSafe) {
+    StringEncoder(boolean scriptSafe) {
         this(scriptSafe ? SCRIPT_SAFE_ESCAPE_TABLE : ESCAPE_TABLE);
     }
 
@@ -328,7 +328,7 @@ class StringEncoder extends ByteListTranscoder {
         }
     }
 
-    private void appendEscape(byte[] escape) throws IOException {
+    void appendEscape(byte[] escape) throws IOException {
         append(escape, 0, 2);
     }
 

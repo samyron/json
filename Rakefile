@@ -139,7 +139,8 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
         "json/ext/RuntimeInfo*.class",
         "json/ext/StringEncoder*.class",
         "json/ext/Utils*.class",
-        "json/ext/VectorizedEscapeScanner*.class"
+        "json/ext/VectorizedEscapeScanner*.class",
+        "json/ext/VectorizedStringEncoder*.class"
       ]
       puts "Creating generator jar with classes: #{generator_classes.join(', ')}"
       sh 'jar', 'cf', File.basename(JRUBY_GENERATOR_JAR), *generator_classes
