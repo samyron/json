@@ -1,5 +1,7 @@
 # Changes
 
+* Fix support for older compilers without `__builtin_cpu_supports`.
+
 ### Unreleased
 
 ### 2025-05-23 (2.13.0)
