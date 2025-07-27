@@ -692,10 +692,10 @@ public class ParserConfig extends RubyObject {
                         if (((RubyHash)result).hasKey(lastName)) {
                             if (config.deprecateDuplicateKey) {
                                 context.runtime.getWarnings().warning(
-                                    "detected duplicate keys in JSON object. This will raise an error in json 3.0 unless enabled via `allow_duplicate_key: true`"
+                                    "detected duplicate key " + name.inspect() + " in JSON object. This will raise an error in json 3.0 unless enabled via `allow_duplicate_key: true`"
                                 );
                             } else {
-                                throw parsingError(context, "duplicate key", p, pe);
+                                throw parsingError(context, "duplicate key" + name.inspect(), p, pe);
                             }
                         }
                     }
