@@ -2,7 +2,9 @@
 
 ### Unreleased
 
-* Improve duplicate key warning and errors to include the key name.
+### 2025-07-28 (2.13.2)
+
+* Improve duplicate key warning and errors to include the key name and point to the right caller.
 
 ### 2025-07-24 (2.13.1)
 
