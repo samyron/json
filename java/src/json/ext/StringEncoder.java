@@ -28,14 +28,14 @@ import org.jruby.util.StringSupport;
  */
 class StringEncoder extends ByteListTranscoder {
     protected static final int CHAR_LENGTH_MASK = 7;
-    private static final byte[] BACKSLASH_DOUBLEQUOTE = {'\\', '"'};
-    private static final byte[] BACKSLASH_BACKSLASH = {'\\', '\\'};
-    private static final byte[] BACKSLASH_FORWARDSLASH = {'\\', '/'};
-    private static final byte[] BACKSLASH_B = {'\\', 'b'};
-    private static final byte[] BACKSLASH_F = {'\\', 'f'};
-    private static final byte[] BACKSLASH_N = {'\\', 'n'};
-    private static final byte[] BACKSLASH_R = {'\\', 'r'};
-    private static final byte[] BACKSLASH_T = {'\\', 't'};
+    static final byte[] BACKSLASH_DOUBLEQUOTE = {'\\', '"'};
+    static final byte[] BACKSLASH_BACKSLASH = {'\\', '\\'};
+    static final byte[] BACKSLASH_FORWARDSLASH = {'\\', '/'};
+    static final byte[] BACKSLASH_B = {'\\', 'b'};
+    static final byte[] BACKSLASH_F = {'\\', 'f'};
+    static final byte[] BACKSLASH_N = {'\\', 'n'};
+    static final byte[] BACKSLASH_R = {'\\', 'r'};
+    static final byte[] BACKSLASH_T = {'\\', 't'};
     
     static final byte[] ESCAPE_TABLE = {
             // ASCII Control Characters
@@ -109,6 +109,8 @@ class StringEncoder extends ByteListTranscoder {
             4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 9, 9,
     };
 
+    private static final EscapeScanner BASIC_SCANNER = EscapeScanner.basicScanner();
+
     private static final byte[] BACKSLASH_U2028 = "\\u2028".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] BACKSLASH_U2029 = "\\u2029".getBytes(StandardCharsets.US_ASCII);
 
@@ -130,7 +132,7 @@ class StringEncoder extends ByteListTranscoder {
             new byte[] {'0', '1', '2', '3', '4', '5', '6', '7',
                         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
-    private StringEncoder(boolean scriptSafe) {
+    StringEncoder(boolean scriptSafe) {
         this(scriptSafe ? SCRIPT_SAFE_ESCAPE_TABLE : ESCAPE_TABLE);
     }
 
@@ -224,16 +226,11 @@ class StringEncoder extends ByteListTranscoder {
     }
 
     void encodeBasic(ByteList src) throws IOException {
-        byte[] hexdig = HEX;
-        byte[] scratch = aux;
+        EscapeScanner.State state = BASIC_SCANNER.createState(src.unsafeBytes(), src.begin(), src.realSize(), 0);
 
-        EscapeScanner scanner = EscapeScanner.basicScanner();
-        EscapeScanner.State state = scanner.createState(src.unsafeBytes(), src.begin(), src.realSize(), 0);
-
-        while(scanner.scan(state)) {
-            int ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
+        while(BASIC_SCANNER.scan(state)) {
             state.beg = state.pos = flushPos(state.pos, state.beg, state.ptrBytes, state.ptr, 1);
-            escapeAscii(ch, scratch, hexdig);
+            escapeAscii(state.ch, aux, HEX);
         }
 
         if (state.beg < state.len) {
@@ -311,6 +308,31 @@ class StringEncoder extends ByteListTranscoder {
     }
 
     protected void escapeAscii(int ch, byte[] scratch, byte[] hexdig) throws IOException {
+        byte[] src;
+        int len = 2;
+        switch (ch) {
+            case '"':  src = BACKSLASH_DOUBLEQUOTE; break;
+            case '\\': src = BACKSLASH_BACKSLASH; break;
+            case '/':  src = BACKSLASH_FORWARDSLASH; break;
+            case '\b': src = BACKSLASH_B; break;
+            case '\f': src = BACKSLASH_F; break;
+            case '\n': src = BACKSLASH_N; break;
+            case '\r': src = BACKSLASH_R; break;
+            case '\t': src = BACKSLASH_T; break;
+            default: {
+                scratch[2] = '0';
+                scratch[3] = '0';
+                scratch[4] = hexdig[(ch >> 4) & 0xf];
+                scratch[5] = hexdig[ch & 0xf];
+                src = scratch;
+                len = 6;
+                break;
+            }
+        }
+        append(src, 0, len);
+    }
+
+    protected void escapeAsciiOriginal(int ch, byte[] scratch, byte[] hexdig) throws IOException {
         switch (ch) {
             case '"':  appendEscape(BACKSLASH_DOUBLEQUOTE); break;
             case '\\': appendEscape(BACKSLASH_BACKSLASH); break;
@@ -331,7 +353,7 @@ class StringEncoder extends ByteListTranscoder {
         }
     }
 
-    private void appendEscape(byte[] escape) throws IOException {
+    void appendEscape(byte[] escape) throws IOException {
         append(escape, 0, 2);
     }
 
