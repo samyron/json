@@ -21,7 +21,7 @@ class VectorizedEscapeScanner implements EscapeScanner {
         if (state.hasMatches) {
             if (state.mask > 0) {
                 // nextMatch inlined
-                int index = Long.numberOfTrailingZeros(state.mask);
+                int index = SP.length() > 32 ? Long.numberOfTrailingZeros(state.mask) : Integer.numberOfTrailingZeros((int) state.mask);
                 state.mask &= (state.mask - 1);
                 state.pos = state.chunkStart + index;
                 state.ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
@@ -36,8 +36,7 @@ class VectorizedEscapeScanner implements EscapeScanner {
             ByteVector chunk = ByteVector.fromArray(SP, state.ptrBytes, state.ptr + state.pos);
             state.chunkLength = SP.length();
 
-            // bytes are unsigned in java, so we need to check for negative values
-            // to determine if we have a byte that is less than 0 (>= 128).
+            // bytes are signed in java, so we need to remove negative values
             VectorMask<Byte> negative = chunk.lt(ZERO);
             VectorMask<Byte> tooLowOrDblQuote = chunk.lanewise(VectorOperators.XOR, TWO).lt(THIRTY_THREE).andNot(negative);
             VectorMask<Byte> needsEscape = chunk.eq(BACKSLASH).or(tooLowOrDblQuote);
@@ -47,11 +46,11 @@ class VectorizedEscapeScanner implements EscapeScanner {
                 state.mask = needsEscape.toLong();
 
                 // nextMatch - inlined
-                int index = Long.numberOfTrailingZeros(state.mask);
+                int index = SP.length() > 32 ? Long.numberOfTrailingZeros(state.mask) : Integer.numberOfTrailingZeros((int) state.mask);
                 state.mask &= (state.mask - 1);
                 state.pos = state.chunkStart + index;
                 state.ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
-
+                
                 return true;
             }
 
@@ -59,15 +58,16 @@ class VectorizedEscapeScanner implements EscapeScanner {
         }
 
         int remaining = state.len - (state.ptr + state.pos);
-            for (int i=0; i<remaining; i++) {
+        for (int i = 0; i<remaining; i++) {
             state.ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
-            int ch_len = StringEncoder.ESCAPE_TABLE[state.ch];
-            if (ch_len > 0) {
-                return true;
-            }
+            // if (state.ch < 128) {
+                int ch_len = StringEncoder.ESCAPE_TABLE[state.ch];
+                if (ch_len > 0) {
+                    return true;
+                }
+            // }
             state.pos++;
         }
-
         return false;
     }
 
