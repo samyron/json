@@ -635,39 +635,6 @@ module JSON
           rescue Encoding::UndefinedConversionError => error
             raise ::JSON::GeneratorError.new(error.message, self)
           end
-
-          # Module that holds the extending methods if, the String module is
-          # included.
-          module Extend
-            # Raw Strings are JSON Objects (the raw bytes are stored in an
-            # array for the key "raw"). The Ruby String can be created by this
-            # module method.
-            def json_create(o)
-              o['raw'].pack('C*')
-            end
-          end
-
-          # Extends _modul_ with the String::Extend module.
-          def self.included(modul)
-            modul.extend Extend
-          end
-
-          # This method creates a raw object hash, that can be nested into
-          # other data structures and will be unparsed as a raw string. This
-          # method should be used, if you want to convert raw strings to JSON
-          # instead of UTF-8 strings, e. g. binary data.
-          def to_json_raw_object
-            {
-              JSON.create_id  => self.class.name,
-              'raw'           => self.unpack('C*'),
-            }
-          end
-
-          # This method creates a JSON text from the result of
-          # a call to to_json_raw_object of this String.
-          def to_json_raw(*args)
-            to_json_raw_object.to_json(*args)
-          end
         end
 
         module TrueClass
