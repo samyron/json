@@ -295,7 +295,9 @@ public final class Generator {
         }
 
         RubyString generateNew(ThreadContext context, Session session, T object) {
-            ByteListDirectOutputStream buffer = new ByteListDirectOutputStream(guessSize(context, session, object));
+            // ByteListDirectOutputStream buffer = new ByteListDirectOutputStream(guessSize(context, session, object));
+            // SegmentedByteListDirectOutputStream buffer = new SegmentedByteListDirectOutputStream(guessSize(context, session, object));
+            Segmented2ByteListDirectOutputStream buffer = new Segmented2ByteListDirectOutputStream();
             generateToBuffer(context, session, object, buffer);
             return RubyString.newString(context.runtime, buffer.toByteListDirect(UTF8Encoding.INSTANCE));
         }
@@ -522,7 +524,8 @@ public final class Generator {
                             + (state.getDepth() + 1) * state.getIndent().length()
                             + state.getSpaceBefore().length()
                             + state.getSpace().length();
-            return 2 + object.size() * perItem;
+            int guess = 2 + object.size() * perItem;
+            return Math.max(guess, 1024);
         }
 
         @Override

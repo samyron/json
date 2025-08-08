@@ -23,7 +23,7 @@ public class ByteListDirectOutputStream extends OutputStream {
     public void write(int b) throws IOException {
         int currentLength = this.length;
         int newLength = currentLength + 1;
-        byte[] buffer = ensureBuffer(this, newLength);
+        ensureBuffer(newLength);
         buffer[currentLength] = (byte) b;
         this.length = newLength;
     }
@@ -32,43 +32,49 @@ public class ByteListDirectOutputStream extends OutputStream {
     public void write(byte[] bytes, int start, int length) throws IOException {
         int currentLength = this.length;
         int newLength = currentLength + length;
-        byte[] buffer = ensureBuffer(this, newLength);
+        ensureBuffer(newLength);
         System.arraycopy(bytes, start, buffer, currentLength, length);
         this.length = newLength;
     }
 
     @Override
     public void write(byte[] bytes) throws IOException {
-        int myLength = this.length;
-        int moreLength = bytes.length;
-        int newLength = myLength + moreLength;
-        byte[] buffer = ensureBuffer(this, newLength);
-        System.arraycopy(bytes, 0, buffer, myLength, moreLength);
-        this.length = newLength;
+        write(bytes, 0, bytes.length);
     }
 
-    private static byte[] ensureBuffer(ByteListDirectOutputStream self, int minimumLength) {
-        byte[] buffer = self.buffer;
-        int myCapacity = buffer.length;
-        int diff = minimumLength - myCapacity;
-        if (diff > 0) {
-            buffer = self.buffer = grow(buffer, myCapacity, diff);
+    private void ensureBuffer(int minimumLength) {
+        int myCapacity = this.buffer.length;
+        if (minimumLength > myCapacity) {
+            // this.buffer = grow(buffer, myCapacity, minimumLength - myCapacity);
+            this.buffer = grow(this.buffer, minimumLength);
         }
-
-        return buffer;
     }
 
-    private static byte[] grow(byte[] oldBuffer, int myCapacity, int diff) {
-        // grow to double current buffer length or capacity + diff, whichever is greater
-        int newLength = myCapacity + Math.max(myCapacity, diff);
-        // check overflow
-        if (newLength < 0) {
-            // try just diff length in case it can fit
-            newLength = myCapacity + diff;
-            if (newLength < 0) {
-                throw new ArrayIndexOutOfBoundsException("cannot allocate array of size " + myCapacity + "+" + diff);
+    private static byte[] grow(byte[] oldBuffer, int required) {
+        int capacity = oldBuffer.length;
+        
+        while (capacity < required) {
+            capacity <<= 1;
+            if (capacity < 0) {
+                throw new OutOfMemoryError();
             }
         }
-        return Arrays.copyOf(oldBuffer, newLength);
+
+        return Arrays.copyOf(oldBuffer, capacity);
     }
+
+    // private static byte[] grow(byte[] oldBuffer, int myCapacity, int diff) {
+    //     // grow to double current buffer length or capacity + diff, whichever is greater
+    //     int newLength = myCapacity + Math.max(myCapacity, diff);
+    //     // check overflow
+    //     if (newLength < 0) {
+    //         // try just diff length in case it can fit
+    //         newLength = myCapacity + diff;
+    //         if (newLength < 0) {
+    //             // throw new ArrayIndexOutOfBoundsException("cannot allocate array of size " + myCapacity + "+" + diff);
+    //             throw new OutOfMemoryError();
+    //         }
+    //     }
+    //     return Arrays.copyOf(oldBuffer, newLength);
+    // }
 }

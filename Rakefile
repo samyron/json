@@ -115,6 +115,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
     cd 'java/src' do
       parser_classes = FileList[
         "json/ext/ByteList*.class",
+        "java/ext/SegmentedByteList*.class",
         "json/ext/OptionsReader*.class",
         "json/ext/Parser*.class",
         "json/ext/RuntimeInfo*.class",
@@ -132,7 +133,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   file JRUBY_GENERATOR_JAR => :compile do
     cd 'java/src' do
       generator_classes = FileList[
-        "json/ext/ByteList*.class",
+        "json/ext/*ByteList*.class",
         "json/ext/OptionsReader*.class",
         "json/ext/EscapeScanner*.class",
         "json/ext/Generator*.class",
