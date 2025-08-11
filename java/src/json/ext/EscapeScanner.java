@@ -2,6 +2,7 @@ package json.ext;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.ByteBuffer;
 
 interface EscapeScanner {
     static class State {
@@ -61,7 +62,8 @@ interface EscapeScanner {
             return VectorSupport.VECTORIZED_ESCAPE_SCANNER;
         }
 
-        return new ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
+        // return new ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
+        return new SWARBasicEscapeScanner();
     }
 
     public static EscapeScanner create(byte[] escapeTable) {
@@ -82,7 +84,42 @@ interface EscapeScanner {
         }
     }
 
+    public static class SWARBasicEscapeScanner implements EscapeScanner {
+        @Override
+        public boolean scan(EscapeScanner.State state) throws java.io.IOException {
+            ByteBuffer bb = ByteBuffer.wrap(state.ptrBytes, 0, state.len);
+
+            while (state.pos + 8 < state.len) {
+                long x = bb.getLong(state.ptr + state.pos);
+                long is_ascii = 0x8080808080808080L & ~x;
+                long xor2 = x ^ 0x0202020202020202L;
+                long lt32_or_eq34 = xor2 - 0x2121212121212121L;
+                long sub92 = x ^ 0x5C5C5C5C5C5C5C5CL;
+                long eq92 = (sub92 - 0x0101010101010101L);
+                boolean needs_escape =  ((lt32_or_eq34 | eq92) & is_ascii) != 0;
+
+                if (needs_escape) {
+                    for (int i = 0; i < 8; i++) {
+                        state.ch = Byte.toUnsignedInt(state.ptrBytes[state.ptr + state.pos]);
+                        int ch_len = StringEncoder.ESCAPE_TABLE[state.ch];
+                        if (ch_len > 0) {
+                            return true;
+                        }
+                        state.pos++;
+                    }
+                    throw new IllegalStateException("This should not happen. This is a bug. Please report it.");
+                }
+
+                state.pos += 8;
+            }
+            
+            return ScalarEscapeScanner.BASIC_INSTANCE.scan(state);
+        }
+    }
+
     public static class ScalarEscapeScanner implements EscapeScanner {
+        private static final EscapeScanner BASIC_INSTANCE = new ScalarEscapeScanner(StringEncoder.ESCAPE_TABLE);
+
         private final byte[] escapeTable;
 
         public ScalarEscapeScanner(byte[] escapeTable) {

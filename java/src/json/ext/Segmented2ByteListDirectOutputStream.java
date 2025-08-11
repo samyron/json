@@ -75,8 +75,8 @@ public class Segmented2ByteListDirectOutputStream extends OutputStream {
             currentSegmentLength += toWrite;
             start += toWrite;
             remaining -= toWrite;
-            totalLength += toWrite;
         }
+        totalLength += length;
     }
 
     @Override
