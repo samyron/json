@@ -26,6 +26,8 @@ import org.jruby.util.ByteList;
 import org.jruby.util.IOOutputStream;
 import org.jruby.util.TypeConverter;
 
+import json.ext.ByteListDirectOutputStream;
+
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -252,7 +254,7 @@ public final class Generator {
         }
 
         RubyString generateNew(ThreadContext context, Session session, T object) {
-            ByteListDirectOutputStream buffer = new ByteListDirectOutputStream(guessSize(context, session, object));
+            AbstractByteListDirectOutputStream buffer = AbstractByteListDirectOutputStream.create(guessSize(context, session, object));
             generateToBuffer(context, session, object, buffer);
             return RubyString.newString(context.runtime, buffer.toByteListDirect(UTF8Encoding.INSTANCE));
         }

@@ -4,10 +4,9 @@ import org.jcodings.Encoding;
 import org.jruby.util.ByteList;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.Arrays;
 
-public class ByteListDirectOutputStream extends OutputStream {
+public class ByteListDirectOutputStream extends AbstractByteListDirectOutputStream {
     private byte[] buffer;
     private int length;
 
