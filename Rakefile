@@ -116,7 +116,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   file JRUBY_GENERATOR_JAR => :compile do
     cd 'java/src' do
       generator_classes = FileList[
-        "json/ext/ByteList*.class",
+        "json/ext/*ByteList*.class",
         "json/ext/OptionsReader*.class",
         "json/ext/Generator*.class",
         "json/ext/RuntimeInfo*.class",
