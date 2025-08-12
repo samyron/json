@@ -40,7 +40,7 @@ jobs:
           - { os: windows-latest, ruby: jruby-head }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby-pkgs@v1
@@ -69,7 +69,7 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby-pkgs@v1
