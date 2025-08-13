@@ -301,11 +301,11 @@ public class ParserConfig extends RubyObject {
             return parsingError(context, "unexpected token at '", absStart, absEnd);
         }
 
-        
+
 // line 328 "ParserConfig.rl"
 
 
-        
+
 // line 310 "ParserConfig.java"
 private static byte[] init__JSON_value_actions_0()
 {
@@ -427,14 +427,14 @@ static final int JSON_value_en_main = 1;
             int cs;
             IRubyObject result = null;
 
-            
+
 // line 432 "ParserConfig.java"
 	{
 	cs = JSON_value_start;
 	}
 
 // line 441 "ParserConfig.rl"
-            
+
 // line 439 "ParserConfig.java"
 	{
 	int _klen;
@@ -671,7 +671,7 @@ case 5:
             }
         }
 
-        
+
 // line 676 "ParserConfig.java"
 private static byte[] init__JSON_integer_actions_0()
 {
@@ -733,7 +733,7 @@ private static byte[] init__JSON_integer_index_offsets_0()
 private static final byte _JSON_integer_index_offsets[] = init__JSON_integer_index_offsets_0();
 
 
-private static byte[] init__JSON_integer_indicies_0()
+private static byte[] init__JSON_integer_indices_0()
 {
 	return new byte [] {
 	    0,    2,    3,    1,    2,    3,    1,    1,    4,    1,    3,    4,
@@ -741,7 +741,7 @@ private static byte[] init__JSON_integer_indicies_0()
 	};
 }
 
-private static final byte _JSON_integer_indicies[] = init__JSON_integer_indicies_0();
+private static final byte _JSON_integer_indices[] = init__JSON_integer_indices_0();
 
 
 private static byte[] init__JSON_integer_trans_targs_0()
@@ -787,7 +787,7 @@ static final int JSON_integer_en_main = 1;
         int parseIntegerInternal(int p, int pe) {
             int cs;
 
-            
+
 // line 792 "ParserConfig.java"
 	{
 	cs = JSON_integer_start;
@@ -795,7 +795,7 @@ static final int JSON_integer_en_main = 1;
 
 // line 480 "ParserConfig.rl"
             int memo = p;
-            
+
 // line 800 "ParserConfig.java"
 	{
 	int _klen;
@@ -866,7 +866,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_integer_indicies[_trans];
+	_trans = _JSON_integer_indices[_trans];
 	cs = _JSON_integer_trans_targs[_trans];
 
 	if ( _JSON_integer_trans_actions[_trans] != 0 ) {
@@ -922,7 +922,7 @@ case 5:
             return ConvertBytes.byteListToInum(runtime, num, 10, true);
         }
 
-        
+
 // line 927 "ParserConfig.java"
 private static byte[] init__JSON_float_actions_0()
 {
@@ -986,7 +986,7 @@ private static byte[] init__JSON_float_index_offsets_0()
 private static final byte _JSON_float_index_offsets[] = init__JSON_float_index_offsets_0();
 
 
-private static byte[] init__JSON_float_indicies_0()
+private static byte[] init__JSON_float_indices_0()
 {
 	return new byte [] {
 	    0,    2,    3,    1,    2,    3,    1,    4,    5,    5,    1,    6,
@@ -995,7 +995,7 @@ private static byte[] init__JSON_float_indicies_0()
 	};
 }
 
-private static final byte _JSON_float_indicies[] = init__JSON_float_indicies_0();
+private static final byte _JSON_float_indices[] = init__JSON_float_indices_0();
 
 
 private static byte[] init__JSON_float_trans_targs_0()
@@ -1043,7 +1043,7 @@ static final int JSON_float_en_main = 1;
         int parseFloatInternal(int p, int pe) {
             int cs;
 
-            
+
 // line 1048 "ParserConfig.java"
 	{
 	cs = JSON_float_start;
@@ -1051,7 +1051,7 @@ static final int JSON_float_en_main = 1;
 
 // line 533 "ParserConfig.rl"
             int memo = p;
-            
+
 // line 1056 "ParserConfig.java"
 	{
 	int _klen;
@@ -1122,7 +1122,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_float_indicies[_trans];
+	_trans = _JSON_float_indices[_trans];
 	cs = _JSON_float_trans_targs[_trans];
 
 	if ( _JSON_float_trans_actions[_trans] != 0 ) {
@@ -1168,7 +1168,7 @@ case 5:
             return p;
         }
 
-        
+
 // line 1173 "ParserConfig.java"
 private static byte[] init__JSON_string_actions_0()
 {
@@ -1232,7 +1232,7 @@ private static byte[] init__JSON_string_index_offsets_0()
 private static final byte _JSON_string_index_offsets[] = init__JSON_string_index_offsets_0();
 
 
-private static byte[] init__JSON_string_indicies_0()
+private static byte[] init__JSON_string_indices_0()
 {
 	return new byte [] {
 	    0,    1,    2,    3,    1,    0,    4,    1,    0,    5,    5,    5,
@@ -1241,7 +1241,7 @@ private static byte[] init__JSON_string_indicies_0()
 	};
 }
 
-private static final byte _JSON_string_indicies[] = init__JSON_string_indicies_0();
+private static final byte _JSON_string_indices[] = init__JSON_string_indices_0();
 
 
 private static byte[] init__JSON_string_trans_targs_0()
@@ -1278,7 +1278,7 @@ static final int JSON_string_en_main = 1;
             int cs;
             IRubyObject result = null;
 
-            
+
 // line 1283 "ParserConfig.java"
 	{
 	cs = JSON_string_start;
@@ -1286,7 +1286,7 @@ static final int JSON_string_en_main = 1;
 
 // line 581 "ParserConfig.rl"
             int memo = p;
-            
+
 // line 1291 "ParserConfig.java"
 	{
 	int _klen;
@@ -1357,7 +1357,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_string_indicies[_trans];
+	_trans = _JSON_string_indices[_trans];
 	cs = _JSON_string_trans_targs[_trans];
 
 	if ( _JSON_string_trans_actions[_trans] != 0 ) {
@@ -1429,7 +1429,7 @@ case 5:
             }
         }
 
-        
+
 // line 1434 "ParserConfig.java"
 private static byte[] init__JSON_array_actions_0()
 {
@@ -1549,7 +1549,7 @@ private static short[] init__JSON_array_index_offsets_0()
 private static final short _JSON_array_index_offsets[] = init__JSON_array_index_offsets_0();
 
 
-private static byte[] init__JSON_array_indicies_0()
+private static byte[] init__JSON_array_indices_0()
 {
 	return new byte [] {
 	    0,    1,    0,    0,    2,    2,    3,    2,    2,    2,    4,    2,
@@ -1565,7 +1565,7 @@ private static byte[] init__JSON_array_indicies_0()
 	};
 }
 
-private static final byte _JSON_array_indicies[] = init__JSON_array_indicies_0();
+private static final byte _JSON_array_indices[] = init__JSON_array_indices_0();
 
 
 private static byte[] init__JSON_array_trans_targs_0()
@@ -1610,14 +1610,14 @@ static final int JSON_array_en_main = 1;
 
             IRubyObject result = RubyArray.newArray(context.runtime);
 
-            
+
 // line 1615 "ParserConfig.java"
 	{
 	cs = JSON_array_start;
 	}
 
 // line 650 "ParserConfig.rl"
-            
+
 // line 1622 "ParserConfig.java"
 	{
 	int _klen;
@@ -1660,7 +1660,7 @@ case 1:
 				switch ( _JSON_array_cond_spaces[_JSON_array_cond_offsets[cs] + ((_mid - _keys)>>1)] ) {
 	case 0: {
 		_widec = 65536 + (data[p] - 0);
-		if ( 
+		if (
 // line 608 "ParserConfig.rl"
  config.allowTrailingComma  ) _widec += 65536;
 		break;
@@ -1720,7 +1720,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_array_indicies[_trans];
+	_trans = _JSON_array_indices[_trans];
 	cs = _JSON_array_trans_targs[_trans];
 
 	if ( _JSON_array_trans_actions[_trans] != 0 ) {
@@ -1779,7 +1779,7 @@ case 5:
             }
         }
 
-        
+
 // line 1784 "ParserConfig.java"
 private static byte[] init__JSON_object_actions_0()
 {
@@ -1906,7 +1906,7 @@ private static short[] init__JSON_object_index_offsets_0()
 private static final short _JSON_object_index_offsets[] = init__JSON_object_index_offsets_0();
 
 
-private static byte[] init__JSON_object_indicies_0()
+private static byte[] init__JSON_object_indices_0()
 {
 	return new byte [] {
 	    0,    1,    0,    0,    2,    3,    4,    0,    1,    5,    5,    6,
@@ -1923,7 +1923,7 @@ private static byte[] init__JSON_object_indicies_0()
 	};
 }
 
-private static final byte _JSON_object_indicies[] = init__JSON_object_indicies_0();
+private static final byte _JSON_object_indices[] = init__JSON_object_indices_0();
 
 
 private static byte[] init__JSON_object_trans_targs_0()
@@ -1973,14 +1973,14 @@ static final int JSON_object_en_main = 1;
             // allocator test at OptionsReader#getClass
             IRubyObject result = RubyHash.newHash(context.runtime);
 
-            
+
 // line 1978 "ParserConfig.java"
 	{
 	cs = JSON_object_start;
 	}
 
 // line 737 "ParserConfig.rl"
-            
+
 // line 1985 "ParserConfig.java"
 	{
 	int _klen;
@@ -2023,7 +2023,7 @@ case 1:
 				switch ( _JSON_object_cond_spaces[_JSON_object_cond_offsets[cs] + ((_mid - _keys)>>1)] ) {
 	case 0: {
 		_widec = 65536 + (data[p] - 0);
-		if ( 
+		if (
 // line 665 "ParserConfig.rl"
  config.allowTrailingComma  ) _widec += 65536;
 		break;
@@ -2083,7 +2083,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_object_indicies[_trans];
+	_trans = _JSON_object_indices[_trans];
 	cs = _JSON_object_trans_targs[_trans];
 
 	if ( _JSON_object_trans_actions[_trans] != 0 ) {
@@ -2174,7 +2174,7 @@ case 5:
             res.update(config.onLoad(context, result), p + 1);
         }
 
-        
+
 // line 2179 "ParserConfig.java"
 private static byte[] init__JSON_actions_0()
 {
@@ -2238,7 +2238,7 @@ private static byte[] init__JSON_index_offsets_0()
 private static final byte _JSON_index_offsets[] = init__JSON_index_offsets_0();
 
 
-private static byte[] init__JSON_indicies_0()
+private static byte[] init__JSON_indices_0()
 {
 	return new byte [] {
 	    0,    0,    2,    2,    3,    2,    2,    2,    2,    2,    2,    2,
@@ -2248,7 +2248,7 @@ private static byte[] init__JSON_indicies_0()
 	};
 }
 
-private static final byte _JSON_indicies[] = init__JSON_indicies_0();
+private static final byte _JSON_indices[] = init__JSON_indices_0();
 
 
 private static byte[] init__JSON_trans_targs_0()
@@ -2287,7 +2287,7 @@ static final int JSON_en_main = 1;
             IRubyObject result = null;
             ParserResult res = new ParserResult();
 
-            
+
 // line 2292 "ParserConfig.java"
 	{
 	cs = JSON_start;
@@ -2296,7 +2296,7 @@ static final int JSON_en_main = 1;
 // line 776 "ParserConfig.rl"
             p = byteList.begin();
             pe = p + byteList.length();
-            
+
 // line 2301 "ParserConfig.java"
 	{
 	int _klen;
@@ -2367,7 +2367,7 @@ case 1:
 	}
 	} while (false);
 
-	_trans = _JSON_indicies[_trans];
+	_trans = _JSON_indices[_trans];
 	cs = _JSON_trans_targs[_trans];
 
 	if ( _JSON_trans_actions[_trans] != 0 ) {
