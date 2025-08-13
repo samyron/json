@@ -44,7 +44,7 @@
 ### 2025-04-24 (2.11.1)
 
 * Add back `JSON.restore`, `JSON.unparse`, `JSON.fast_unparse` and `JSON.pretty_unparse`.
-  These were deprecated 16 years ago, but never emited warnings, only undocumented, so are
+  These were deprecated 16 years ago, but never emitted warnings, only undocumented, so are
   still used by a few gems.
 
 ### 2025-04-24 (2.11.0)
@@ -71,7 +71,7 @@
 ### 2025-03-12 (2.10.2)
 
 * Fix a potential crash in the C extension parser.
-* Raise a ParserError on all incomplete unicode escape sequence. This was the behavior until `2.10.0` unadvertently changed it.
+* Raise a ParserError on all incomplete unicode escape sequence. This was the behavior until `2.10.0` inadvertently changed it.
 * Ensure document snippets that are included in parser errors don't include truncated multibyte characters.
 * Ensure parser error snippets are valid UTF-8.
 * Fix `JSON::GeneratorError#detailed_message` on Ruby < 3.2
@@ -102,7 +102,7 @@
 
 ### 2024-11-14 (2.8.2)
 
-* `JSON.load_file` explictly read the file as UTF-8.
+* `JSON.load_file` explicitly read the file as UTF-8.
 
 ### 2024-11-06 (2.8.1)
 
@@ -110,7 +110,7 @@
 
 ### 2024-11-06 (2.8.0)
 
-* Emit a deprecation warning when `JSON.load` create custom types without the `create_additions` option being explictly enabled.
+* Emit a deprecation warning when `JSON.load` create custom types without the `create_additions` option being explicitly enabled.
   * Prefer to use `JSON.unsafe_load(string)` or `JSON.load(string, create_additions: true)`.
 * Emit a deprecation warning when serializing valid UTF-8 strings encoded in `ASCII_8BIT` aka `BINARY`.
 * Bump required Ruby version to 2.7.
@@ -118,7 +118,7 @@
   pre-existing support for comments, make it suitable to parse `jsonc` documents.
 * Many performance improvements to `JSON.parse` and `JSON.load`, up to `1.7x` faster on real world documents.
 * Some minor performance improvements to `JSON.dump` and `JSON.generate`.
-* `JSON.pretty_generate` no longer include newline inside empty object and arrays. 
+* `JSON.pretty_generate` no longer includes newlines inside empty object and arrays.
 
 ### 2024-11-04 (2.7.6)
 
@@ -135,13 +135,13 @@
 * Workaround a bug in 3.4.8 and older https://github.com/rubygems/rubygems/pull/6490.
   This bug would cause some gems with native extension to fail during compilation.
 * Workaround different versions of `json` and `json_pure` being loaded (not officially supported).
-* Make `json_pure` Ractor compatible. 
+* Make `json_pure` Ractor compatible.
 
 ### 2024-10-24 (2.7.3)
 
 * Numerous performance optimizations in `JSON.generate` and `JSON.dump` (up to 2 times faster).
-* Limit the size of ParserError exception messages, only include up to 32 bytes of the unparseable source.
-* Fix json-pure's `Object#to_json` to accept non state arguments 
+* Limit the size of ParserError exception messages, only include up to 32 bytes of the unparsable source.
+* Fix json-pure's `Object#to_json` to accept non-state arguments.
 * Fix multiline comment support in `json-pure`.
 * Fix `JSON.parse` to no longer mutate the argument encoding when passed an ASCII-8BIT string.
 * Fix `String#to_json` to raise on invalid encoding in `json-pure`.
