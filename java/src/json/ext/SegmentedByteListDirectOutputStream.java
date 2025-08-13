@@ -40,6 +40,9 @@ public class SegmentedByteListDirectOutputStream extends AbstractByteListDirectO
             }
             currentSegmentIndex++;
             int capacity = currentSegment.length * 2;
+            if (capacity < 0) {
+                    capacity = Integer.MAX_VALUE - totalLength;
+            }
             currentSegment = new byte[capacity];
             currentSegmentLength = 0;
             segments[currentSegmentIndex] = currentSegment;
@@ -59,6 +62,9 @@ public class SegmentedByteListDirectOutputStream extends AbstractByteListDirectO
                 }
                 currentSegmentIndex++;
                 int capacity = currentSegment.length * 2;
+                if (capacity < 0) {
+                    capacity = Integer.MAX_VALUE - totalLength;
+                }
                 currentSegment = new byte[capacity];
                 currentSegmentLength = 0;
                 segments[currentSegmentIndex] = currentSegment;

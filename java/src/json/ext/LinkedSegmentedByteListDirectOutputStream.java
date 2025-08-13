@@ -58,10 +58,12 @@ public class LinkedSegmentedByteListDirectOutputStream extends AbstractByteListD
             if (this.length + 1 < 0) {
                 throw new IOException("Total length exceeds maximum length of an array.");
             }
-            if (c.next == null) {
-                numSegments++;
-                c.next = new Segment(c.buffer.length * 2);
+            numSegments++;
+            int capacity = c.buffer.length * 2;
+            if (capacity < 0) {
+                capacity = Integer.MAX_VALUE - length;
             }
+            c.next = new Segment(capacity);
             c = c.next;
             current = c;
         }
@@ -81,10 +83,12 @@ public class LinkedSegmentedByteListDirectOutputStream extends AbstractByteListD
                 if (this.length + remaining < 0) {
                     throw new IOException("Total length exceeds maximum length of an array.");
                 }
-                if (c.next == null) {
-                    numSegments++;
-                    c.next = new Segment(c.buffer.length * 2);
+                numSegments++;
+                int capacity = c.buffer.length * 2;
+                if (capacity < 0) {
+                    capacity = Integer.MAX_VALUE - length;
                 }
+                c.next = new Segment(capacity);
                 c = c.next;
                 current = c;
             }
