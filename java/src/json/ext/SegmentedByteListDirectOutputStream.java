@@ -40,9 +40,7 @@ public class SegmentedByteListDirectOutputStream extends AbstractByteListDirectO
             }
             currentSegmentIndex++;
             int capacity = currentSegment.length * 2;
-            if (capacity < 0) {
-                    capacity = Integer.MAX_VALUE - totalLength;
-            }
+            capacity = (capacity < 0) ? DEFAULT_CAPACITY : capacity;
             currentSegment = new byte[capacity];
             currentSegmentLength = 0;
             segments[currentSegmentIndex] = currentSegment;
@@ -61,10 +59,9 @@ public class SegmentedByteListDirectOutputStream extends AbstractByteListDirectO
                     throw new IOException("Total length exceeds maximum length of an array.");
                 }
                 currentSegmentIndex++;
-                int capacity = currentSegment.length * 2;
-                if (capacity < 0) {
-                    capacity = Integer.MAX_VALUE - totalLength;
-                }
+                int capacity = currentSegment.length << 1;
+                capacity = (capacity < 0) ? DEFAULT_CAPACITY : capacity;
+                capacity = (capacity < remaining) ? remaining : capacity;
                 currentSegment = new byte[capacity];
                 currentSegmentLength = 0;
                 segments[currentSegmentIndex] = currentSegment;
