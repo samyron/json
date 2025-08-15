@@ -247,15 +247,16 @@ class StringEncoder extends ByteListTranscoder {
             pos += 8;
         }
 
-        // Handle remaining bytes one by one
-        while (pos < len) {
-            int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
-            int ch_len = ESCAPE_TABLE[ch];
-            if (ch_len > 0) {
-                beg = pos = flushPos(pos, beg, ptrBytes, ptr, 1);
-                escapeAscii(ch, scratch, hexdig);
-            } else {
-                pos++;
+        if (pos + 4 <= len) {
+            int x = bb.getInt(ptr + pos);
+            int is_ascii = 0x808080 & ~x;
+            int xor2 = x ^ 0x020202;
+            int lt32_or_eq34 = xor2 - 0x212121;
+            int sub92 = x ^ 0x5C5C5C;
+            int eq92 = (sub92 - 0x010101);
+            boolean skip_chunk = ((lt32_or_eq34 | eq92) & is_ascii) == 0;
+            if (skip_chunk) {
+                pos += 4;
             }
         }
 
