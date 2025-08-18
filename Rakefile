@@ -120,7 +120,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
         "json/ext/OptionsReader*.class",
         "json/ext/Generator*.class",
         "json/ext/RuntimeInfo*.class",
-        "json/ext/StringEncoder*.class",
+        "json/ext/*StringEncoder*.class",
         "json/ext/Utils*.class"
       ]
       sh 'jar', 'cf', File.basename(JRUBY_GENERATOR_JAR), *generator_classes
