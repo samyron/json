@@ -7,7 +7,6 @@ package json.ext;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 import org.jcodings.Encoding;
@@ -150,6 +149,14 @@ class StringEncoder extends ByteListTranscoder {
         this.escapeTable = escapeTable;
     }
 
+    static StringEncoder createBasicEncoder() {
+        if (USE_BASIC_SWAR_ENCODER) {
+            return new SWARBasicStringEncoder();
+        } else {
+            return new StringEncoder(false);
+        }
+    }
+
     // C: generate_json_string
     void generate(ThreadContext context, RubyString object, OutputStream buffer) throws IOException {
         object = ensureValidEncoding(context, object);
@@ -210,73 +217,7 @@ class StringEncoder extends ByteListTranscoder {
         return str;
     }
 
-    void encodeBasicSWAR(ByteList src) throws IOException {
-        byte[] hexdig = HEX;
-        byte[] scratch = aux;
-
-        byte[] ptrBytes = src.unsafeBytes();
-        int ptr = src.begin();
-        int len = src.realSize();
-
-        int beg = 0;
-        int pos = 0;
-
-        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
-        while (pos + 8 <= len) {
-            long x = bb.getLong(ptr + pos);
-            long is_ascii = 0x8080808080808080L & ~x;
-            long xor2 = x ^ 0x0202020202020202L;
-            long lt32_or_eq34 = xor2 - 0x2121212121212121L;
-            long sub92 = x ^ 0x5C5C5C5C5C5C5C5CL;
-            long eq92 = (sub92 - 0x0101010101010101L);
-            boolean needs_escape =  ((lt32_or_eq34 | eq92) & is_ascii) != 0;
-            if (needs_escape) {
-                // Find the exact byte that needs escaping
-                for (int i = 0; i < 8; i++) {
-                    int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos + i]);
-                    int ch_len = ESCAPE_TABLE[ch];
-                    if (ch_len > 0) {
-                        beg = pos = flushPos(pos + i, beg, ptrBytes, ptr, 1);
-                        escapeAscii(ch, scratch, hexdig);
-                        break;
-                    }
-                }
-                continue;
-            }
-
-            pos += 8;
-        }
-
-        if (pos + 4 <= len) {
-            int x = bb.getInt(ptr + pos);
-            int is_ascii = 0x80808080 & ~x;
-            int xor2 = x ^ 0x02020202;
-            int lt32_or_eq34 = xor2 - 0x21212121;
-            int sub92 = x ^ 0x5C5C5C5C;
-            int eq92 = (sub92 - 0x01010101);
-            boolean skip_chunk = ((lt32_or_eq34 | eq92) & is_ascii) == 0;
-            if (skip_chunk) {
-                pos += 4;
-            }
-        }
-
-        while (pos < len) {
-            int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
-            int ch_len = ESCAPE_TABLE[ch];
-            if (ch_len > 0) {
-                beg = pos = flushPos(pos, beg, ptrBytes, ptr, 1);
-                escapeAscii(ch, scratch, hexdig);
-            } else {
-                pos++;
-            }
-        }
-
-        if (beg < len) {
-            append(ptrBytes, ptr + beg, len - beg);
-        }
-    }
-
-    void encodeBasic(ByteList src) throws IOException{
+    void encodeBasic(ByteList src) throws IOException {
         byte[] hexdig = HEX;
         byte[] scratch = aux;
 
@@ -306,11 +247,7 @@ class StringEncoder extends ByteListTranscoder {
     // C: convert_UTF8_to_JSON
     void encode(ByteList src) throws IOException {
         if (escapeTable == ESCAPE_TABLE) {
-            if (USE_BASIC_SWAR_ENCODER) {
-                encodeBasicSWAR(src);
-            } else {
-                encodeBasic(src);
-            }
+            encodeBasic(src);
             return;
         }
 
