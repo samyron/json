@@ -9,6 +9,8 @@ public class SegmentedByteListDirectOutputStream extends AbstractByteListDirectO
     private static final int DEFAULT_CAPACITY = 1024;
 
     private int totalLength;
+    // Why 21? The minimum segment size is 1024 bytes. If we double the segment size each time 
+    // we need a new segment, we only need 21 segments to reach the maximum array size in Java.
     private byte[][] segments = new byte[21][];
     private int currentSegmentIndex;
     private int currentSegmentLength;

@@ -7,7 +7,7 @@ import org.jruby.util.ByteList;
 
 abstract class AbstractByteListDirectOutputStream extends OutputStream {
 
-    private static final String PROP_SEGMENTED_BUFFER = "json.useSegmentedOutputStream";
+    private static final String PROP_SEGMENTED_BUFFER = "jruby.json.useSegmentedOutputStream";
     private static final String PROP_SEGMENTED_BUFFER_DEFAULT = "true";
 
     private static final boolean USE_SEGMENTED_BUFFER;
