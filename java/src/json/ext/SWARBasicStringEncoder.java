@@ -30,13 +30,15 @@ public class SWARBasicStringEncoder extends StringEncoder {
                 pos += 8;
                 continue;
             }
-            for (int i = 0; i < 8; i++) {
-                int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos + i]);
+            int chunkEnd = pos + 8;
+            while (pos < chunkEnd) {
+                int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
                 int ch_len = ESCAPE_TABLE[ch];
                 if (ch_len > 0) {
-                    beg = pos = flushPos(pos + i, beg, ptrBytes, ptr, 1);
+                    beg = pos = flushPos(pos, beg, ptrBytes, ptr, 1);
                     escapeAscii(ch, scratch, hexdig);
-                    break;
+                } else {
+                    pos++;
                 }
             }
         }
