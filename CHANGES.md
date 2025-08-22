@@ -286,6 +286,7 @@
 ## 2015-09-11 (2.0.0)
   * Now complies to newest JSON RFC 7159.
   * Implements compatibility to ruby 2.4 integer unification.
+  * Removed support for `quirks_mode` option.
   * Drops support for old rubies whose life has ended, that is rubies < 2.0.
     Also see https://www.ruby-lang.org/en/news/2014/07/01/eol-for-1-8-7-and-1-9-2/
   * There were still some mentions of dual GPL licensing in the source, but JSON

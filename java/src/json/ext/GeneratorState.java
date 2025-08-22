@@ -83,12 +83,6 @@ public class GeneratorState extends RubyObject {
     private boolean asciiOnly = DEFAULT_ASCII_ONLY;
     static final boolean DEFAULT_ASCII_ONLY = false;
     /**
-     * If set to <code>true</code> all JSON values generated might not be
-     * RFC-conform JSON documents.
-     */
-    private boolean quirksMode = DEFAULT_QUIRKS_MODE;
-    static final boolean DEFAULT_QUIRKS_MODE = false;
-    /**
      * If set to <code>true</code> the forward slash will be escaped in
      * json output.
      */
@@ -218,7 +212,6 @@ public class GeneratorState extends RubyObject {
         this.maxNesting = orig.maxNesting;
         this.allowNaN = orig.allowNaN;
         this.asciiOnly = orig.asciiOnly;
-        this.quirksMode = orig.quirksMode;
         this.scriptSafe = orig.scriptSafe;
         this.strict = orig.strict;
         this.bufferInitialLength = orig.bufferInitialLength;
