@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+* Fix `JSON.generate` `strict: true` mode to also restrict hash keys.
+
 ### 2025-07-28 (2.13.2)
 
 * Improve duplicate key warning and errors to include the key name and point to the right caller.

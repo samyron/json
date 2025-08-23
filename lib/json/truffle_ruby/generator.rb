@@ -476,6 +476,10 @@ module JSON
               result << delim unless first
               result << state.indent * depth if indent
 
+              if state.strict? && !(Symbol === key || String === key)
+                raise GeneratorError.new("#{key.class} not allowed in JSON", value)
+              end
+
               key_str = key.to_s
               if key_str.is_a?(String)
                 key_json = key_str.to_json(state)
