@@ -3,6 +3,7 @@
 ### Unreleased
 
 * Fix `JSON.generate` `strict: true` mode to also restrict hash keys.
+* Fix `JSON::Coder` to also invoke block for hash keys that aren't strings nor symbols.
 
 ### 2025-07-28 (2.13.2)
 
