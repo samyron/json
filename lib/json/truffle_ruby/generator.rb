@@ -477,7 +477,13 @@ module JSON
               result << state.indent * depth if indent
 
               if state.strict? && !(Symbol === key || String === key)
-                raise GeneratorError.new("#{key.class} not allowed in JSON", value)
+                if state.as_json
+                  key = state.as_json.call(key)
+                end
+
+                unless Symbol === key || String === key
+                  raise GeneratorError.new("#{key.class} not allowed as object key in JSON", value)
+                end
               end
 
               key_str = key.to_s

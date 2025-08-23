@@ -520,6 +520,23 @@ public final class Generator {
         buffer.write('}');
     }
 
+    private static IRubyObject castKey(ThreadContext context, IRubyObject key) {
+        RubyClass keyClass = key.getType();
+        Ruby runtime = context.runtime;
+
+        if (key instanceof RubyString) {
+            if (keyClass == runtime.getString()) {
+                return key;
+            } else {
+                return key.callMethod(context, "to_s");
+            }
+        } else if (keyClass == runtime.getSymbol()) {
+            return ((RubySymbol) key).id2name(context);
+        } else {
+            return null;
+        }
+    }
+
     private static void processEntry(ThreadContext context, Session session, OutputStream buffer, RubyHash.RubyHashEntry entry, boolean firstPair, ByteList objectNl, byte[] indent, ByteList spaceBefore, ByteList space) {
         IRubyObject key = (IRubyObject) entry.getKey();
         IRubyObject value = (IRubyObject) entry.getValue();
@@ -533,21 +550,22 @@ public final class Generator {
 
             Ruby runtime = context.runtime;
 
-            IRubyObject keyStr;
-            RubyClass keyClass = key.getType();
-            if (key instanceof RubyString) {
-                if (keyClass == runtime.getString()) {
-                    keyStr = key;
-                } else {
-                    keyStr = key.callMethod(context, "to_s");
+            IRubyObject keyStr = castKey(context, key);
+            if (keyStr == null || !(keyStr instanceof RubyString)) {
+                GeneratorState state = session.getState(context);
+                if (state.strict()) {
+                    if (state.getAsJSON() != null) {
+                        key = state.getAsJSON().call(context, key);
+                        keyStr = castKey(context, key);
+                    }
+
+                    if (keyStr == null) {
+                        throw Utils.buildGeneratorError(context, key, key.getType().name(context) + " not allowed as object key in JSON").toThrowable();
+                    }
                 }
-            } else if (keyClass == runtime.getSymbol()) {
-                keyStr = ((RubySymbol) key).id2name(context);
-            } else {
-                if (session.getState(context).strict()) {
-                    throw Utils.buildGeneratorError(context, key, key + " not allowed in JSON").toThrowable();
+                else {
+                    keyStr = TypeConverter.convertToType(key, runtime.getString(), "to_s");
                 }
-                keyStr = TypeConverter.convertToType(key, runtime.getString(), "to_s");
             }
 
             if (keyStr.getMetaClass() == runtime.getString()) {
@@ -673,7 +691,7 @@ public final class Generator {
     static RubyString generateGenericNew(ThreadContext context, Session session, IRubyObject object) {
         GeneratorState state = session.getState(context);
         if (state.strict()) {
-            if (state.getAsJSON() != null ) {
+            if (state.getAsJSON() != null) {
                 IRubyObject value = state.getAsJSON().call(context, object);
                 Handler handler = getHandlerFor(context.runtime, value);
                 if (handler == GENERIC_HANDLER) {
