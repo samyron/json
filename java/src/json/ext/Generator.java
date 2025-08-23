@@ -544,6 +544,9 @@ public final class Generator {
             } else if (keyClass == runtime.getSymbol()) {
                 keyStr = ((RubySymbol) key).id2name(context);
             } else {
+                if (session.getState(context).strict()) {
+                    throw Utils.buildGeneratorError(context, key, key + " not allowed in JSON").toThrowable();
+                }
                 keyStr = TypeConverter.convertToType(key, runtime.getString(), "to_s");
             }
 
