@@ -114,7 +114,7 @@ class StringEncoder extends ByteListTranscoder {
 
     protected final byte[] escapeTable;
 
-    private static final String USE_SWAR_BASIC_ENCODER_PROP = "json.useSWARBasicEncoder";
+    private static final String USE_SWAR_BASIC_ENCODER_PROP = "jruby.json.useSWARBasicEncoder";
     private static final String USE_SWAR_BASIC_ENCODER_DEFAULT = "true";
     private static final boolean USE_BASIC_SWAR_ENCODER;
 
