@@ -271,6 +271,12 @@ module JSON
             false
           end
 
+          if opts.key?(:allow_duplicate_key)
+            @allow_duplicate_key = !!opts[:allow_duplicate_key]
+          else
+            @allow_duplicate_key = nil # nil is deprecation
+          end
+
           @strict                = !!opts[:strict] if opts.key?(:strict)
 
           if !opts.key?(:max_nesting) # defaults to 100
@@ -284,6 +290,10 @@ module JSON
         end
         alias merge configure
 
+        def allow_duplicate_key? # :nodoc:
+          @allow_duplicate_key
+        end
+
         # Returns the configuration instance variables as a hash, that can be
         # passed to the configure method.
         def to_h
@@ -292,6 +302,11 @@ module JSON
             iv = iv.to_s[1..-1]
             result[iv.to_sym] = self[iv]
           end
+
+          if result[:allow_duplicate_key].nil?
+            result.delete(:allow_duplicate_key)
+          end
+
           result
         end
 
@@ -330,8 +345,17 @@ module JSON
           when Hash
             buf << '{'
             first = true
+            key_type = nil
             obj.each_pair do |k,v|
-              buf << ',' unless first
+              if first
+                key_type = k.class
+              else
+                if key_type && !@allow_duplicate_key && key_type != k.class
+                  key_type = nil # stop checking
+                  JSON.send(:on_mixed_keys_hash, obj, !@allow_duplicate_key.nil?)
+                end
+                buf << ','
+              end
 
               key_str = k.to_s
               if key_str.class == String
@@ -471,9 +495,18 @@ module JSON
             delim = ",#{state.object_nl}"
             result = +"{#{state.object_nl}"
             first = true
+            key_type = nil
             indent = !state.object_nl.empty?
             each { |key, value|
-              result << delim unless first
+              if first
+                key_type = key.class
+              else
+                if key_type && !state.allow_duplicate_key? && key_type != key.class
+                  key_type = nil # stop checking
+                  JSON.send(:on_mixed_keys_hash, self, state.allow_duplicate_key? == false)
+                end
+                result << delim
+              end
               result << state.indent * depth if indent
 
               if state.strict? && !(Symbol === key || String === key)

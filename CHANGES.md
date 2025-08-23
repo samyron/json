@@ -2,6 +2,17 @@
 
 ### Unreleased
 
+* Add new `allow_duplicate_key` generator options. By default a warning is now emitted when a duplicated key is encountered.
+  In `json 3.0` an error will be raised.
+  ```ruby
+  >> Warning[:deprecated] = true
+  >> puts JSON.generate({ foo: 1, "foo" => 2 })
+  (irb):2: warning: detected duplicate key "foo" in {foo: 1, "foo" => 2}.
+  This will raise an error in json 3.0 unless enabled via `allow_duplicate_key: true`
+  {"foo":1,"foo":2}
+  >> JSON.generate({ foo: 1, "foo" => 2 }, allow_duplicate_key: false)
+  detected duplicate key "foo" in {foo: 1, "foo" => 2} (JSON::GeneratorError)
+  ```
 * Fix `JSON.generate` `strict: true` mode to also restrict hash keys.
 * Fix `JSON::Coder` to also invoke block for hash keys that aren't strings nor symbols.
 
