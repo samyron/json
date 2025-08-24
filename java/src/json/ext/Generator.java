@@ -488,6 +488,66 @@ public final class Generator {
         }
     }
 
+    private static class HashKeyTracker {
+        enum KeyType {
+            UNKNOWN,
+            STRING,
+            SYMBOL,
+        };
+
+        private KeyType keyType;
+        private boolean done;
+        private RubyHash hash;
+
+        private HashKeyTracker(RubyHash hash) {
+            this.hash = hash;
+            this.done = false;
+            this.keyType = KeyType.UNKNOWN;
+        }
+
+        public void trackFirst(ThreadContext context, Session session, IRubyObject key) {
+            if (key instanceof RubyString) {
+                this.keyType = KeyType.STRING;
+            } else if (key.getType() == context.runtime.getSymbol()) {
+                this.keyType = KeyType.SYMBOL;
+            } else {
+                this.done = true;
+                report(context, session);
+            }
+        }
+
+        public void track(ThreadContext context, Session session, IRubyObject key) {
+            if (!done) {
+                if (keyType == KeyType.STRING) {
+                    if (!(key instanceof RubyString)) {
+                        this.report(context, session);
+                    }
+                } else {
+                    if (!(key.getType() == context.runtime.getSymbol())) {
+                        this.report(context, session);
+                    }
+                }
+            }
+        }
+
+        private void report(ThreadContext context, Session session) {
+            this.done = true;
+
+            final RuntimeInfo info = session.getInfo(context);
+            final GeneratorState state = session.getState(context);
+
+            if (!state.getAllowDuplicateKey()) {
+                if (state.getDeprecateDuplicateKey()) {
+                    IRubyObject args[] = new IRubyObject[]{hash, context.getRuntime().getFalse()};
+                    info.jsonModule.get().callMethod(context, "on_mixed_keys_hash", args);
+                } else {
+                    IRubyObject args[] = new IRubyObject[]{hash, context.getRuntime().getTrue()};
+                    info.jsonModule.get().callMethod(context, "on_mixed_keys_hash", args);
+                }
+            }
+        }
+    }
+
     static void generateHash(ThreadContext context, Session session, RubyHash object, OutputStream buffer) throws IOException {
         final GeneratorState state = session.getState(context);
         final int depth = state.increaseDepth(context);
@@ -508,7 +568,13 @@ public final class Generator {
         buffer.write(objectNLBytes);
 
         boolean firstPair = true;
+        HashKeyTracker tracker = new HashKeyTracker(object);
         for (RubyHash.RubyHashEntry entry : (Set<RubyHash.RubyHashEntry>) object.directEntrySet()) {
+            if (firstPair) {
+                tracker.trackFirst(context, session, (IRubyObject)entry.getKey());
+            } else {
+                tracker.track(context, session, (IRubyObject)entry.getKey());
+            }
             processEntry(context, session, buffer, entry, firstPair, objectNl, indent, spaceBefore, space);
             firstPair = false;
         }
