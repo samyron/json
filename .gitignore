@@ -21,4 +21,4 @@ Gemfile.lock
 .byebug_history
 *.log
 /tmp
-
+/doc/
