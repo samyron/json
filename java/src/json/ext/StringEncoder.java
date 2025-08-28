@@ -5,6 +5,10 @@
  */
 package json.ext;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
 import org.jcodings.Encoding;
 import org.jcodings.specific.ASCIIEncoding;
 import org.jcodings.specific.USASCIIEncoding;
@@ -16,10 +20,6 @@ import org.jruby.exceptions.RaiseException;
 import org.jruby.runtime.ThreadContext;
 import org.jruby.util.ByteList;
 import org.jruby.util.StringSupport;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 
 /**
  * An encoder that reads from the given source and outputs its representation
@@ -114,6 +114,17 @@ class StringEncoder extends ByteListTranscoder {
 
     protected final byte[] escapeTable;
 
+    private static final String USE_SWAR_BASIC_ENCODER_PROP = "jruby.json.useSWARBasicEncoder";
+    private static final String USE_SWAR_BASIC_ENCODER_DEFAULT = "true";
+    private static final boolean USE_BASIC_SWAR_ENCODER;
+
+    static {
+        USE_BASIC_SWAR_ENCODER = Boolean.parseBoolean(
+            System.getProperty(USE_SWAR_BASIC_ENCODER_PROP, USE_SWAR_BASIC_ENCODER_DEFAULT));
+        // XXX Is there a logger we can use here?
+        // System.out.println("Using SWAR basic encoder: " + USE_BASIC_SWAR_ENCODER);
+    }
+
     OutputStream out;
 
     // Escaped characters will reuse this array, to avoid new allocations
@@ -136,6 +147,14 @@ class StringEncoder extends ByteListTranscoder {
 
     StringEncoder(byte[] escapeTable) {
         this.escapeTable = escapeTable;
+    }
+
+    static StringEncoder createBasicEncoder() {
+        if (USE_BASIC_SWAR_ENCODER) {
+            return new SWARBasicStringEncoder();
+        } else {
+            return new StringEncoder(false);
+        }
     }
 
     // C: generate_json_string
@@ -198,8 +217,40 @@ class StringEncoder extends ByteListTranscoder {
         return str;
     }
 
+    void encodeBasic(ByteList src) throws IOException {
+        byte[] hexdig = HEX;
+        byte[] scratch = aux;
+
+        byte[] ptrBytes = src.unsafeBytes();
+        int ptr = src.begin();
+        int len = src.realSize();
+
+        int beg = 0;
+        int pos = 0;
+
+        while (pos < len) {
+            int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
+            int ch_len = ESCAPE_TABLE[ch];
+            if (ch_len > 0) {
+                beg = pos = flushPos(pos, beg, ptrBytes, ptr, 1);
+                escapeAscii(ch, scratch, hexdig);
+            } else {
+                pos++;
+            }
+        }
+
+        if (beg < len) {
+            append(ptrBytes, ptr + beg, len - beg);
+        }
+    }
+
     // C: convert_UTF8_to_JSON
     void encode(ByteList src) throws IOException {
+        if (escapeTable == ESCAPE_TABLE) {
+            encodeBasic(src);
+            return;
+        }
+
         byte[] hexdig = HEX;
         byte[] scratch = aux;
         byte[] escapeTable = this.escapeTable;
