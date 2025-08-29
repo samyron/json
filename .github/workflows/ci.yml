@@ -16,6 +16,8 @@ jobs:
     needs: ruby-versions
     name: ${{ matrix.os }} ${{ matrix.ruby }} ${{ matrix.env }}
     runs-on: ${{ matrix.os }}
+    env:
+      BUNDLE_WITHOUT: release
     strategy:
       fail-fast: false
       matrix:
