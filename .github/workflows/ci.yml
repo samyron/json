@@ -39,9 +39,6 @@ jobs:
           - { os: windows-latest, ruby: jruby }
           - { os: windows-latest, ruby: jruby-head }
 
-    env:
-      BUNDLE_WITHOUT: benchmark
-
     steps:
       - uses: actions/checkout@v5
 
@@ -74,13 +71,10 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby-pkgs@v1
         with:
+          bundler-cache: true
           ruby-version: "3.3"
           apt-get: valgrind
 
-      - run: |
-          bundle config --without benchmark
-          bundle install
+      - run: bundle exec rake compile
 
-      - run: rake compile
-
-      - run: rake valgrind JSON_COMPACT=1
+      - run: bundle exec rake valgrind JSON_COMPACT=1
