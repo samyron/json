@@ -271,6 +271,12 @@ module JSON
             false
           end
 
+          if opts.key?(:allow_duplicate_key)
+            @allow_duplicate_key = !!opts[:allow_duplicate_key]
+          else
+            @allow_duplicate_key = nil # nil is deprecation
+          end
+
           @strict                = !!opts[:strict] if opts.key?(:strict)
 
           if !opts.key?(:max_nesting) # defaults to 100
@@ -284,6 +290,10 @@ module JSON
         end
         alias merge configure
 
+        def allow_duplicate_key? # :nodoc:
+          @allow_duplicate_key
+        end
+
         # Returns the configuration instance variables as a hash, that can be
         # passed to the configure method.
         def to_h
@@ -292,6 +302,11 @@ module JSON
             iv = iv.to_s[1..-1]
             result[iv.to_sym] = self[iv]
           end
+
+          if result[:allow_duplicate_key].nil?
+            result.delete(:allow_duplicate_key)
+          end
+
           result
         end
 
@@ -330,8 +345,17 @@ module JSON
           when Hash
             buf << '{'
             first = true
+            key_type = nil
             obj.each_pair do |k,v|
-              buf << ',' unless first
+              if first
+                key_type = k.class
+              else
+                if key_type && !@allow_duplicate_key && key_type != k.class
+                  key_type = nil # stop checking
+                  JSON.send(:on_mixed_keys_hash, obj, !@allow_duplicate_key.nil?)
+                end
+                buf << ','
+              end
 
               key_str = k.to_s
               if key_str.class == String
@@ -471,10 +495,29 @@ module JSON
             delim = ",#{state.object_nl}"
             result = +"{#{state.object_nl}"
             first = true
+            key_type = nil
             indent = !state.object_nl.empty?
             each { |key, value|
-              result << delim unless first
+              if first
+                key_type = key.class
+              else
+                if key_type && !state.allow_duplicate_key? && key_type != key.class
+                  key_type = nil # stop checking
+                  JSON.send(:on_mixed_keys_hash, self, state.allow_duplicate_key? == false)
+                end
+                result << delim
+              end
               result << state.indent * depth if indent
+
+              if state.strict? && !(Symbol === key || String === key)
+                if state.as_json
+                  key = state.as_json.call(key)
+                end
+
+                unless Symbol === key || String === key
+                  raise GeneratorError.new("#{key.class} not allowed as object key in JSON", value)
+                end
+              end
 
               key_str = key.to_s
               if key_str.is_a?(String)
@@ -634,39 +677,6 @@ module JSON
             end
           rescue Encoding::UndefinedConversionError => error
             raise ::JSON::GeneratorError.new(error.message, self)
-          end
-
-          # Module that holds the extending methods if, the String module is
-          # included.
-          module Extend
-            # Raw Strings are JSON Objects (the raw bytes are stored in an
-            # array for the key "raw"). The Ruby String can be created by this
-            # module method.
-            def json_create(o)
-              o['raw'].pack('C*')
-            end
-          end
-
-          # Extends _modul_ with the String::Extend module.
-          def self.included(modul)
-            modul.extend Extend
-          end
-
-          # This method creates a raw object hash, that can be nested into
-          # other data structures and will be unparsed as a raw string. This
-          # method should be used, if you want to convert raw strings to JSON
-          # instead of UTF-8 strings, e. g. binary data.
-          def to_json_raw_object
-            {
-              JSON.create_id  => self.class.name,
-              'raw'           => self.unpack('C*'),
-            }
-          end
-
-          # This method creates a JSON text from the result of
-          # a call to to_json_raw_object of this String.
-          def to_json_raw(*args)
-            to_json_raw_object.to_json(*args)
           end
         end
 

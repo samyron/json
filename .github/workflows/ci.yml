@@ -16,6 +16,8 @@ jobs:
     needs: ruby-versions
     name: ${{ matrix.os }} ${{ matrix.ruby }} ${{ matrix.env }}
     runs-on: ${{ matrix.os }}
+    env:
+      BUNDLE_WITHOUT: release
     strategy:
       fail-fast: false
       matrix:
@@ -40,24 +42,21 @@ jobs:
           - { os: windows-latest, ruby: jruby-head }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby-pkgs@v1
         with:
+          bundler-cache: true
           ruby-version: ${{ matrix.ruby }}
           apt-get: "${{ startsWith(matrix.ruby, 'jruby') && 'ragel' || '' }}"
           brew: "${{ startsWith(matrix.ruby, 'jruby') && 'ragel' || '' }}"
 
-      - run: |
-          bundle config --without benchmark
-          bundle install
+      - run: bundle exec rake compile ${{ matrix.env }}
 
-      - run: rake compile ${{ matrix.env }}
+      - run: bundle exec rake test JSON_COMPACT=1 ${{ matrix.env }}
 
-      - run: rake test JSON_COMPACT=1 ${{ matrix.env }}
-
-      - run: rake build
+      - run: bundle exec rake build
 
       - run: gem install pkg/*.gem
         if: ${{ matrix.ruby != '3.2' }}
@@ -69,18 +68,15 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Ruby
         uses: ruby/setup-ruby-pkgs@v1
         with:
+          bundler-cache: true
           ruby-version: "3.3"
           apt-get: valgrind
 
-      - run: |
-          bundle config --without benchmark
-          bundle install
+      - run: bundle exec rake compile
 
-      - run: rake compile
-
-      - run: rake valgrind JSON_COMPACT=1
+      - run: bundle exec rake valgrind JSON_COMPACT=1

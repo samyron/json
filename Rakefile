@@ -12,6 +12,69 @@ PKG_VERSION       = File.foreach(File.join(__dir__, "lib/json/version.rb")) do |
   /^\s*VERSION\s*=\s*'(.*)'/ =~ line and break $1
 end rescue nil
 
+module CI
+  extend self
+
+  def gem_published?(name, version)
+    require 'net/https'
+    require 'uri'
+    uri = URI.parse("https://rubygems.org/api/v2/rubygems/#{name}/versions/#{version}.json")
+    Net::HTTP.get_response(uri).is_a?(Net::HTTPSuccess)
+  end
+
+  def changelog(version)
+    changelog_lines = File.readlines(File.expand_path("CHANGES.md", __dir__))
+    changelog_lines = changelog_lines.drop_while { |line| !(line.start_with?("### ") && line.include?("(#{version})")) }
+    if changelog_lines.empty?
+      return false
+    end
+    changelog_lines.shift
+    changelog_lines = changelog_lines.take_while { |line| !(line.start_with?("### ") ) }
+    changelog_lines.join
+  end
+
+  def prerelease?(version)
+    !version.match?(/\A[\d.]+\z/)
+  end
+end
+
+namespace :ci do
+  task :check_release do
+    unless PKG_VERSION
+      abort("Gem version couldn't be read")
+    end
+
+    if CI.gem_published?("json", PKG_VERSION)
+      $stderr.puts "Version #{PKG_VERSION} was already released. Nothing to do."
+      exit 0
+    end
+
+    if changelog = CI.changelog(PKG_VERSION)
+      puts "Changelog:"
+      puts changelog
+    else
+      abort("Could not find version #{PKG_VERSION} in CHANGES.md")
+    end
+
+    if ENV["GITHUB_OUTPUT"]
+      $stderr.puts "Triggering release"
+      File.open(ENV["GITHUB_OUTPUT"], "a+") do |f|
+        f.puts "run_publish=true"
+      end
+    end
+  end
+
+  task :create_release do
+    tag = "v#{PKG_VERSION}"
+    args = [
+      "--title", tag,
+      "--notes", changelog,
+    ]
+    args << "--prerelease" << "--latest=false" if CI.prerelease?(PKG_VERSION)
+    system("gh", "release", "create", tag, "--draft", *args)
+  end
+end
+
 JAVA_DIR            = "java/src/json/ext"
 JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
 JAVA_PARSER_SRC     = "#{JAVA_DIR}/ParserConfig.java"
@@ -132,15 +195,13 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   file JRUBY_GENERATOR_JAR => :compile do
     cd 'java/src' do
       generator_classes = FileList[
-        "json/ext/ByteList*.class",
+        "json/ext/*ByteList*.class",
         "json/ext/OptionsReader*.class",
         "json/ext/EscapeScanner*.class",
         "json/ext/Generator*.class",
         "json/ext/RuntimeInfo*.class",
-        "json/ext/StringEncoder*.class",
-        "json/ext/Utils*.class",
-        "json/ext/VectorizedEscapeScanner*.class",
-        "json/ext/VectorizedStringEncoder*.class"
+        "json/ext/*StringEncoder*.class",
+        "json/ext/Utils*.class"
       ]
       puts "Creating generator jar with classes: #{generator_classes.join(', ')}"
       sh 'jar', 'cf', File.basename(JRUBY_GENERATOR_JAR), *generator_classes

@@ -66,7 +66,7 @@ end
 
 # NB: Notes are based on ruby 3.3.4 (2024-07-09 revision be1089c8ec) +YJIT [arm64-darwin23]
 
-# On the first two micro benchmarks, the limitting factor is the fixed cost of initializing the
+# On the first two micro benchmarks, the limiting factor is the fixed cost of initializing the
 # generator state. Since `JSON.generate` now lazily allocate the `State` object we're now ~10-20% faster
 # than `Oj.dump`.
 benchmark_encoding "small mixed", [1, "string", { a: 1, b: 2 }, [3, 4, 5]]
@@ -87,7 +87,7 @@ benchmark_encoding "twitter.json", JSON.load_file("#{__dir__}/data/twitter.json"
 # This benchmark spent the overwhelming majority of its time in `ruby_dtoa`. We rely on Ruby's implementation
 # which uses a relatively old version of dtoa.c from David M. Gay.
 # Oj in `compat` mode is ~10% slower than `json`, but in its default mode is noticeably faster here because
-# it limits the precision of floats, breaking roundtriping.  That's not something we should emulate.
+# it limits the precision of floats, breaking roundtripping. That's not something we should emulate.
 #
 # Since a few years there are now much faster float to string implementations such as Ryu, Dragonbox, etc,
 # but all these are implemented in C++11 or newer, making it hard if not impossible to include them.
