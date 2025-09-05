@@ -13,17 +13,16 @@ public class SWARBasicStringEncoder extends StringEncoder {
 
     @Override
     void encode(ByteList src) throws IOException {
-        byte[] hexdig = HEX;
-        byte[] scratch = aux;
-
         byte[] ptrBytes = src.unsafeBytes();
         int ptr = src.begin();
         int len = src.realSize();
+        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
+        // encodeFrom(ptrBytes, bb, ptr, 0, 0, len);
 
         int beg = 0;
-        int pos = 0;
+        byte[] hexdig = HEX;
+        byte[] scratch = aux;
 
-        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
         while (pos + 8 <= len) {
             long x = bb.getLong(ptr + pos);
             if (skipChunk(x)) {
@@ -66,7 +65,7 @@ public class SWARBasicStringEncoder extends StringEncoder {
         }
     }
 
-    private boolean skipChunk(long x) {
+    boolean skipChunk(long x) {
         long is_ascii = 0x8080808080808080L & ~x;
         long xor2 = x ^ 0x0202020202020202L;
         long lt32_or_eq34 = xor2 - 0x2121212121212121L;
@@ -75,7 +74,7 @@ public class SWARBasicStringEncoder extends StringEncoder {
         return ((lt32_or_eq34 | eq92) & is_ascii) == 0;
     }
 
-    private boolean skipChunk(int x) {
+    boolean skipChunk(int x) {
         int is_ascii = 0x80808080 & ~x;
         int xor2 = x ^ 0x02020202;
         int lt32_or_eq34 = xor2 - 0x21212121;
