@@ -116,7 +116,7 @@ class StringEncoder extends ByteListTranscoder {
 
     protected final byte[] escapeTable;
 
-    private static final String VECTORIZED_ESCAPE_SCANNER_CLASS = "json.ext.VectorizedStringEncoder";
+    private static final String VECTORIZED_STRING_ENCODER_CLASS = "json.ext.VectorizedStringEncoder";
     private static final String USE_VECTORIZED_BASIC_ENCODER_PROP = "jruby.json.useVectorizedBasicEncoder";
     private static final String USE_VECTORIZED_BASIC_ENCODER_DEFAULT = "false";
     private static final boolean USE_VECTORIZED_BASIC_ENCODER;
@@ -131,9 +131,9 @@ class StringEncoder extends ByteListTranscoder {
         if ("true".equalsIgnoreCase(enableVectorizedScanner) || "1".equalsIgnoreCase(enableVectorizedScanner)) {
             StringEncoder scanner;
             try {
-                Class<?> vectorEscapeScannerClass = StringEncoder.class.getClassLoader().loadClass(VECTORIZED_ESCAPE_SCANNER_CLASS);
-                Constructor<?> vectorizedEscapeScannerConstructor = vectorEscapeScannerClass.getDeclaredConstructor();
-                scanner = (StringEncoder) vectorizedEscapeScannerConstructor.newInstance();
+                Class<?> vectorizedStringEncoderClass = StringEncoder.class.getClassLoader().loadClass(VECTORIZED_STRING_ENCODER_CLASS);
+                Constructor<?> vectorizedStringEncoderConstructor = vectorizedStringEncoderClass.getDeclaredConstructor();
+                scanner = (StringEncoder) vectorizedStringEncoderConstructor.newInstance();
                 System.out.println(scanner.getClass().getName() + " loaded successfully.");
             } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
                 // Fallback to the StringEncoder if we cannot load the VectorizedStringEncoder.
