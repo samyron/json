@@ -13,16 +13,17 @@ public class SWARBasicStringEncoder extends StringEncoder {
 
     @Override
     void encode(ByteList src) throws IOException {
-        byte[] ptrBytes = src.unsafeBytes();
-        int ptr = src.begin();
-        int len = src.realSize();
-        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
-        // encodeFrom(ptrBytes, bb, ptr, 0, 0, len);
-
-        int beg = 0;
         byte[] hexdig = HEX;
         byte[] scratch = aux;
 
+        byte[] ptrBytes = src.unsafeBytes();
+        int ptr = src.begin();
+        int len = src.realSize();
+
+        int beg = 0;
+        int pos = 0;
+
+        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
         while (pos + 8 <= len) {
             long x = bb.getLong(ptr + pos);
             if (skipChunk(x)) {
