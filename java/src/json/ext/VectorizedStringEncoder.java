@@ -59,7 +59,6 @@ class VectorizedStringEncoder extends SWARBasicStringEncoder {
             pos += SP.length();
         }
 
-        // encodeFrom(ptrBytes, ptr, beg, pos, len);
         ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
         if (pos + 8 <= len) {
             long x = bb.getLong(ptr + pos);
