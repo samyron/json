@@ -16,6 +16,7 @@
 * Fix `JSON.generate` `strict: true` mode to also restrict hash keys.
 * Fix `JSON::Coder` to also invoke block for hash keys that aren't strings nor symbols.
 * Fix `JSON.unsafe_load` usage with proc
+* Fix the parser to more consistently reject invalid UTF-16 surogate pairs. 
 
 ### 2025-07-28 (2.13.2)
 
