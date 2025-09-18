@@ -26,6 +26,7 @@
 * Fix `JSON::Coder` to also invoke block for hash keys that aren't strings nor symbols.
 * Fix `JSON.unsafe_load` usage with proc
 * Fix the parser to more consistently reject invalid UTF-16 surogate pairs. 
+* Stop defining `String.json_create`, `String#to_json_raw`, `String#to_json_raw_object` when `json/add` isn't loaded.
 
 ### 2025-07-28 (2.13.2)
 
