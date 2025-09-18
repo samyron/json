@@ -47,6 +47,14 @@ module JSON
 
       SCRIPT_SAFE_ESCAPE_PATTERN = /[\/"\\\x0-\x1f\u2028-\u2029]/
 
+      def self.native_type?(value) # :nodoc:
+        (false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+      end
+
+      def self.native_key?(key) # :nodoc:
+        (Symbol === key || String === key)
+      end
+
       # Convert a UTF8 encoded Ruby string _string_ to a JSON string, encoded with
       # UTF16 big endian characters as \u????, and return it.
       def self.utf8_to_json(string, script_safe = false) # :nodoc:
@@ -448,10 +456,10 @@ module JSON
             state = State.from_state(state) if state
             if state&.strict?
               value = self
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+              if state.strict? && !Generator.native_type?(value)
                 if state.as_json
                   value = state.as_json.call(value, false)
-                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                  unless Generator.native_type?(value)
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
                   value.to_json(state)
@@ -509,12 +517,12 @@ module JSON
               end
               result << state.indent * depth if indent
 
-              if state.strict? && !(Symbol === key || String === key)
+              if state.strict? && !Generator.native_key?(key)
                 if state.as_json
                   key = state.as_json.call(key, true)
                 end
 
-                unless Symbol === key || String === key
+                unless Generator.native_key?(key)
                   raise GeneratorError.new("#{key.class} not allowed as object key in JSON", value)
                 end
               end
@@ -527,10 +535,10 @@ module JSON
               end
 
               result = +"#{result}#{key_json}#{state.space_before}:#{state.space}"
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
+              if state.strict? && !Generator.native_type?(value)
                 if state.as_json
                   value = state.as_json.call(value, false)
-                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
+                  unless Generator.native_type?(value)
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
                   result << value.to_json(state)
@@ -588,10 +596,10 @@ module JSON
             each { |value|
               result << delim unless first
               result << state.indent * depth if indent
-              if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol == value)
+              if state.strict? && !Generator.native_type?(value)
                 if state.as_json
                   value = state.as_json.call(value, false)
-                  unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol === value
+                  unless Generator.native_type?(value)
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
                   result << value.to_json(state)
