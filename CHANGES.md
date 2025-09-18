@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-09-18 (2.14.1)
+
 * Fix `IndexOutOfBoundsException` in the JRuby extension when encoding shared strings.
 
 ### 2025-09-18 (2.14.0)
