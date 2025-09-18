@@ -6,6 +6,14 @@ include RbConfig
 require 'rake/testtask'
 class UndocumentedTestTask < Rake::TestTask
   def desc(*) end
+
+  def ruby(...)
+    env_was = ENV["JSON_COVERAGE"]
+    ENV["JSON_COVERAGE"] = "1"
+    ret = super
+    ENV["JSON_COVERAGE"] = env_was
+    ret
+  end
 end
 
 PKG_VERSION       = File.foreach(File.join(__dir__, "lib/json/version.rb")) do |line|
