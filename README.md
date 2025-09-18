@@ -97,7 +97,7 @@ Instead it is recommended to use the newer `JSON::Coder` API:
 
 ```ruby
 module MyApp
-  API_JSON_CODER = JSON::Coder.new do |object|
+  API_JSON_CODER = JSON::Coder.new do |object, is_object_key|
     case object
     when Time
       object.iso8601(3)
@@ -112,6 +112,8 @@ puts MyApp::API_JSON_CODER.dump(Time.now.utc) # => "2025-01-21T08:41:44.286Z"
 
 The provided block is called for all objects that don't have a native JSON equivalent, and
 must return a Ruby object that has a native JSON equivalent.
+
+It is also called for objects that do have a JSON equivalent, but are used as Hash keys, for instance `{ 1 => 2}`.
 
 ## Combining JSON fragments
 

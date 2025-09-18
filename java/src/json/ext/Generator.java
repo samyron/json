@@ -396,7 +396,7 @@ public final class Generator {
 
             if (!state.allowNaN()) {
                 if (state.strict() && state.getAsJSON() != null) {
-                    IRubyObject castedValue = state.getAsJSON().call(context, object);
+                    IRubyObject castedValue = state.getAsJSON().call(context, object, context.getRuntime().getFalse());
                     if (castedValue != object) {
                         getHandlerFor(context.runtime, castedValue).generate(context, session, castedValue, buffer);
                         return;
@@ -623,7 +623,7 @@ public final class Generator {
                 GeneratorState state = session.getState(context);
                 if (state.strict()) {
                     if (state.getAsJSON() != null) {
-                        key = state.getAsJSON().call(context, key);
+                        key = state.getAsJSON().call(context, key, context.getRuntime().getTrue());
                         keyStr = castKey(context, key);
                     }
 
@@ -760,7 +760,7 @@ public final class Generator {
         GeneratorState state = session.getState(context);
         if (state.strict()) {
             if (state.getAsJSON() != null) {
-                IRubyObject value = state.getAsJSON().call(context, object);
+                IRubyObject value = state.getAsJSON().call(context, object, context.getRuntime().getFalse());
                 Handler handler = getHandlerFor(context.runtime, value);
                 if (handler == GENERIC_HANDLER) {
                     throw Utils.buildGeneratorError(context, object, value + " returned by as_json not allowed in JSON").toThrowable();
