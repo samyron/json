@@ -450,7 +450,7 @@ module JSON
               value = self
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
                 if state.as_json
-                  value = state.as_json.call(value)
+                  value = state.as_json.call(value, false)
                   unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
@@ -511,7 +511,7 @@ module JSON
 
               if state.strict? && !(Symbol === key || String === key)
                 if state.as_json
-                  key = state.as_json.call(key)
+                  key = state.as_json.call(key, true)
                 end
 
                 unless Symbol === key || String === key
@@ -529,7 +529,7 @@ module JSON
               result = +"#{result}#{key_json}#{state.space_before}:#{state.space}"
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value)
                 if state.as_json
-                  value = state.as_json.call(value)
+                  value = state.as_json.call(value, false)
                   unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
@@ -590,7 +590,7 @@ module JSON
               result << state.indent * depth if indent
               if state.strict? && !(false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol == value)
                 if state.as_json
-                  value = state.as_json.call(value)
+                  value = state.as_json.call(value, false)
                   unless false == value || true == value || nil == value || String === value || Array === value || Hash === value || Integer === value || Float === value || Fragment === value || Symbol === value
                     raise GeneratorError.new("#{value.class} returned by #{state.as_json} not allowed in JSON", value)
                   end
@@ -625,7 +625,7 @@ module JSON
               if state.allow_nan?
                 to_s
               elsif state.strict? && state.as_json
-                casted_value = state.as_json.call(self)
+                casted_value = state.as_json.call(self, false)
 
                 if casted_value.equal?(self)
                   raise GeneratorError.new("#{self} not allowed in JSON", self)
