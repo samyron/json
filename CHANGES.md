@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+* Tuned the floating point number generator to not use scientific notation as agressively.
+
 ### 2025-09-18 (2.14.1)
 
 * Fix `IndexOutOfBoundsException` in the JRuby extension when encoding shared strings.
