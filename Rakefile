@@ -146,7 +146,11 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
       classpath = (Dir['java/lib/*.jar'] << 'java/src' << JRUBY_JAR) * path_separator
       obj = src.sub(/\.java\Z/, '.class')
       file obj => src do
-        sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src
+        if File.exist?(File.join(ENV['JAVA_HOME'], "lib", "modules"))
+          sh 'javac', '-classpath', classpath, '--release', '8', src
+        else
+          sh 'javac', '-classpath', classpath, '-source', '1.8', '-target', '1.8', src
+        end
       end
       JAVA_CLASSES << obj
     end
