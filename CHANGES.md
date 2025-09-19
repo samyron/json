@@ -2,6 +2,15 @@
 
 ### Unreleased
 
+* `JSON::Coder` callback now receive a second argument to convey whether the object is a hash key.
+* Tuned the floating point number generator to not use scientific notation as agressively.
+
+### 2025-09-18 (2.14.1)
+
+* Fix `IndexOutOfBoundsException` in the JRuby extension when encoding shared strings.
+
+### 2025-09-18 (2.14.0)
+
 * Add new `allow_duplicate_key` generator options. By default a warning is now emitted when a duplicated key is encountered.
   In `json 3.0` an error will be raised.
   ```ruby
@@ -15,6 +24,9 @@
   ```
 * Fix `JSON.generate` `strict: true` mode to also restrict hash keys.
 * Fix `JSON::Coder` to also invoke block for hash keys that aren't strings nor symbols.
+* Fix `JSON.unsafe_load` usage with proc
+* Fix the parser to more consistently reject invalid UTF-16 surogate pairs. 
+* Stop defining `String.json_create`, `String#to_json_raw`, `String#to_json_raw_object` when `json/add` isn't loaded.
 
 ### 2025-07-28 (2.13.2)
 

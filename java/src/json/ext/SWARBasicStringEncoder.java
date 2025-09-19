@@ -24,14 +24,14 @@ public class SWARBasicStringEncoder extends StringEncoder {
         int pos = 0;
 
         ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
-        while (pos + 8 <= len) {
+        while (ptr + pos + 8 <= len) {
             long x = bb.getLong(ptr + pos);
             if (skipChunk(x)) {
                 pos += 8;
                 continue;
             }
-            int chunkEnd = pos + 8;
-            while (pos < chunkEnd) {
+            int chunkEnd = ptr + pos + 8;
+            while (ptr + pos < chunkEnd) {
                 int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
                 int ch_len = ESCAPE_TABLE[ch];
                 if (ch_len > 0) {
@@ -43,7 +43,7 @@ public class SWARBasicStringEncoder extends StringEncoder {
             }
         }
 
-        if (pos + 4 <= len) {
+        if (ptr + pos + 4 <= len) {
             int x = bb.getInt(ptr + pos);
             if (skipChunk(x)) {
                 pos += 4;
