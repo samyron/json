@@ -91,6 +91,12 @@ JAVA_CLASSES        = []
 JRUBY_PARSER_JAR    = File.expand_path("lib/json/ext/parser.jar")
 JRUBY_GENERATOR_JAR = File.expand_path("lib/json/ext/generator.jar")
 
+CLEAN.concat FileList["java/src/**/*.class"]
+CLEAN << JRUBY_PARSER_JAR
+CLEAN << JRUBY_GENERATOR_JAR
+
+CLOBBER << JAVA_PARSER_SRC
+
 which = lambda { |c|
   w = `which #{c}`
   break w.chomp unless w.empty?
