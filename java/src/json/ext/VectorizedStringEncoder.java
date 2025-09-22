@@ -31,7 +31,7 @@ class VectorizedStringEncoder extends SWARBasicStringEncoder {
         int pos = ptr;
 
         while ((pos + SP.length() <= len)) {
-            ByteVector chunk = ByteVector.fromArray(SP, ptrBytes, pos);
+            ByteVector chunk = ByteVector.fromArray(SP, ptrBytes, ptr + pos);
             // bytes are signed in java, so we need to remove negative values
             VectorMask<Byte> negative = chunk.lt(ZERO);
             VectorMask<Byte> tooLowOrDblQuote = chunk.lanewise(VectorOperators.XOR, TWO).lt(THIRTY_THREE).andNot(negative);
@@ -45,7 +45,7 @@ class VectorizedStringEncoder extends SWARBasicStringEncoder {
                     int index = Long.numberOfTrailingZeros(mask);
                     mask &= (mask - 1);
                     pos = chunkStart + index;
-                    int ch = Byte.toUnsignedInt(ptrBytes[pos]);
+                    int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
                     
                     beg = pos = flushPos(pos, beg, ptrBytes, ptr, 1);
                     escapeAscii(ch, aux, HEX);
