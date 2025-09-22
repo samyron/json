@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-09-22 (2.15.0)
+
 * `JSON::Coder` callback now receive a second argument to convey whether the object is a hash key.
 * Tuned the floating point number generator to not use scientific notation as agressively.
 
