@@ -59,13 +59,13 @@ class VectorizedStringEncoder extends SWARBasicStringEncoder {
             pos += SP.length();
         }
 
-        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, 0, len);
+        ByteBuffer bb = ByteBuffer.wrap(ptrBytes, ptr, len);
         if (pos + 8 <= len) {
             long x = bb.getLong(ptr + pos);
             if (skipChunk(x)) {
                 pos += 8;
             } else {
-                int chunkEnd = pos + 8;
+                int chunkEnd = ptr + pos + 8;
                 while (pos < chunkEnd) {
                     int ch = Byte.toUnsignedInt(ptrBytes[ptr + pos]);
                     int ch_len = ESCAPE_TABLE[ch];

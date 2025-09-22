@@ -134,11 +134,11 @@ class StringEncoder extends ByteListTranscoder {
                 Class<?> vectorizedStringEncoderClass = StringEncoder.class.getClassLoader().loadClass(VECTORIZED_STRING_ENCODER_CLASS);
                 Constructor<?> vectorizedStringEncoderConstructor = vectorizedStringEncoderClass.getDeclaredConstructor();
                 scanner = (StringEncoder) vectorizedStringEncoderConstructor.newInstance();
-                System.out.println(scanner.getClass().getName() + " loaded successfully.");
+                // System.out.println(scanner.getClass().getName() + " loaded successfully.");
             } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
                 // Fallback to the StringEncoder if we cannot load the VectorizedStringEncoder.
-                System.err.println("Failed to load VectorizedStringEncoder, falling back to StringEncoder:");
-                e.printStackTrace();
+                // System.err.println("Failed to load VectorizedStringEncoder, falling back to StringEncoder:");
+                // e.printStackTrace();
                 scanner = null;
             }
             VECTORIZED_SCANNER = scanner;
