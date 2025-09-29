@@ -125,6 +125,7 @@ typedef struct _search_state {
     const char *chunk_base;
     const char *chunk_end;
     bool has_matches;
+    const char *str_buffer_end;
 
 #if defined(HAVE_SIMD_NEON)
     uint64_t matches_mask;
@@ -135,6 +136,28 @@ typedef struct _search_state {
 #endif /* HAVE_SIMD_NEON */
 #endif /* HAVE_SIMD */
 } search_state;
+
+#ifdef HAVE_SIMD_NEON
+static uint64_t remaining_chunk_masks[16] = {
+    0x0000000000000000ull,
+    0x0000000000000008ull,
+    0x0000000000000088ull,
+    0x0000000000000888ull,
+    0x0000000000008888ull,
+    0x0000000000088888ull,
+    0x0000000000888888ull,
+    0x0000000008888888ull,
+    0x0000000088888888ull,
+    0x0000000888888888ull,
+    0x0000008888888888ull,
+    0x0000088888888888ull,
+    0x0000888888888888ull,
+    0x0008888888888888ull,
+    0x0088888888888888ull,
+    0x0888888888888888ull
+};
+#endif
+
 
 #if (defined(__GNUC__ ) || defined(__clang__))
 #define FORCE_INLINE __attribute__((always_inline))
@@ -377,6 +400,22 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
 
     // There are fewer than 16 bytes left.
     unsigned long remaining = (search->end - search->ptr);
+    
+    if (search->ptr + sizeof(uint8x16_t) <= search->str_buffer_end) {
+        uint64_t mask = compute_chunk_mask_neon(search->ptr);
+        mask &= remaining_chunk_masks[remaining];
+        if (mask == 0) {
+            search->ptr = search->end;
+            search_flush(search);
+            return 0;
+        }
+        search->matches_mask = mask;
+        search->has_matches = true;
+        search->chunk_end = search->end;
+        search->chunk_base = search->ptr;
+        return neon_next_match(search);
+    }
+
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
@@ -1249,6 +1288,8 @@ static void generate_json_string(FBuffer *buffer, struct generate_json_data *dat
     search.matches_mask = 0;
     search.has_matches = false;
     search.chunk_base = NULL;
+    // XXX Check if the +1 is always accurate. I don't think it is...
+    search.str_buffer_end = search.ptr + rb_str_capacity(obj) + 1;
 #endif /* HAVE_SIMD */
 
     switch (rb_enc_str_coderange(obj)) {
