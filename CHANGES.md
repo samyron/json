@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+* Fix incorrect escaping in the JRuby extension when encoding shared strings.
+
 ### 2025-09-22 (2.15.0)
 
 * `JSON::Coder` callback now receive a second argument to convey whether the object is a hash key.
