@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-10-07 (2.15.1)
+
 * Fix incorrect escaping in the JRuby extension when encoding shared strings.
 
 ### 2025-09-22 (2.15.0)
