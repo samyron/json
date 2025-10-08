@@ -2,8 +2,14 @@
 
 ### Unreleased
 
+### 2025-10-07 (2.15.1)
+
+* Fix incorrect escaping in the JRuby extension when encoding shared strings.
+
+### 2025-09-22 (2.15.0)
+
 * `JSON::Coder` callback now receive a second argument to convey whether the object is a hash key.
-* Tuned the floating point number generator to not use scientific notation as agressively.
+* Tuned the floating point number generator to not use scientific notation as aggressively.
 
 ### 2025-09-18 (2.14.1)
 
