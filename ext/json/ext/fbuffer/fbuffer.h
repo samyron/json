@@ -88,6 +88,24 @@ static void fbuffer_append_long(FBuffer *fb, long number);
 static inline void fbuffer_append_char(FBuffer *fb, char newchr);
 static VALUE fbuffer_finalize(FBuffer *fb);
 
+static inline void *fbmemcpy(void *dest, const void *src, size_t n) {
+#ifdef HAVE_SIMD_NEON
+    size_t offset = 0;
+    size_t vec_len = n & ~(sizeof (uint8x16_t) - 1);
+
+    while (offset < vec_len) {
+        vst1q_u8((uint8_t *)(dest + offset), vld1q_u8((const uint8_t *)(src + offset)));
+        offset += sizeof (uint8x16_t);
+    }
+
+    MEMCPY((char *)dest + offset, (const char *)src + offset, char, n - vec_len);
+    return dest;
+#else
+    return MEMCPY(dest, src, char, n);
+#endif
+}
+
+
 static void fbuffer_stack_init(FBuffer *fb, unsigned long initial_length, char *stack_buffer, long stack_buffer_size)
 {
     fb->initial_length = (initial_length > 0) ? initial_length : FBUFFER_INITIAL_LENGTH_DEFAULT;
@@ -138,6 +156,7 @@ static void fbuffer_realloc(FBuffer *fb, unsigned long required)
             fb->ptr = ALLOC_N(char, required);
             fb->type = FBUFFER_HEAP_ALLOCATED;
             MEMCPY(fb->ptr, old_buffer, char, fb->len);
+            // fbmemcpy(fb->ptr, old_buffer, fb->len);
         } else {
             REALLOC_N(fb->ptr, char, required);
         }
@@ -201,7 +220,7 @@ static inline void fbuffer_append_reserved(FBuffer *fb, const char *newstr, unsi
 #else
     MEMCPY(fb->ptr + fb->len, newstr, char, len);
 #endif
-
+    // fbmemcpy(fb->ptr + fb->len, newstr, len);
     fbuffer_consumed(fb, len);
 }
 
