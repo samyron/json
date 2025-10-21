@@ -4,6 +4,7 @@
 #include "ruby.h"
 #include "ruby/encoding.h"
 #include "../vendor/jeaiii-ltoa.h"
+#include "../simd/simd.h"
 
 /* shims */
 /* This is the fallback definition from Ruby 3.4 */
@@ -49,6 +50,10 @@ typedef unsigned char _Bool;
 #define JSON_DEBUG RUBY_DEBUG
 #endif
 #endif
+
+#ifdef HAVE_SIMD_NEON
+#include <arm_neon.h>
+#endif 
 
 enum fbuffer_type {
     FBUFFER_HEAP_ALLOCATED = 0,
@@ -179,7 +184,24 @@ static inline void fbuffer_inc_capa(FBuffer *fb, unsigned long requested)
 
 static inline void fbuffer_append_reserved(FBuffer *fb, const char *newstr, unsigned long len)
 {
+#ifdef HAVE_SIMD_NEON
+    if (len < sizeof (uint8x16_t)) {
+        MEMCPY(fb->ptr + fb->len, newstr, char, len);
+    } else {
+        unsigned long offset = 0;
+        unsigned long vec_len = len & ~(sizeof (uint8x16_t) - 1);
+
+        while (offset < vec_len) {
+            vst1q_u8((uint8_t *)(fb->ptr + fb->len + offset), vld1q_u8((const uint8_t *)(newstr + offset)));
+            offset += sizeof (uint8x16_t);
+        }
+
+        MEMCPY(fb->ptr + fb->len + offset, newstr + offset, char, len - vec_len);
+    }
+#else
     MEMCPY(fb->ptr + fb->len, newstr, char, len);
+#endif
+
     fbuffer_consumed(fb, len);
 }
 

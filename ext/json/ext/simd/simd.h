@@ -1,3 +1,6 @@
+#ifndef JSON_EXT_SIMD_SIMD_H
+#define JSON_EXT_SIMD_SIMD_H
+
 typedef enum {
     SIMD_NONE,
     SIMD_NEON,
@@ -186,3 +189,4 @@ static inline SIMD_Implementation find_simd_implementation(void)
     return SIMD_NONE;
 }
 #endif
+#endif /* JSON_EXT_SIMD_SIMD_H */
