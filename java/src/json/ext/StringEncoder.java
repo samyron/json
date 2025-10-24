@@ -134,25 +134,19 @@ class StringEncoder extends ByteListTranscoder {
                 Class<?> vectorizedStringEncoderClass = StringEncoder.class.getClassLoader().loadClass(VECTORIZED_STRING_ENCODER_CLASS);
                 Constructor<?> vectorizedStringEncoderConstructor = vectorizedStringEncoderClass.getDeclaredConstructor();
                 scanner = (StringEncoder) vectorizedStringEncoderConstructor.newInstance();
-                // System.out.println(scanner.getClass().getName() + " loaded successfully.");
             } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
                 // Fallback to the StringEncoder if we cannot load the VectorizedStringEncoder.
-                // System.err.println("Failed to load VectorizedStringEncoder, falling back to StringEncoder:");
-                // e.printStackTrace();
                 scanner = null;
             }
             VECTORIZED_SCANNER = scanner;
             USE_VECTORIZED_BASIC_ENCODER = scanner != null;
         } else {
-            System.err.println("VectorizedStringEncoder disabled.");
             VECTORIZED_SCANNER = null;
             USE_VECTORIZED_BASIC_ENCODER = false;
         }
 
         USE_BASIC_SWAR_ENCODER = Boolean.parseBoolean(
             System.getProperty(USE_SWAR_BASIC_ENCODER_PROP, USE_SWAR_BASIC_ENCODER_DEFAULT));
-        // XXX Is there a logger we can use here?
-        // System.out.println("Using SWAR basic encoder: " + USE_BASIC_SWAR_ENCODER);
     }
 
     OutputStream out;
