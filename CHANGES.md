@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-10-25 (2.15.2)
+
 * Fix `JSON::Coder` to have one dedicated depth counter per invocation.
   After encountering a circular reference in `JSON::Coder#dump`, any further `#dump` call would raise `JSON::NestingError`.
 
