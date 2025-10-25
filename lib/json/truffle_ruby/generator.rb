@@ -212,7 +212,7 @@ module JSON
           return if @max_nesting.zero?
           current_nesting = depth + 1
           current_nesting > @max_nesting and
-            raise NestingError, "nesting of #{current_nesting} is too deep"
+            raise NestingError, "nesting of #{current_nesting} is too deep. Did you try to serialize objects with circular references?"
         end
 
         # Returns true, if circular data structures are checked,
@@ -345,6 +345,10 @@ module JSON
 
         def generate_new(obj, anIO = nil) # :nodoc:
           dup.generate(obj, anIO)
+        end
+
+        private def initialize_copy(_orig)
+          @depth = 0
         end
 
         # Handles @allow_nan, @buffer_initial_length, other ivars must be the default value (see above)

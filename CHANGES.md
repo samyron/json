@@ -2,6 +2,9 @@
 
 ### Unreleased
 
+* Fix `JSON::Coder` to have one dedicated depth counter per invocation.
+  After encountering a circular reference in `JSON::Coder#dump`, any further `#dump` call would raise `JSON::NestingError`.
+
 ### 2025-10-07 (2.15.1)
 
 * Fix incorrect escaping in the JRuby extension when encoding shared strings.

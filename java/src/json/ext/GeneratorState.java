@@ -231,7 +231,7 @@ public class GeneratorState extends RubyObject {
      * the result. If no valid JSON document can be created this method raises
      * a GeneratorError exception.
      */
-    @JRubyMethod(alias="generate_new")
+    @JRubyMethod
     public IRubyObject generate(ThreadContext context, IRubyObject obj, IRubyObject io) {
         IRubyObject result = Generator.generateJson(context, obj, this, io);
         RuntimeInfo info = RuntimeInfo.forRuntime(context.runtime);
@@ -251,9 +251,23 @@ public class GeneratorState extends RubyObject {
         return resultString;
     }
 
-    @JRubyMethod(alias="generate_new")
+    @JRubyMethod
     public IRubyObject generate(ThreadContext context, IRubyObject obj) {
         return generate(context, obj, context.nil);
+    }
+
+    @JRubyMethod
+    public IRubyObject generate_new(ThreadContext context, IRubyObject obj, IRubyObject io) {
+        GeneratorState newState = (GeneratorState)dup();
+        newState.resetDepth();
+        return newState.generate(context, obj, io);
+    }
+
+    @JRubyMethod
+    public IRubyObject generate_new(ThreadContext context, IRubyObject obj) {
+        GeneratorState newState = (GeneratorState)dup();
+        newState.resetDepth();
+        return newState.generate(context, obj, context.nil);
     }
 
     @JRubyMethod(name="[]")
@@ -478,6 +492,10 @@ public class GeneratorState extends RubyObject {
         return vDepth;
     }
 
+    public void resetDepth() {
+        depth = 0;
+    }
+
     private ByteList prepareByteList(ThreadContext context, IRubyObject value) {
         RubyString str = value.convertToString();
         if (str.getEncoding() != UTF8Encoding.INSTANCE) {
@@ -610,7 +628,7 @@ public class GeneratorState extends RubyObject {
     private void checkMaxNesting(ThreadContext context) {
         if (maxNesting != 0 && depth > maxNesting) {
             depth--;
-            throw Utils.newException(context, Utils.M_NESTING_ERROR, "nesting of " + depth + " is too deep");
+            throw Utils.newException(context, Utils.M_NESTING_ERROR, "nesting of " + depth + " is too deep. Did you try to serialize objects with circular references?");
         }
     }
 }
