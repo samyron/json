@@ -106,17 +106,53 @@ static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring
     cache->entries[index] = rstring;
 }
 
-static inline int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
+static inline FORCE_INLINE int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
 {
+    
+
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) && defined(__has_builtin) && __has_builtin(__builtin_bswap64)
+    const char *rptr;    
+    long rstring_length;
+    
+    RSTRING_GETMEM(rstring, rptr, rstring_length);
+    
+    if (length != rstring_length) {
+        return (int)(length - rstring_length);
+    }
+
+    long i = 0;
+
+    for (; i + 8 <= length; i += 8) {
+        uint64_t a, b;
+        memcpy(&a, str + i, 8);
+        memcpy(&b, rptr + i, 8);
+        if (a != b) {
+            a = __builtin_bswap64(a);
+            b = __builtin_bswap64(b);
+            return (a < b) ? -1 : 1;
+        }
+    }
+
+    for (; i < length; i++) {
+        unsigned char ca = (unsigned char)str[i];
+        unsigned char cb = (unsigned char)rptr[i];
+        if (ca != cb) {
+            return (ca < cb) ? -1 : 1;
+        }
+    }
+
+    return 0;
+#else
     long rstring_length = RSTRING_LEN(rstring);
     if (length == rstring_length) {
         return memcmp(str, RSTRING_PTR(rstring), length);
     } else {
         return (int)(length - rstring_length);
     }
+#endif 
 }
 
-static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
+static inline VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     if (RB_UNLIKELY(length > JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH)) {
         // Common names aren't likely to be very long. So we just don't
@@ -136,24 +172,50 @@ static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const lon
     int mid = 0;
     int last_cmp = 0;
 
+    // while (low <= high) {
+    //     mid = (high + low) >> 1;
+    //     VALUE entry = cache->entries[mid];
+    //     last_cmp = rstring_cache_cmp(str, length, entry);
+
+    //     if (last_cmp == 0) {
+    //         return entry;
+    //     } else if (last_cmp > 0) {
+    //         low = mid + 1;
+    //     } else {
+    //         high = mid - 1;
+    //     }
+    // }
+
+    // while (low <= high) {
+    //     mid = (high + low) >> 1;
+    //     VALUE entry = cache->entries[mid];
+    //     last_cmp = rstring_cache_cmp(str, length, entry);
+    
+    //     // Branchless update of low and high    
+    //     int is_greater = last_cmp > 0;
+    //     int is_less = last_cmp < 0;
+
+    //     low = is_greater ? (mid + 1) : low;
+    //     high = is_less ? (mid - 1) : high;
+        
+    //     if (last_cmp == 0) { 
+    //         return entry;
+    //     }
+    // }
+    
     while (low <= high) {
         mid = (high + low) >> 1;
         VALUE entry = cache->entries[mid];
         last_cmp = rstring_cache_cmp(str, length, entry);
-
-        if (last_cmp == 0) {
-            return entry;
-        } else if (last_cmp > 0) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    if (RB_UNLIKELY(memchr(str, '\\', length))) {
-        // We assume the overwhelming majority of names don't need to be escaped.
-        // But if they do, we have to fallback to the slow path.
-        return Qfalse;
+        
+        if (last_cmp == 0) return entry;
+        
+        // Branchless: uses arithmetic/masking instead of branches
+        int is_greater = (last_cmp > 0);  // 1 if true, 0 if false
+        int is_less = (last_cmp < 0);     // 1 if true, 0 if false
+        
+        low = low + is_greater * (mid + 1 - low);
+        high = high + is_less * (mid - 1 - high);
     }
 
     VALUE rstring = build_interned_string(str, length);
@@ -200,12 +262,6 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
         } else {
             high = mid - 1;
         }
-    }
-
-    if (RB_UNLIKELY(memchr(str, '\\', length))) {
-        // We assume the overwhelming majority of names don't need to be escaped.
-        // But if they do, we have to fallback to the slow path.
-        return Qfalse;
     }
 
     VALUE rsymbol = build_symbol(str, length);
@@ -577,9 +633,41 @@ json_eat_comments(JSON_ParserState *state)
     }
 }
 
+// static void print_vec(uint8x16_t vec) {
+//     uint8_t buffer[16];
+//     vst1q_u8(buffer, vec);
+//     printf("Vector: ");
+//     for (int i = 0; i < 16; i++) {
+//         printf("%02x ", buffer[i]);
+//     }
+//     printf("\n");
+// }
+
 static inline void
 json_eat_whitespace(JSON_ParserState *state)
 {
+#ifdef HAVE_SIMD_NEON
+    uint8x16_t skips = {16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
+    while (state->cursor + sizeof(uint8x16_t) <= state->end) {
+        uint8x16_t chunk = vld1q_u8((const uint8_t *)state->cursor);
+        uint8x16_t cmp = vceqq_u8(chunk, vdupq_n_u8(' '));
+        cmp = vorrq_u8(cmp, vceqq_u8(chunk, vdupq_n_u8('\t')));
+        cmp = vorrq_u8(cmp, vceqq_u8(chunk, vdupq_n_u8('\n')));
+
+        uint8x16_t non_whitespace = vmvnq_u8(cmp);
+        non_whitespace = vandq_u8(non_whitespace, skips);
+
+        uint8_t m = vmaxvq_u8(non_whitespace);
+        if (m == 0) {
+            state->cursor += sizeof(uint8x16_t);
+        } else {
+            state->cursor += (sizeof(uint8x16_t) - m);
+            break;
+        }
+    }
+#endif
+
     while (state->cursor < state->end && RB_UNLIKELY(whitespace[(unsigned char)*state->cursor])) {
         if (RB_LIKELY(*state->cursor != '/')) {
             state->cursor++;
@@ -635,7 +723,7 @@ static inline VALUE json_string_fastpath(JSON_ParserState *state, const char *st
     return build_string(string, stringEnd, intern, symbolize);
 }
 
-static VALUE json_string_unescape(JSON_ParserState *state, const char *string, const char *stringEnd, bool is_name, bool intern, bool symbolize)
+static inline VALUE json_string_unescape(JSON_ParserState *state, const char *string, const char *stringEnd, bool is_name, bool intern, bool symbolize)
 {
     size_t bufferSize = stringEnd - string;
     const char *p = string, *pe = string, *unescape, *bufferStart;
@@ -908,7 +996,7 @@ static inline VALUE json_decode_object(JSON_ParserState *state, JSON_ParserConfi
     return object;
 }
 
-static inline VALUE json_decode_string(JSON_ParserState *state, JSON_ParserConfig *config, const char *start, const char *end, bool escaped, bool is_name)
+static inline FORCE_INLINE VALUE json_decode_string(JSON_ParserState *state, JSON_ParserConfig *config, const char *start, const char *end, bool escaped, bool is_name)
 {
     VALUE string;
     bool intern = is_name || config->freeze;
