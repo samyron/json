@@ -57,9 +57,4 @@ JSON
 benchmark_parsing "activitypub.json", File.read("#{__dir__}/data/activitypub.json")
 benchmark_parsing "twitter.json", File.read("#{__dir__}/data/twitter.json")
 benchmark_parsing "citm_catalog.json", File.read("#{__dir__}/data/citm_catalog.json")
-
-# rapidjson is 8x faster thanks to its much more performant float parser.
-# Unfortunately, there isn't a lot of existing fast float parsers in pure C,
-# and including C++ is problematic.
-# Aside from that, we're close to the alternatives here.
 benchmark_parsing "float parsing", File.read("#{__dir__}/data/canada.json")
