@@ -8,11 +8,11 @@ license (see the file COPYING) or public-domain except some files
 mentioned below.
 
 ext/json/ext/vendor/fpconv.h::
-  This files is adapted from https://github.com/night-shift/fpconv
+  This file is adapted from https://github.com/night-shift/fpconv
   It is licensed under Boost Software License 1.0.
 
 ext/json/ext/vendor/jeaiii-ltoa.h::
-  This files is adapted from https://github.com/jeaiii/itoa
+  This file is adapted from https://github.com/jeaiii/itoa
   It is licensed under the MIT License
 
 ext/json/ext/vendor/ryu.h::
