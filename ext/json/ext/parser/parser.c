@@ -767,6 +767,32 @@ static VALUE json_string_unescape(JSON_ParserState *state, const char *string, c
 
 #define MAX_FAST_INTEGER_SIZE 18
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+// From: https://lemire.me/blog/2022/01/21/swar-explained-parsing-eight-digits/
+// Additional References:
+// https://johnnylee-sde.github.io/Fast-numeric-string-to-int/
+// http://0x80.pl/notesen/2014-10-12-parsing-decimal-numbers-part-1-swar.html
+static inline uint32_t parse_eight_digits_unrolled(const char *p) {
+    uint64_t val;
+    memcpy(&val, p, sizeof(uint64_t));
+    const uint64_t mask = 0x000000FF000000FF;
+    const uint64_t mul1 = 0x000F424000000064; // 100 + (1000000ULL << 32)
+    const uint64_t mul2 = 0x0000271000000001; // 1 + (10000ULL << 32)
+    val -= 0x3030303030303030;
+    val = (val * 10) + (val >> 8); // val = (val * 2561) >> 8;
+    val = (((val & mask) * mul1) + (((val >> 16) & mask) * mul2)) >> 32;
+    return (uint32_t) val;
+}
+
+// From: https://github.com/simdjson/simdjson/blob/32b301893c13d058095a07d9868edaaa42ee07aa/include/simdjson/generic/numberparsing.h#L333
+// Branchless version of: http://0x80.pl/articles/swar-digits-validate.html
+static inline int has_eight_consecutive_digits(const char *p) {
+    uint64_t val;
+    memcpy(&val, p, sizeof(uint64_t));
+    return (((val & 0xF0F0F0F0F0F0F0F0) | (((val + 0x0606060606060606) & 0xF0F0F0F0F0F0F0F0) >> 4)) == 0x3333333333333333);
+}
+#endif
+
 static VALUE json_decode_large_integer(const char *start, long len)
 {
     VALUE buffer_v;
@@ -1105,6 +1131,19 @@ static VALUE json_parse_any(JSON_ParserState *state, JSON_ParserConfig *config)
                 }
             }
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            while (state->cursor + 8 <= state->end) {
+                if (has_eight_consecutive_digits(state->cursor)) {
+                    uint64_t val = (uint64_t) parse_eight_digits_unrolled(state->cursor);
+                    mantissa = mantissa * 100000000 + val;
+                    mantissa_digits += 8;
+                    state->cursor += 8;
+                    continue;
+                }
+                break;
+            }
+#endif
+
             // Parse integer part and extract mantissa digits
             while ((state->cursor < state->end) && rb_isdigit(*state->cursor)) {
                 mantissa = mantissa * 10 + (*state->cursor - '0');
@@ -1128,6 +1167,18 @@ static VALUE json_parse_any(JSON_ParserState *state, JSON_ParserConfig *config)
                     raise_parse_error_at("invalid number: %s", state, start);
                 }
 
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                while (state->cursor + 8 <= state->end) {
+                    if (has_eight_consecutive_digits(state->cursor)) {
+                        uint64_t val = (uint64_t) parse_eight_digits_unrolled(state->cursor);
+                        mantissa = mantissa * 100000000 + val;
+                        mantissa_digits += 8;
+                        state->cursor += 8;
+                        continue;
+                    }
+                    break;
+                }
+#endif
                 while ((state->cursor < state->end) && rb_isdigit(*state->cursor)) {
                     mantissa = mantissa * 10 + (*state->cursor - '0');
                     mantissa_digits++;
