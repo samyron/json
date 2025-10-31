@@ -607,6 +607,22 @@ json_eat_comments(JSON_ParserState *state)
 static inline void
 json_eat_whitespace(JSON_ParserState *state)
 {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    // Heuristic: if we see a newline, there may be consecutive of spaces after it.
+    if (RB_UNLIKELY(state->cursor < state->end && *state->cursor == '\n')) {
+        state->cursor++;
+
+        while (state->cursor+sizeof(uint64_t) <= state->end) {
+            uint64_t chunk;
+            memcpy(&chunk, state->cursor, sizeof(uint64_t));
+            if (chunk != 0x2020202020202020) {
+                break;
+            }
+            state->cursor += sizeof(uint64_t);
+        }
+    }
+#endif
+
     unsigned char cursor;
     while (RB_UNLIKELY(whitespace[cursor = (unsigned char)peek(state)])) {
         if (RB_UNLIKELY(cursor == '/')) {
