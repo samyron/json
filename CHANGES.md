@@ -2,7 +2,9 @@
 
 ### Unreleased
 
-* Optimized floating point number parsing by integrating the ryu algorithm.
+* Optimized floating point number parsing by integrating the ryu algorithm (thanks to Josef Šimánek).
+* Optimized numbers parsing using SWAR (thanks to Scott Myron).
+* Optimized parsing of pretty printed documents using SWAR (thanks to Scott Myron).
 
 ### 2025-10-25 (2.15.2)
 
