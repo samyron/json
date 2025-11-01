@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+* Fix GeneratorError messages to be UTF-8 encoded.
+* Fix memory leak when `Exception` is raised, or `throw` is used during JSON generation.
 * Optimized floating point number parsing by integrating the ryu algorithm (thanks to Josef Šimánek).
 * Optimized numbers parsing using SWAR (thanks to Scott Myron).
 * Optimized parsing of pretty printed documents using SWAR (thanks to Scott Myron).
