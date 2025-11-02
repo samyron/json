@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+* `JSON::Coder` now also yields to the block when encountering strings with invalid encoding.
 * Fix GeneratorError messages to be UTF-8 encoded.
 * Fix memory leak when `Exception` is raised, or `throw` is used during JSON generation.
 * Optimized floating point number parsing by integrating the ryu algorithm (thanks to Josef Šimánek).
