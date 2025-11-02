@@ -84,17 +84,51 @@ static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring
     cache->entries[index] = rstring;
 }
 
-static inline int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
+static ALWAYS_INLINE() int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
 {
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) && defined(__has_builtin) && __has_builtin(__builtin_bswap64)
+    const char *rptr;    
+    long rstring_length;
+    
+    RSTRING_GETMEM(rstring, rptr, rstring_length);
+    
+    if (length != rstring_length) {
+        return (int)(length - rstring_length);
+    }
+
+    long i = 0;
+
+    for (; i+8 <= length; i += 8) {
+        uint64_t a, b;
+        memcpy(&a, str + i, 8);
+        memcpy(&b, rptr + i, 8);
+        if (a != b) {
+            a = __builtin_bswap64(a);
+            b = __builtin_bswap64(b);
+            return (a < b) ? -1 : 1;
+        }
+    }
+
+    for (; i < length; i++) {
+        unsigned char ca = (unsigned char)str[i];
+        unsigned char cb = (unsigned char)rptr[i];
+        if (ca != cb) {
+            return (ca < cb) ? -1 : 1;
+        }
+    }
+
+    return 0;
+#else
     long rstring_length = RSTRING_LEN(rstring);
     if (length == rstring_length) {
         return memcmp(str, RSTRING_PTR(rstring), length);
     } else {
         return (int)(length - rstring_length);
     }
+#endif 
 }
 
-static VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
+static ALWAYS_INLINE() VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     int low = 0;
     int high = cache->length - 1;
