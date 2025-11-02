@@ -5,6 +5,7 @@ gemspec
 group :development do
   gem "ruby_memcheck" if RUBY_PLATFORM =~ /linux/i
   gem "ostruct"
+  gem 'power_assert', '< 3.0.0'
   gem "rake"
   gem "rake-compiler"
   gem "test-unit"
