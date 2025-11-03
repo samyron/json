@@ -11,6 +11,11 @@ group :development do
   gem "test-unit-ruby-core"
   gem "all_images", "~> 0" unless RUBY_PLATFORM =~ /java/
   gem "simplecov", require: false
+
+  if RUBY_VERSION < "3.1."
+    # Ref: https://github.com/test-unit/test-unit/pull/329
+    gem 'power_assert', '< 3.0.0'
+  end
 end
 
 group :release do
