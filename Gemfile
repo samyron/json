@@ -7,6 +7,7 @@ group :development do
   gem "ostruct"
   gem "rake"
   gem "rake-compiler"
+  gem 'power_assert', '< 3.0.0'
   gem "test-unit"
   gem "test-unit-ruby-core"
   gem "all_images", "~> 0" unless RUBY_PLATFORM =~ /java/
