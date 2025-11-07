@@ -683,6 +683,11 @@ static ALWAYS_INLINE(int) json_copy_and_find_next_backslash(JSON_StringUnescapeS
 
     state->pe = memchr(p, '\\', stringEnd - p);
     if (state->pe) {
+        if (state->pe > p) {
+          MEMCPY(state->buffer, p, char, state->pe - p);
+          state->buffer += state->pe - p;
+          state->p = state->pe;
+        }
         return 1;
     }
     return 0;
@@ -709,10 +714,6 @@ static VALUE json_string_unescape(JSON_ParserState *state, const char *string, c
     while (json_copy_and_find_next_backslash(&unescape_state, stringEnd)) {
         unescape = (char *) "?";
         unescape_len = 1;
-        if (unescape_state.pe > unescape_state.p) {
-          MEMCPY(unescape_state.buffer, unescape_state.p, char, unescape_state.pe - unescape_state.p);
-          unescape_state.buffer += unescape_state.pe - unescape_state.p;
-        }
         switch (*++unescape_state.pe) {
             case 'n':
                 unescape = (char *) "\n";
