@@ -58,9 +58,10 @@ typedef struct rvalue_cache_struct {
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
 
-#define JSON_RVALUE_HT_CAPA 64
+#define JSON_RVALUE_HT_CAPA 128
 typedef struct rvalue_ht_struct {
-    VALUE entries[JSON_RVALUE_HT_CAPA];
+    VALUE    entries[JSON_RVALUE_HT_CAPA];
+    uint32_t hashes[JSON_RVALUE_HT_CAPA];
 } rvalue_ht;
 
 static rb_encoding *enc_utf8;
@@ -162,7 +163,7 @@ static ALWAYS_INLINE() VALUE rstring_ht_fetch(rvalue_ht *ht, const char *str, co
             break;
         }
         VALUE entry = ht->entries[index];
-        if (rstring_cache_cmp(str, length, entry) == 0) {
+        if (ht->hashes[index] == hash_value && rstring_cache_cmp(str, length, entry) == 0) {
             return entry;
         }
         index = (((5*index) + 1) + perturb) % JSON_RVALUE_HT_CAPA;
@@ -174,6 +175,7 @@ static ALWAYS_INLINE() VALUE rstring_ht_fetch(rvalue_ht *ht, const char *str, co
 
     VALUE rstring = build_interned_string(str, length);
     ht->entries[index] = rstring;
+    ht->hashes[index] = hash_value;
     return rstring;
 }
 
@@ -1530,6 +1532,7 @@ static VALUE cParser_parse(JSON_ParserConfig *config, VALUE Vsource)
     
     for(int i = 0; i < JSON_RVALUE_HT_CAPA; i++) {
         _state.name_ht.entries[i] = Qnil;
+        _state.name_ht.hashes[i] = 0;
     }
 
     JSON_ParserState *state = &_state;
