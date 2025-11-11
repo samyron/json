@@ -58,6 +58,11 @@ typedef struct rvalue_cache_struct {
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
 
+#define JSON_RVALUE_HT_CAPA 64
+typedef struct rvalue_ht_struct {
+    VALUE entries[JSON_RVALUE_HT_CAPA];
+} rvalue_ht;
+
 static rb_encoding *enc_utf8;
 
 #define JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH 55
@@ -132,30 +137,43 @@ static ALWAYS_INLINE() int rstring_cache_cmp(const char *str, const long length,
     }
 }
 
-static ALWAYS_INLINE() VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
-{
-    int low = 0;
-    int high = cache->length - 1;
+#define FNV_OFFSET_32 0x811c9dc5
+#define FNV_PRIME_32 0x01000193
 
-    while (low <= high) {
-        int mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        int cmp = rstring_cache_cmp(str, length, entry);
+static ALWAYS_INLINE() uint32_t fnv1a_32(const void *data, size_t len) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    uint32_t hash = FNV_OFFSET_32;
+    
+    for (size_t i = 0; i < len; i++) {
+        hash ^= bytes[i];
+        hash *= FNV_PRIME_32;
+    }
+    
+    return hash;
+}
 
-        if (cmp == 0) {
-            return entry;
-        } else if (cmp > 0) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
+static ALWAYS_INLINE() VALUE rstring_ht_fetch(rvalue_ht *ht, const char *str, const long length)
+{    
+    uint32_t hash_value = fnv1a_32(str, length);
+    uint32_t index = hash_value % JSON_RVALUE_HT_CAPA;
+    int perturb = hash_value;
+    for (int i=0; i < 5; i++, perturb >>= 5) {
+        if (ht->entries[index] == Qnil) {
+            break;
         }
+        VALUE entry = ht->entries[index];
+        if (rstring_cache_cmp(str, length, entry) == 0) {
+            return entry;
+        }
+        index = (((5*index) + 1) + perturb) % JSON_RVALUE_HT_CAPA;
+    }
+
+    if (ht->entries[index] != Qnil) {
+        return Qfalse;
     }
 
     VALUE rstring = build_interned_string(str, length);
-
-    if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        rvalue_cache_insert_at(cache, low, rstring);
-    }
+    ht->entries[index] = rstring;
     return rstring;
 }
 
@@ -357,6 +375,7 @@ typedef struct JSON_ParserStateStruct {
     const char *end;
     rvalue_stack *stack;
     rvalue_cache name_cache;
+    rvalue_ht    name_ht;
     int in_array;
     int current_nesting;
 } JSON_ParserState;
@@ -636,7 +655,7 @@ static inline VALUE json_string_fastpath(JSON_ParserState *state, const char *st
         if (RB_UNLIKELY(symbolize)) {
             cached_key = rsymbol_cache_fetch(&state->name_cache, string, bufferSize);
         } else {
-            cached_key = rstring_cache_fetch(&state->name_cache, string, bufferSize);
+            cached_key = rstring_ht_fetch(&state->name_ht, string, bufferSize);
         }
 
         if (RB_LIKELY(cached_key)) {
@@ -1508,6 +1527,11 @@ static VALUE cParser_parse(JSON_ParserConfig *config, VALUE Vsource)
         .end = start + len,
         .stack = &stack,
     };
+    
+    for(int i = 0; i < JSON_RVALUE_HT_CAPA; i++) {
+        _state.name_ht.entries[i] = Qnil;
+    }
+
     JSON_ParserState *state = &_state;
 
     VALUE result = json_parse_any(state, config);
