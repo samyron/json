@@ -636,28 +636,72 @@ static inline VALUE json_string_fastpath(JSON_ParserState *state, const char *st
     return build_string(string, stringEnd, intern, symbolize);
 }
 
+typedef struct _json_unescape_cursor {
+    const char *p;
+    const char *pe;
+    char *buffer;
+} JSON_UnescapeCursor;
+
+static ALWAYS_INLINE() int json_copy_and_find_next_backslash(JSON_UnescapeCursor *cursor, const char *stringEnd)
+{
+    if (cursor->pe >= stringEnd) {
+        return 0;
+    }
+
+    const char *p = cursor->p;
+
+#ifdef HAVE_SIMD_NEON
+    while (p+sizeof(uint8x16_t) <= stringEnd) {
+        uint8x16_t chunk = vld1q_u8((const unsigned char *)p);
+        vst1q_u8((unsigned char *)cursor->buffer, chunk);
+        uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
+        uint64_t mask = neon_match_mask(has_backslash);
+        if (mask) {
+            uint32_t index = trailing_zeros64(mask) >> 2;
+            cursor->buffer += index;
+            cursor->p = p + index;
+            cursor->pe = p + index;
+            return 1;
+        }
+        p += sizeof(uint8x16_t);
+        cursor->buffer += sizeof(uint8x16_t);
+        cursor->p = p;
+        cursor->pe = p;
+    }
+#endif
+
+    cursor->pe = memchr(p, '\\', stringEnd - p);
+    if (cursor->pe) {
+        if (cursor->pe > p) {
+          MEMCPY(cursor->buffer, p, char, cursor->pe - p);
+          cursor->buffer += cursor->pe - p;
+          cursor->p = cursor->pe;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static VALUE json_string_unescape(JSON_ParserState *state, const char *string, const char *stringEnd, bool is_name, bool intern, bool symbolize)
 {
     size_t bufferSize = stringEnd - string;
-    const char *p = string, *pe = string, *bufferStart;
-    char *buffer;
-
     VALUE result = rb_str_buf_new(bufferSize);
     rb_enc_associate_index(result, utf8_encindex);
-    buffer = RSTRING_PTR(result);
-    bufferStart = buffer;
+    const char *bufferStart = RSTRING_PTR(result);
 
-#define APPEND_CHAR(chr) *buffer++ = chr; p = ++pe;
+    JSON_UnescapeCursor cursor = {
+        .p = string,
+        .pe = string,
+        .buffer = (char *)bufferStart,
+    };
 
-    while (pe < stringEnd && (pe = memchr(pe, '\\', stringEnd - pe))) {
-        if (pe > p) {
-          MEMCPY(buffer, p, char, pe - p);
-          buffer += pe - p;
-        }
-        switch (*++pe) {
+#define APPEND_CHAR(chr) *cursor.buffer++ = chr; cursor.p = ++cursor.pe;
+
+    while (json_copy_and_find_next_backslash(&cursor, stringEnd)) {
+        switch (*++cursor.pe) {
             case '"':
             case '/':
-                p = pe; // nothing to unescape just need to skip the backslash
+                cursor.p = cursor.pe; // nothing to unescape just need to skip the backslash
                 break;
             case '\\':
                 APPEND_CHAR('\\');
@@ -678,11 +722,11 @@ static VALUE json_string_unescape(JSON_ParserState *state, const char *string, c
                 APPEND_CHAR('\f');
                 break;
             case 'u':
-                if (pe > stringEnd - 5) {
-                    raise_parse_error_at("incomplete unicode character escape sequence at %s", state, p);
+                if (cursor.pe > stringEnd - 5) {
+                    raise_parse_error_at("incomplete unicode character escape sequence at %s", state, cursor.p);
                 } else {
-                    uint32_t ch = unescape_unicode(state, (unsigned char *) ++pe);
-                    pe += 3;
+                    uint32_t ch = unescape_unicode(state, (unsigned char *) ++cursor.pe);
+                    cursor.pe += 3;
                     /* To handle values above U+FFFF, we take a sequence of
                      * \uXXXX escapes in the U+D800..U+DBFF then
                      * U+DC00..U+DFFF ranges, take the low 10 bits from each
@@ -694,48 +738,48 @@ static VALUE json_string_unescape(JSON_ParserState *state, const char *string, c
                      * Area".
                      */
                     if ((ch & 0xFC00) == 0xD800) {
-                        pe++;
-                        if (pe > stringEnd - 6) {
-                            raise_parse_error_at("incomplete surrogate pair at %s", state, p);
+                        cursor.pe++;
+                        if (cursor.pe > stringEnd - 6) {
+                            raise_parse_error_at("incomplete surrogate pair at %s", state, cursor.p);
                         }
-                        if (pe[0] == '\\' && pe[1] == 'u') {
-                            uint32_t sur = unescape_unicode(state, (unsigned char *) pe + 2);
+                        if (cursor.pe[0] == '\\' && cursor.pe[1] == 'u') {
+                            uint32_t sur = unescape_unicode(state, (unsigned char *) cursor.pe + 2);
 
                             if ((sur & 0xFC00) != 0xDC00) {
-                                raise_parse_error_at("invalid surrogate pair at %s", state, p);
+                                raise_parse_error_at("invalid surrogate pair at %s", state, cursor.p);
                             }
 
                             ch = (((ch & 0x3F) << 10) | ((((ch >> 6) & 0xF) + 1) << 16)
                                     | (sur & 0x3FF));
-                            pe += 5;
+                            cursor.pe += 5;
                         } else {
-                            raise_parse_error_at("incomplete surrogate pair at %s", state, p);
+                            raise_parse_error_at("incomplete surrogate pair at %s", state, cursor.p);
                             break;
                         }
                     }
 
                     char buf[4];
                     int unescape_len = convert_UTF32_to_UTF8(buf, ch);
-                    MEMCPY(buffer, buf, char, unescape_len);
-                    buffer += unescape_len;
-                    p = ++pe;
+                    MEMCPY(cursor.buffer, buf, char, unescape_len);
+                    cursor.buffer += unescape_len;
+                    cursor.p = ++cursor.pe;
                 }
                 break;
             default:
-                if ((unsigned char)*pe < 0x20) {
-                    raise_parse_error_at("invalid ASCII control character in string: %s", state, pe - 1);
+                if ((unsigned char)*cursor.pe < 0x20) {
+                    raise_parse_error_at("invalid ASCII control character in string: %s", state, cursor.pe - 1);
                 }
-                raise_parse_error_at("invalid escape character in string: %s", state, pe - 1);
+                raise_parse_error_at("invalid escape character in string: %s", state, cursor.pe - 1);
                 break;
         }
     }
 #undef APPEND_CHAR
 
-    if (stringEnd > p) {
-      MEMCPY(buffer, p, char, stringEnd - p);
-      buffer += stringEnd - p;
+    if (stringEnd > cursor.p) {
+      MEMCPY(cursor.buffer, cursor.p, char, stringEnd - cursor.p);
+      cursor.buffer += stringEnd - cursor.p;
     }
-    rb_str_set_len(result, buffer - bufferStart);
+    rb_str_set_len(result, cursor.buffer - bufferStart);
 
     if (symbolize) {
         result = rb_str_intern(result);
