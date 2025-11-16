@@ -780,8 +780,12 @@ static VALUE json_string_unescape(JSON_ParserState *state, const char *string, c
                 cursor.p = cursor.pe;
                 continue;
         }
-        MEMCPY(cursor.buffer, unescape, char, unescape_len);
-        cursor.buffer += unescape_len;
+        if (RB_LIKELY(unescape_len == 1)) {
+            *cursor.buffer++ = *unescape;
+        } else {
+            MEMCPY(cursor.buffer, unescape, char, unescape_len);
+            cursor.buffer += unescape_len;
+        }
         cursor.p = ++cursor.pe;
     }
 
