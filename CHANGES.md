@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-12-03 (2.17.0)
+
 * Improve `JSON.load` and `JSON.unsafe_load` to allow passing options as second argument.
 * Fix the parser to no longer ignore invalid escapes in strings.
   Only `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t` and `\u` are valid JSON escapes.
