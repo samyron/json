@@ -638,24 +638,24 @@ static inline VALUE json_string_fastpath(JSON_ParserState *state, JSON_ParserCon
     return build_string(string, stringEnd, intern, symbolize);
 }
 
-#define JSON_MAX_DIRECT_POSITIONS 4
-#define JSON_VARINT_BUFFER_SIZE 96
+#define JSON_MAX_DIRECT_POSITIONS 8
+#define JSON_VARINT_BUFFER_SIZE   64
 
 typedef struct _json_unescape_positions {
     // We store the first few '\' positions directly for the common case
     // whre there are only a few escapes in the string.
     const char *positions[JSON_MAX_DIRECT_POSITIONS];
-    
+    const char **positions_ptr;      // Current read position
+    long size;                       // Number of direct positions remaining
+
     // If there are more than JSON_MAX_DIRECT_POSITIONS escapes, we use delta
     // encoding with varints to store up to JSON_VARINT_BUFFER_SIZE bytes of
     // varint-encoded deltas.
     uint8_t varint_buffer[JSON_VARINT_BUFFER_SIZE];
-    const uint8_t *varint_end;
-
-    uint8_t positions_index;
     const uint8_t *varint_ptr;
-    const char *last_position;
+    const uint8_t *varint_end;
     
+    const char *last_position;
     bool has_more;
 } JSON_UnescapePositions;
 
@@ -678,11 +678,10 @@ static inline uint8_t* encode_varint(uint8_t *p, const uint8_t *end, size_t valu
 
 static inline const char *json_next_backslash(const char *pe, const char *stringEnd, JSON_UnescapePositions *positions)
 {
-    // Fast path: return from direct positions array
-    if (positions->positions_index < JSON_MAX_DIRECT_POSITIONS && 
-        positions->positions[positions->positions_index] != NULL) {
-        const char *result = positions->positions[positions->positions_index];
-        positions->positions_index++;
+    // Fast path: return from direct positions array (same as master!)
+    while (positions->size) {
+        positions->size--;
+        const char *result = *positions->positions_ptr++;
         positions->last_position = result;
         return result;
     }
@@ -690,20 +689,13 @@ static inline const char *json_next_backslash(const char *pe, const char *string
     if (positions->varint_ptr < positions->varint_end) {
         // Decode varint delta - optimized for single-byte case
         uint8_t byte = *positions->varint_ptr++;
-        size_t delta;
 
-        if (RB_LIKELY(!(byte & 0x80))) {
-            // Single-byte varint (most common)
-            delta = byte;
-        } else {
-            // Multi-byte varint
-            delta = byte & 0x7F;
-            int shift = 7;
-            do {
-                byte = *positions->varint_ptr++;
-                delta |= (size_t)(byte & 0x7F) << shift;
-                shift += 7;
-            } while (byte & 0x80);
+        size_t delta = byte & 0x7F;
+        int shift = 7;
+        while (byte & 0x80) {
+            byte = *positions->varint_ptr++;
+            delta |= (size_t)(byte & 0x7F) << shift;
+            shift += 7;
         }
 
         const char *result = positions->last_position + delta;
@@ -1037,46 +1029,46 @@ ALWAYS_INLINE(static) bool string_scan(JSON_ParserState *state)
 static VALUE json_parse_escaped_string(JSON_ParserState *state, JSON_ParserConfig *config, bool is_name, const char *start)
 {
     JSON_UnescapePositions positions = {
-        .positions = {NULL, NULL, NULL, NULL},
-        .varint_end = positions.varint_buffer,
-        .positions_index = 0,
+        .positions_ptr = positions.positions,
+        .size = 0,
         .varint_ptr = positions.varint_buffer,
+        .varint_end = positions.varint_buffer,
         .last_position = NULL,
         .has_more = false,
     };
-
+    
     uint8_t *varint_write = positions.varint_buffer;
+    uint8_t *varint_end = positions.varint_buffer + JSON_VARINT_BUFFER_SIZE;
     const char *last_backslash = NULL;
-    int backslash_count = 0;
-
+    
     do {
         switch (*state->cursor) {
             case '"': {
                 // Finalize varint buffer
                 positions.varint_end = varint_write;
                 positions.varint_ptr = positions.varint_buffer;
-
+                
                 VALUE string = json_string_unescape(state, config, start, state->cursor, is_name, &positions);
                 state->cursor++;
                 return json_push_value(state, config, string);
             }
             case '\\': {
-                if (RB_LIKELY(backslash_count < JSON_MAX_DIRECT_POSITIONS)) {
-                    positions.positions[backslash_count] = state->cursor;
+                if (RB_LIKELY(positions.size < JSON_MAX_DIRECT_POSITIONS)) {
+                    // Store in direct positions array
+                    positions.positions[positions.size] = state->cursor;
+                    positions.size++;
                 } else if (!positions.has_more) {
+                    // Encode delta in varint buffer
                     ptrdiff_t delta = state->cursor - last_backslash;
-                    uint8_t *new_write = encode_varint(varint_write, 
-                                                    positions.varint_buffer + JSON_VARINT_BUFFER_SIZE,
-                                                    delta);
+                    uint8_t *new_write = encode_varint(varint_write, varint_end, delta);
                     if (new_write == NULL) {
                         positions.has_more = true;
                     } else {
                         varint_write = new_write;
                     }
                 }
-
+                
                 last_backslash = state->cursor;
-                backslash_count++;
                 state->cursor++;
                 break;
             }
