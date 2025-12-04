@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-12-04 (2.17.1)
+
 * Fix a regression in parsing of unicode surogate pairs (`\uXX\uXX`) that could cause an invalid string to be returned.
 
 ### 2025-12-03 (2.17.0)
