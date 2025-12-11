@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2025-12-11 (2.18.0)
+
 * Add `:allow_control_characters` parser options, to allow JSON strings containing unescaped ASCII control characters (e.g. newlines).
 
 ### 2025-12-04 (2.17.1)
