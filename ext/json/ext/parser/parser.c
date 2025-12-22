@@ -646,6 +646,36 @@ typedef struct _json_unescape_positions {
     bool has_more;
 } JSON_UnescapePositions;
 
+static void *find_backslash(const void *src, size_t n) {
+    const unsigned char *s = (const unsigned char *)src;
+    
+    // See: https://people.freebsd.org/~delphij/for_review/memchr.c
+    while (n >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, s, sizeof(uint64_t));
+        uint64_t xor = word ^ 0x5c5c5c5c5c5c5c5c;
+        uint64_t has_backslash = (xor - 0x0101010101010101) & ((~xor) & 0x8080808080808080);
+        if (has_backslash) {
+            for (size_t i = 0; i < sizeof(uint64_t); i++) {
+                if (s[i] == '\\') {
+                    return (void *)(s + i);
+                }
+            }
+        }
+        
+        s += sizeof(uint64_t);
+        n -= sizeof(uint64_t);
+    }
+    
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '\\') {
+            return (void *)(s + i);
+        }
+    }
+    
+    return NULL;
+}
+
 static inline const char *json_next_backslash(const char *pe, const char *stringEnd, JSON_UnescapePositions *positions)
 {
     while (positions->size) {
@@ -658,7 +688,7 @@ static inline const char *json_next_backslash(const char *pe, const char *string
     }
 
     if (positions->has_more) {
-        return memchr(pe, '\\', stringEnd - pe);
+        return find_backslash(pe, stringEnd - pe);
     }
 
     return NULL;
