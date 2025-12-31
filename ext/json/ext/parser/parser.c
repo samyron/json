@@ -479,21 +479,16 @@ static const signed char digit_values[256] = {
 
 static uint32_t unescape_unicode(JSON_ParserState *state, const unsigned char *p)
 {
-    signed char b;
-    uint32_t result = 0;
-    b = digit_values[p[0]];
-    if (b < 0) raise_parse_error_at("incomplete unicode character escape sequence at %s", state, (char *)p - 2);
-    result = (result << 4) | (unsigned char)b;
-    b = digit_values[p[1]];
-    if (b < 0) raise_parse_error_at("incomplete unicode character escape sequence at %s", state, (char *)p - 2);
-    result = (result << 4) | (unsigned char)b;
-    b = digit_values[p[2]];
-    if (b < 0) raise_parse_error_at("incomplete unicode character escape sequence at %s", state, (char *)p - 2);
-    result = (result << 4) | (unsigned char)b;
-    b = digit_values[p[3]];
-    if (b < 0) raise_parse_error_at("incomplete unicode character escape sequence at %s", state, (char *)p - 2);
-    result = (result << 4) | (unsigned char)b;
-    return result;
+    signed char b0 = digit_values[p[0]];
+    signed char b1 = digit_values[p[1]];
+    signed char b2 = digit_values[p[2]];
+    signed char b3 = digit_values[p[3]];
+    
+    if ((b0 | b1 | b2 | b3) < 0) {
+        raise_parse_error_at("incomplete unicode character escape sequence at %s", state, (char *)p - 2);
+    }
+    
+    return ((uint32_t)b0 << 12) | ((uint32_t)b1 << 8) | ((uint32_t)b2 << 4) | (uint32_t)b3;
 }
 
 #define GET_PARSER_CONFIG                          \
