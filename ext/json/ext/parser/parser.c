@@ -646,6 +646,55 @@ typedef struct _json_unescape_positions {
     unsigned long additional_backslashes;
 } JSON_UnescapePositions;
 
+ALWAYS_INLINE(static) void *find_backslash(const void *src, size_t n) {
+// HAVE_SIMD_NEON and JSON_CPU_LITTLE_ENDIAN_64BITS are implied by __APPLE__ && __aarch64__
+// but they are here for clarity and consistency with code in this file.
+#if defined(__APPLE__) && defined(__aarch64__) && HAVE_SIMD_NEON && JSON_CPU_LITTLE_ENDIAN_64BITS
+    const unsigned char *s = (const unsigned char *)src;
+
+    static const uint8_t offsets[16] = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
+    while (n >= sizeof(uint8x16_t)) {
+        uint8x16_t chunk             = vld1q_u8(s);
+        uint8x16_t backslashes       = vdupq_n_u8('\\');
+        uint8x16_t has_backslashes   = vceqq_u8(chunk, backslashes);
+        uint8x16_t backslash_offsets = vandq_u8(has_backslashes, vld1q_u8(offsets));
+        int first_backslash_offset   = vmaxvq_u8(backslash_offsets);
+        if (first_backslash_offset) {
+            // The indexes are stored in reverse order so we need to subtract from 16
+            // to get the first backslash offset. We do this to avoid having to use
+            // a negation + OR operation along with a vminvq_u8 if the indexes were stored
+            // in normal order.
+            return (void *)(s + (16 - first_backslash_offset));
+        }
+        s += sizeof(uint8x16_t);
+        n -= sizeof(uint8x16_t);
+    }
+
+    if (n >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, s, sizeof(uint64_t));
+        uint64_t xor = word ^ 0x5c5c5c5c5c5c5c5c;
+        uint64_t has_backslash = (xor - 0x0101010101010101) & ((~xor) & 0x8080808080808080);
+        if (has_backslash) {
+            int byte_offset = trailing_zeros64(has_backslash) / CHAR_BIT;
+            return (void *)(s + byte_offset);
+        }
+        s += sizeof(uint64_t);
+        n -= sizeof(uint64_t);
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '\\') {
+            return (void *)(s + i);
+        }
+    }
+
+    return NULL;
+#else
+    return memchr(src, '\\', n);
+#endif
+}
+
 static inline const char *json_next_backslash(const char *pe, const char *stringEnd, JSON_UnescapePositions *positions)
 {
     while (positions->size) {
@@ -659,7 +708,7 @@ static inline const char *json_next_backslash(const char *pe, const char *string
 
     if (positions->additional_backslashes) {
         positions->additional_backslashes--;
-        return memchr(pe, '\\', stringEnd - pe);
+        return find_backslash(pe, stringEnd - pe);
     }
 
     return NULL;

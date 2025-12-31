@@ -543,6 +543,10 @@ class JSONParserTest < Test::Unit::TestCase
     json = '["\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\""]'
     assert_equal data, parse(json)
 
+    data = ['""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""']
+    json = '["\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\""]'
+    assert_equal data, parse(json)
+
     data = '["This is a "test" of the emergency broadcast system."]'
     json = "\"[\\\"This is a \\\"test\\\" of the emergency broadcast system.\\\"]\""
     assert_equal data, parse(json)
@@ -611,6 +615,10 @@ class JSONParserTest < Test::Unit::TestCase
     json = "\"ab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002c\""
     assert_equal data, parse(json)
 
+    data = "ab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002cab\u0002c"
+    json = "\"ab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002cab\\u0002c\""
+    assert_equal data, parse(json)
+
     data = "\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f"
     json = "\"\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\""
     assert_equal data, parse(json)
@@ -619,8 +627,20 @@ class JSONParserTest < Test::Unit::TestCase
     json = "\"\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\""
     assert_equal data, parse(json)
 
+    data = "\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b\n\t\f\b"
+    json = "\"\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\""
+    assert_equal data, parse(json)
+
     data = "a\n\t\f\b\n\t\f\b\n\t\f\b\n\t"
     json = "\"a\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\""
+    assert_equal data, parse(json)
+
+    data = "a\n\t\f\b\n\t\f\b\n\t\f\b\n\ta\n\t\f\b\n\t\f\b\n\t\f\b\n\ta\n\t\f\b\n\t\f\b\n\t\f\b\n\ta\n\t\f\b\n\t\f\b\n\t\f\b\n\ta\n\t\f\b\n\t\f\b\n\t\f\b\n\t"
+    json = "\"a\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\ta\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\ta\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\ta\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\ta\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\\f\\b\\n\\t\""
+    assert_equal data, parse(json)
+
+    data = "\n" * 63
+    json = "\""+("\\n" * 63)+"\""
     assert_equal data, parse(json)
   end
 
