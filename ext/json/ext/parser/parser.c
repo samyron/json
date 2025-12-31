@@ -714,6 +714,35 @@ static inline const char *json_next_backslash(const char *pe, const char *string
     return NULL;
 }
 
+static inline void json_memcpy(char *dest, const char *src, size_t size) {
+#if defined(__APPLE__) && defined(__aarch64__) && HAVE_SIMD_NEON && JSON_CPU_LITTLE_ENDIAN_64BITS
+    while (size >= sizeof(uint8x16_t)) {
+        uint8x16_t chunk;
+        chunk = vld1q_u8((const uint8_t *)src);
+        vst1q_u8((uint8_t *)dest, chunk);
+        dest += sizeof(uint8x16_t);
+        src  += sizeof(uint8x16_t);
+        size -= sizeof(uint8x16_t);
+    }
+
+    if (size >= sizeof(uint64_t)) {
+        uint64_t chunk;
+        memcpy(&chunk, src, sizeof(uint64_t));
+        memcpy(dest, &chunk, sizeof(uint64_t));
+        dest += sizeof(uint64_t);
+        src  += sizeof(uint64_t);
+        size -= sizeof(uint64_t);
+    }
+
+    while(size) {
+        *dest++ = *src++;
+        size--;
+    }
+#else
+    memcpy(dest, src, size);
+#endif
+}
+
 NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_ParserConfig *config, const char *string, const char *stringEnd, bool is_name, JSON_UnescapePositions *positions)
 {
     bool intern = is_name || config->freeze;
@@ -731,7 +760,7 @@ NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_Parser
 
     while (pe < stringEnd && (pe = json_next_backslash(pe, stringEnd, positions))) {
         if (pe > p) {
-          MEMCPY(buffer, p, char, pe - p);
+          json_memcpy(buffer, p, pe - p);
           buffer += pe - p;
         }
         switch (*++pe) {
@@ -796,7 +825,7 @@ NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_Parser
 
                     char buf[4];
                     int unescape_len = convert_UTF32_to_UTF8(buf, ch);
-                    MEMCPY(buffer, buf, char, unescape_len);
+                    json_memcpy(buffer, buf, unescape_len);
                     buffer += unescape_len;
                     p = ++pe;
                 }
@@ -818,7 +847,7 @@ NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_Parser
 #undef APPEND_CHAR
 
     if (stringEnd > p) {
-      MEMCPY(buffer, p, char, stringEnd - p);
+      json_memcpy(buffer, p, stringEnd - p);
       buffer += stringEnd - p;
     }
     rb_str_set_len(result, buffer - bufferStart);
