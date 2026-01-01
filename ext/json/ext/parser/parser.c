@@ -682,11 +682,12 @@ static inline const char *json_copy_and_find_next_backslash(
         vst1q_u8((unsigned char *)dest, chunk);
 
         uint8x16_t backslashes       = vdupq_n_u8('\\');
-        uint8x16_t has_backslashes   = vceqq_u8(chunk, backslashes);
+        uint8x16_t has_backslashes   = vsubq_u8(chunk, backslashes);
         uint8_t min                  = vminvq_u8(has_backslashes);
         // If min == 0, we found a backslash in this chunk.
         if (min == 0) {
-            uint8x16_t backslash_offsets = vandq_u8(has_backslashes, vld1q_u8(offsets));
+            uint8x16_t backslash_mask    = vceqq_u8(has_backslashes, vdupq_n_u8(0));
+            uint8x16_t backslash_offsets = vandq_u8(backslash_mask, vld1q_u8(offsets));
             int first_backslash_offset   = vmaxvq_u8(backslash_offsets);
             // The indexes are stored in reverse order so we need to subtract from 16
             // to get the first backslash offset. We do this to avoid having to use
