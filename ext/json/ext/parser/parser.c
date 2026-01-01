@@ -701,16 +701,38 @@ static inline const char *json_copy_and_find_next_backslash(
         dest += sizeof(uint8x16_t);
     }
 
-    // Handle remaining bytes
-    while (src < stringEnd) {
-        char ch = *src;
-        if (ch == '\\') {
-            *dest_ptr = dest; 
-            return src;
+    if (src <= stringEnd - sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, src, sizeof(uint64_t));
+        memcpy(dest, &word, sizeof(uint64_t));
+        uint64_t xor = word ^ 0x5c5c5c5c5c5c5c5c;
+        uint64_t has_backslash = (xor - 0x0101010101010101) & ((~xor) & 0x8080808080808080);
+        if (has_backslash) {
+            int byte_offset = trailing_zeros64(has_backslash) / CHAR_BIT;
+            *dest_ptr = dest + byte_offset;
+            return (void *)(src + byte_offset);
         }
-        *dest++ = ch;
-        src++;
+        src += sizeof(uint64_t);
+        dest += sizeof(uint64_t);
     }
+
+    for (; src < stringEnd; src++) {
+        if (*src == '\\') {
+            *dest_ptr = dest;
+            return (void *)(src);
+        }
+        *dest++ = *src;
+    }
+    // // Handle remaining bytes
+    // while (src < stringEnd) {
+    //     char ch = *src;
+    //     if (ch == '\\') {
+    //         *dest_ptr = dest; 
+    //         return src;
+    //     }
+    //     *dest++ = ch;
+    //     src++;
+    // }
 #else
         // memccpy copies until it finds '\\' and returns pointer AFTER it in dest
         char *after_backslash = memccpy(dest, src, '\\', stringEnd - src);
