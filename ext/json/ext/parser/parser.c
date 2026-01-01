@@ -821,8 +821,31 @@ NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_Parser
 
                 char buf[4];
                 int unescape_len = convert_UTF32_to_UTF8(buf, ch);
-                MEMCPY(buffer, buf, char, unescape_len);
-                buffer += unescape_len;
+                switch(unescape_len) {
+                    case 1: {
+                        *buffer++ = buf[0];
+                        // MEMCPY(buffer, buf, char, 1);
+                        // buffer += 1;
+                    }
+                    break;
+                    case 4: {
+                        MEMCPY(buffer, buf, char, 4);
+                        buffer += 4;
+                    }
+                    break;
+                    default: {
+                        MEMCPY(buffer, buf, char, unescape_len);
+                        buffer += unescape_len;
+                    }
+                    break;
+                }
+                // if (RB_LIKELY(unescape_len == 1)) {
+                //     *buffer++ = buf[0];
+                //     p = ++pe;
+                //     break;
+                // }
+                // MEMCPY(buffer, buf, char, unescape_len);
+                // buffer += unescape_len;
                 p = ++pe;
                 break;
             }
