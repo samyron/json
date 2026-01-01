@@ -647,20 +647,77 @@ typedef struct _json_unescape_positions {
     unsigned long additional_backslashes;
 } JSON_UnescapePositions;
 
-static inline const char *json_next_backslash(const char *pe, const char *stringEnd, JSON_UnescapePositions *positions)
+// Returns the position in the source where backslash was found, or NULL
+// Copies all data up to (but not including) the backslash to dest
+// Updates *dest_ptr to point past the copied data
+static inline const char *json_copy_and_find_next_backslash(
+    char **dest_ptr, 
+    const char *src, 
+    const char *stringEnd, 
+    JSON_UnescapePositions *positions)
 {
+    char *dest = *dest_ptr;
+    
     while (positions->size) {
         positions->size--;
         const char *next_position = positions->positions[0];
         positions->positions++;
-        if (next_position >= pe) {
+        if (next_position >= src) {
+            // Copy everything from src up to the backslash
+            size_t copy_len = next_position - src;
+            MEMCPY(dest, src, char, copy_len);
+            *dest_ptr = dest + copy_len;
             return next_position;
         }
     }
 
     if (positions->additional_backslashes) {
         positions->additional_backslashes--;
-        return memchr(pe, '\\', stringEnd - pe);
+#ifdef HAVE_SIMD_NEON
+    static const uint8_t offsets[16] = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
+    while (src <= stringEnd - sizeof(uint8x16_t)) {
+        uint8x16_t chunk             = vld1q_u8((const unsigned char *)src);
+
+        // Optimistically store the chunk to dest but do not increment dest yet.
+        vst1q_u8((unsigned char *)dest, chunk);
+
+        uint8x16_t backslashes       = vdupq_n_u8('\\');
+        uint8x16_t has_backslashes   = vceqq_u8(chunk, backslashes);
+        uint8x16_t backslash_offsets = vandq_u8(has_backslashes, vld1q_u8(offsets));
+        int first_backslash_offset   = vmaxvq_u8(backslash_offsets);
+        if (first_backslash_offset) {
+            // The indexes are stored in reverse order so we need to subtract from 16
+            // to get the first backslash offset. We do this to avoid having to use
+            // a negation + OR operation along with a vminvq_u8 if the indexes were stored
+            // in normal order.
+            int offset = 16 - first_backslash_offset;
+            *dest_ptr = dest + offset;
+            return (void *)(src + offset);
+        }
+        src += sizeof(uint8x16_t);
+        dest += sizeof(uint8x16_t);
+    }
+
+    // Handle remaining bytes
+    while (src < stringEnd) {
+        char ch = *src;
+        if (ch == '\\') {
+            *dest_ptr = dest; 
+            return src;
+        }
+        *dest++ = ch;
+        src++;
+    }
+#else
+        // memccpy copies until it finds '\\' and returns pointer AFTER it in dest
+        char *after_backslash = memccpy(dest, src, '\\', stringEnd - src);
+        if (after_backslash) {
+            // Found a backslash - figure out where it was in source
+            size_t copied = (after_backslash - dest) - 1; // -1 because memccpy includes the delimiter
+            *dest_ptr = after_backslash - 1; // Point to where we'd continue (before the backslash in dest)
+            return src + copied;
+        }
+#endif
     }
 
     return NULL;
@@ -681,11 +738,7 @@ NOINLINE(static) VALUE json_string_unescape(JSON_ParserState *state, JSON_Parser
 
 #define APPEND_CHAR(chr) *buffer++ = chr; p = ++pe;
 
-    while (pe < stringEnd && (pe = json_next_backslash(pe, stringEnd, positions))) {
-        if (pe > p) {
-          MEMCPY(buffer, p, char, pe - p);
-          buffer += pe - p;
-        }
+    while (pe < stringEnd && (pe = json_copy_and_find_next_backslash(&buffer, pe, stringEnd, positions))) {
         switch (*++pe) {
             case '"':
             case '/':
