@@ -276,16 +276,26 @@ ALWAYS_INLINE(static) char *copy_remaining_bytes(search_state *search, unsigned 
     // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
     
     // We know len is at least 6 (SIMD_MINIMUM_THRESHOLD). 
+
+    if (len >= 8) {
+        __builtin_memcpy(s, search->ptr, 8);
+        __builtin_memcpy(s + len - 8, search->ptr + len - 8, 8);
+    } else {
+        // len is 6 or 7
+        __builtin_memcpy(s, search->ptr, 4);
+        __builtin_memcpy(s + len - 4, search->ptr + len - 4, 4);
+    }
+
     // Copy first 4 bytes and last 4 bytes. 
     // They might overlap, and that's fine!
-    memcpy(s, search->ptr, 4);
-    memcpy(s + len - 4, search->ptr + len - 4, 4);
+    // memcpy(s, search->ptr, 4);
+    // memcpy(s + len - 4, search->ptr + len - 4, 4);
 
-    // If len > 8, we still need to cover the middle.
-    if (len > 8) {
-        memcpy(s + 4, search->ptr + 4, 4);
-        memcpy(s + len - 8, search->ptr + len - 8, 4);
-    }
+    // // If len > 8, we still need to cover the middle.
+    // if (len > 8) {
+    //     memcpy(s + 4, search->ptr + 4, 4);
+    //     memcpy(s + len - 8, search->ptr + len - 8, 4);
+    // }
 
     return s;
 }
