@@ -274,7 +274,18 @@ ALWAYS_INLINE(static) char *copy_remaining_bytes(search_state *search, unsigned 
 
     // Optimistically copy the remaining 'len' characters to the output FBuffer. If there are no characters
     // to escape, then everything ends up in the correct spot. Otherwise it was convenient temporary storage.
-    MEMCPY(s, search->ptr, char, len);
+    
+    // We know len is at least 6 (SIMD_MINIMUM_THRESHOLD). 
+    // Copy first 4 bytes and last 4 bytes. 
+    // They might overlap, and that's fine!
+    memcpy(s, search->ptr, 4);
+    memcpy(s + len - 4, search->ptr + len - 4, 4);
+
+    // If len > 8, we still need to cover the middle.
+    if (len > 8) {
+        memcpy(s + 4, search->ptr + 4, 4);
+        memcpy(s + len - 8, search->ptr + len - 8, 4);
+    }
 
     return s;
 }
