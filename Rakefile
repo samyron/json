@@ -159,7 +159,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
     JAVA_VEC_SOURCES.each do |src|
       obj = src.sub(/\.java\Z/, '.class')
       file obj => src do
-        sh 'javac', '--add-modules', 'jdk.incubator.vector', '-classpath', classpath, '--release', '16', src do |success, status| 
+        sh 'javac', '--add-modules', 'jdk.incubator.vector', '-classpath', classpath, '--release', '16', src do |success, status|
           if success
             puts "*** 'jdk.incubator.vector' support enabled ***"
           else
