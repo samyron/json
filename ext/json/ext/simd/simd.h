@@ -22,12 +22,24 @@ typedef enum {
 # define HAVE_BUILTIN_CTZLL 0
 #endif
 
+#if defined(_MSC_VER) && defined(HAVE_INTRIN_H)
+#define JSON_SIMD_WINDOWS 1
+#include <intrin.h>
+#endif
+
 static inline uint32_t trailing_zeros64(uint64_t input)
 {
     JSON_ASSERT(input > 0); // __builtin_ctz(0) is undefined behavior
 
 #if HAVE_BUILTIN_CTZLL
     return __builtin_ctzll(input);
+#elif JSON_SIMD_WINDOWS
+    uint32_t index;
+    if (_BitScanForward64(&index, input)) {
+        return index;
+    } else {
+        return 64; // _BitScanForward64 returns 0 if input is 0, so there are 64 zeros.
+    }
 #else
     uint32_t trailing_zeros = 0;
     uint64_t temp = input;
@@ -45,6 +57,13 @@ static inline int trailing_zeros(int input)
 
 #if HAVE_BUILTIN_CTZLL
     return __builtin_ctz(input);
+#elif JSON_SIMD_WINDOWS
+    uint32_t index;
+    if (_BitScanForward(&index, input)) {
+        return index;
+    } else {
+        return 32; // _BitScanForward returns 0 if input is 0, so there are 32 zeros.
+    }
 #else
     int trailing_zeros = 0;
     int temp = input;
@@ -147,13 +166,16 @@ static inline uint8x16x4_t load_uint8x16_4(const unsigned char *table)
 
 #if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
 
+#if defined(HAVE_X86INTRIN_H) || defined(JSON_SIMD_WINDOWS)
+
+// We check for HAVE_X86INTRIN_H again to include the heder as if we have 'intrin.h' it's already been incldued.
 #ifdef HAVE_X86INTRIN_H
 #include <x86intrin.h>
+#endif
 
 #define HAVE_SIMD 1
 #define HAVE_SIMD_SSE2 1
 
-#ifdef HAVE_CPUID_H
 #define FIND_SIMD_IMPLEMENTATION_DEFINED 1
 
 #if defined(__clang__) || defined(__GNUC__)
@@ -192,15 +214,27 @@ ALWAYS_INLINE(static) TARGET_SSE2 int string_scan_simd_sse2(const char **ptr, co
     return 0;
 }
 
+#ifdef HAVE_CPUID_H
 #include <cpuid.h>
 #endif /* HAVE_CPUID_H */
 
 static inline SIMD_Implementation find_simd_implementation(void)
 {
     // TODO Revisit. I think the SSE version now only uses SSE2 instructions.
+#if __has_builtin(__builtin_cpu_supports)
     if (__builtin_cpu_supports("sse2")) {
         return SIMD_SSE2;
     }
+#endif
+
+#if defined(JSON_SIMD_WINDOWS)
+    // https://learn.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?view=msvc-170
+    int cpuInfo[4] = {0};
+    __cpuid(cpuInfo, 1);
+    if ((cpuInfo[3] & (1 << 26)) != 0) {
+        return SIMD_SSE2;
+    }
+#endif
 
     return SIMD_NONE;
 }

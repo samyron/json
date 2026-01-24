@@ -94,6 +94,8 @@ typedef unsigned char _Bool;
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ && INTPTR_MAX == INT64_MAX
 #define JSON_CPU_LITTLE_ENDIAN_64BITS 1
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_AMD64))
+#define JSON_CPU_LITTLE_ENDIAN_64BITS 1
 #else
 #define JSON_CPU_LITTLE_ENDIAN_64BITS 0
 #endif

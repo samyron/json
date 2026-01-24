@@ -5,6 +5,7 @@ when /^(arm|aarch64)/
 when /^(x86_64|x64)/
   header, type, init, extra = 'x86intrin.h', '__m128i', '_mm_set1_epi8(32)', 'if (__builtin_cpu_supports("sse2")) { printf("OK"); }'
 end
+# intrin.h
 if header
   if have_header(header) && try_compile(<<~SRC, '-Werror=implicit-function-declaration')
       #{cpp_include(header)}
@@ -17,7 +18,16 @@ if header
     SRC
     $defs.push("-DJSON_ENABLE_SIMD")
   else
-    puts "Disable SIMD"
+    if RbConfig::CONFIG['host_os'] =~ /mswin/i
+        if have_header('intrin.h') && try_compile(<<~SRC, '-arch:SSE2')
+          #include <intrin.h>
+          int main() { __m128i x = _mm_setzero_si128(); return 0; }
+        SRC
+        $defs.push("-DJSON_ENABLE_SIMD")
+      end
+    else
+      puts "Disable SIMD"
+    end
   end
 end
 

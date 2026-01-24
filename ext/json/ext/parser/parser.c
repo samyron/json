@@ -86,7 +86,16 @@ static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring
 #define rstring_cache_memcmp memcmp
 
 #if JSON_CPU_LITTLE_ENDIAN_64BITS
-#if __has_builtin(__builtin_bswap64)
+
+#if defined(JSON_SIMD_WINDOWS)
+#define HAVE_BYTE_SWAP64 1
+#define byte_swap64(x) _byteswap_uint64(x)
+#elif __has_builtin(__builtin_bswap64)
+#define HAVE_BYTE_SWAP64 1
+#define byte_swap64(x) __builtin_bswap64(x)
+#endif
+
+#if defined(HAVE_BYTE_SWAP64) && (HAVE_BYTE_SWAP64 == 1)
 #undef rstring_cache_memcmp
 ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr, const long length)
 {
@@ -100,8 +109,8 @@ ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr
         memcpy(&a, str + i, 8);
         memcpy(&b, rptr + i, 8);
         if (a != b) {
-            a = __builtin_bswap64(a);
-            b = __builtin_bswap64(b);
+            a = byte_swap64(a);
+            b = byte_swap64(b);
             return (a < b) ? -1 : 1;
         }
     }
@@ -114,6 +123,7 @@ ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr
 
     return 0;
 }
+#undef byte_swap64
 #endif
 #endif
 
