@@ -954,7 +954,8 @@ ALWAYS_INLINE(static) bool string_scan(JSON_ParserState *state)
 #if defined(HAVE_SIMD_NEON)
 
     uint64_t mask = 0;
-    if (string_scan_simd_neon(&state->cursor, state->end, &mask)) {
+    if ((mask = string_scan_simd_neon(&state->cursor, state->end))) {
+        mask &= 0x8888888888888888ull;
         state->cursor += trailing_zeros64(mask) >> 2;
         return true;
     }

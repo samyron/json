@@ -104,7 +104,7 @@ ALWAYS_INLINE(static) uint64_t neon_match_mask(uint8x16_t matches)
 {
     const uint8x8_t res = vshrn_n_u16(vreinterpretq_u16_u8(matches), 4);
     const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(res), 0);
-    return mask & 0x8888888888888888ull;
+    return mask;
 }
 
 ALWAYS_INLINE(static) uint64_t compute_chunk_mask_neon(const char *ptr)
@@ -120,16 +120,52 @@ ALWAYS_INLINE(static) uint64_t compute_chunk_mask_neon(const char *ptr)
     return neon_match_mask(needs_escape);
 }
 
-ALWAYS_INLINE(static) int string_scan_simd_neon(const char **ptr, const char *end, uint64_t *mask)
+// ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const char *end)
+// {
+//     char *p = (char *)(*ptr);
+//     while (p + sizeof(uint8x16_t) <= end) {
+//         uint64_t chunk_mask = compute_chunk_mask_neon(p);
+//         if (chunk_mask) {
+//             *ptr = p;
+//             return chunk_mask & 0x8888888888888888ull;
+//         }
+//         p += sizeof(uint8x16_t);
+//     }
+//     *ptr = p;
+//     return 0;
+// }
+
+ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const char *end)
 {
-    while (*ptr + sizeof(uint8x16_t) <= end) {
-        uint64_t chunk_mask = compute_chunk_mask_neon(*ptr);
-        if (chunk_mask) {
-            *mask = chunk_mask;
-            return 1;
+    char *p = (char *)(*ptr);
+    
+    // Unroll 2x for better instruction-level parallelism
+    while (p + 2 * sizeof(uint8x16_t) <= end) {
+        uint64_t chunk_mask0 = compute_chunk_mask_neon(p);
+        uint64_t chunk_mask1 = compute_chunk_mask_neon(p + sizeof(uint8x16_t));
+        
+        if (chunk_mask0) {
+            *ptr = p;
+            return chunk_mask0 & 0x8888888888888888ull;
         }
-        *ptr += sizeof(uint8x16_t);
+        if (chunk_mask1) {
+            *ptr = p + sizeof(uint8x16_t);
+            return chunk_mask1 & 0x8888888888888888ull;
+        }
+        p += 2 * sizeof(uint8x16_t);
     }
+    
+    // Handle remaining single chunk
+    if (p + sizeof(uint8x16_t) <= end) {
+        uint64_t chunk_mask = compute_chunk_mask_neon(p);
+        if (chunk_mask) {
+            *ptr = p;
+            return chunk_mask & 0x8888888888888888ull;
+        }
+        p += sizeof(uint8x16_t);
+    }
+    
+    *ptr = p;
     return 0;
 }
 
