@@ -143,6 +143,22 @@ ALWAYS_INLINE(static) void search_flush(search_state *search)
     }
 }
 
+#ifdef HAVE_SIMD
+ALWAYS_INLINE(static) void search_flush_small(search_state *search)
+{
+    // Do not remove this conditional without profiling, specifically escape-heavy text.
+    // escape_UTF8_char_basic will advance search->ptr and search->cursor (effectively a search_flush).
+    // For back-to-back characters that need to be escaped, specifically for the SIMD code paths, this method
+    // will be called just before calling escape_UTF8_char_basic. There will be no characters to append for the
+    // consecutive characters that need to be escaped. While the fbuffer_append is a no-op if
+    // nothing needs to be flushed, we can save a few memory references with this conditional.
+    if (search->ptr > search->cursor) {
+        fbuffer_append16(search->buffer, search->cursor, search->ptr - search->cursor);
+        search->cursor = search->ptr;
+    }
+}
+#endif /* HAVE_SIMD */
+
 static const unsigned char escape_table_basic[256] = {
     // ASCII Control Characters
      9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
@@ -403,7 +419,7 @@ ALWAYS_INLINE(static) uint64_t neon_next_match(uint64_t mask, search_state *sear
     // is one byte after the previous match then:
     //     search->chunk_base + index == search->ptr
     search->ptr = search->chunk_base + index;
-    search_flush(search);
+    search_flush_small(search);
     
     mask &= mask - 1;
     // search->matches_mask = mask;
@@ -494,7 +510,6 @@ static inline uint64_t search_escape_basic_neon(search_state *search)
         return mask & 0x8888888888888888ull;
     }
 
-    // search_flush(search);
     return 0;
 }
 #endif /* HAVE_SIMD_NEON */
