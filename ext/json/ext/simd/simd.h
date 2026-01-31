@@ -1,3 +1,5 @@
+#ifndef JSON_SIMD_H
+#define JSON_SIMD_H
 #include "../json.h"
 
 typedef enum {
@@ -63,7 +65,7 @@ static inline int trailing_zeros(int input)
 ALWAYS_INLINE(static) void json_fast_memcpy16(char *dst, const char *src, size_t len)
 {
     RBIMPL_ASSERT_OR_ASSUME(len < 16);
-    RBIMPL_ASSERT_OR_ASSUME(len >= SIMD_MINIMUM_THRESHOLD); // 4
+    // RBIMPL_ASSERT_OR_ASSUME(len >= SIMD_MINIMUM_THRESHOLD); // 4
 #if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
     // If __builtin_memcpy is available, use it to copy between SIMD_MINIMUM_THRESHOLD (4) and vec_len-1 (15) bytes.
     // These copies overlap. The first copy will copy the first 8 (or 4) bytes. The second copy will copy
@@ -78,9 +80,13 @@ ALWAYS_INLINE(static) void json_fast_memcpy16(char *dst, const char *src, size_t
     if (len >= 8) {
         __builtin_memcpy(dst, src, 8);
         __builtin_memcpy(dst + len - 8, src + len - 8, 8);
-    } else {
+    } else if (len >= 4) {
         __builtin_memcpy(dst, src, 4);
         __builtin_memcpy(dst + len - 4, src + len - 4, 4);
+    } else if (len > 0) {
+        dst[0] = src[0];
+        dst[len - 1] = src[len - 1];
+        if (len > 2) dst[1] = src[1];
     }
 #else
     MEMCPY(dst, src, char, len);
@@ -120,43 +126,10 @@ ALWAYS_INLINE(static) uint64_t compute_chunk_mask_neon(const char *ptr)
     return neon_match_mask(needs_escape);
 }
 
-// ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const char *end)
-// {
-//     char *p = (char *)(*ptr);
-//     while (p + sizeof(uint8x16_t) <= end) {
-//         uint64_t chunk_mask = compute_chunk_mask_neon(p);
-//         if (chunk_mask) {
-//             *ptr = p;
-//             return chunk_mask & 0x8888888888888888ull;
-//         }
-//         p += sizeof(uint8x16_t);
-//     }
-//     *ptr = p;
-//     return 0;
-// }
-
 ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const char *end)
 {
     char *p = (char *)(*ptr);
-    
-    // Unroll 2x for better instruction-level parallelism
-    while (p + 2 * sizeof(uint8x16_t) <= end) {
-        uint64_t chunk_mask0 = compute_chunk_mask_neon(p);
-        uint64_t chunk_mask1 = compute_chunk_mask_neon(p + sizeof(uint8x16_t));
-        
-        if (chunk_mask0) {
-            *ptr = p;
-            return chunk_mask0 & 0x8888888888888888ull;
-        }
-        if (chunk_mask1) {
-            *ptr = p + sizeof(uint8x16_t);
-            return chunk_mask1 & 0x8888888888888888ull;
-        }
-        p += 2 * sizeof(uint8x16_t);
-    }
-    
-    // Handle remaining single chunk
-    if (p + sizeof(uint8x16_t) <= end) {
+    while (p + sizeof(uint8x16_t) <= end) {
         uint64_t chunk_mask = compute_chunk_mask_neon(p);
         if (chunk_mask) {
             *ptr = p;
@@ -164,8 +137,60 @@ ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const cha
         }
         p += sizeof(uint8x16_t);
     }
-    
     *ptr = p;
+    return 0;
+}
+
+// ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const char *end)
+// {
+//     char *p = (char *)(*ptr);
+    
+//     // Unroll 2x for better instruction-level parallelism
+//     while (p + 2 * sizeof(uint8x16_t) <= end) {
+//         uint64_t chunk_mask0 = compute_chunk_mask_neon(p);
+//         uint64_t chunk_mask1 = compute_chunk_mask_neon(p + sizeof(uint8x16_t));
+        
+//         if (chunk_mask0) {
+//             *ptr = p;
+//             return chunk_mask0 & 0x8888888888888888ull;
+//         }
+//         if (chunk_mask1) {
+//             *ptr = p + sizeof(uint8x16_t);
+//             return chunk_mask1 & 0x8888888888888888ull;
+//         }
+//         p += 2 * sizeof(uint8x16_t);
+//     }
+    
+//     // Handle remaining single chunk
+//     if (p + sizeof(uint8x16_t) <= end) {
+//         uint64_t chunk_mask = compute_chunk_mask_neon(p);
+//         if (chunk_mask) {
+//             *ptr = p;
+//             return chunk_mask & 0x8888888888888888ull;
+//         }
+//         p += sizeof(uint8x16_t);
+//     }
+    
+//     *ptr = p;
+//     return 0;
+// }
+
+ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, const char *end, const char ** restrict out)
+{
+    while (*ptr + sizeof(uint8x16_t) <= end) {
+        uint8x16_t chunk = vld1q_u8((const unsigned char *)*ptr);
+        vst1q_u8((unsigned char *)(*out), chunk);
+        
+        const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
+        uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
+        uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
+        uint64_t chunk_mask = neon_match_mask(needs_escape);
+        if (chunk_mask) {
+            return chunk_mask & 0x8888888888888888ull;
+        }
+        *ptr += sizeof(uint8x16_t);
+        *out += sizeof(uint8x16_t);
+    }
     return 0;
 }
 
@@ -252,3 +277,4 @@ static inline SIMD_Implementation find_simd_implementation(void)
     return SIMD_NONE;
 }
 #endif
+#endif /* JSON_SIMD_H */

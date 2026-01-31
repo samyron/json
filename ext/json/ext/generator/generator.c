@@ -118,11 +118,10 @@ typedef struct _search_state {
 #ifdef HAVE_SIMD
     const char *chunk_base;
     const char *chunk_end;
-    // bool has_matches;
-
 #if defined(HAVE_SIMD_NEON)
     // uint64_t matches_mask;
 #elif defined(HAVE_SIMD_SSE2)
+    bool has_matches;
     int matches_mask;
 #else
 #error "Unknown SIMD Implementation."
@@ -167,7 +166,7 @@ static inline unsigned char search_escape_basic(search_state *search)
             search->ptr++;
         }
     }
-    // search_flush(search);
+    search_flush(search);
     return 0;
 }
 
@@ -189,34 +188,35 @@ static inline unsigned char search_escape_basic(search_state *search)
 //     fbuffer_append_reserved_char(search->buffer, '\\');
 
 //     const unsigned char ch = (unsigned char)*search->ptr;
-//     unsigned char escaped = escape_char_table[ch];
-//     if (RB_LIKELY(escaped != 0)) {
-//         fbuffer_append_reserved_char(search->buffer, escaped);
-//     } else {
-//         const char *hexdig = "0123456789abcdef";
-//         char scratch[5] = { 'u', '0', '0', 0, 0 };
-//         scratch[3] = hexdig[(ch >> 4) & 0xf];
-//         scratch[4] = hexdig[ch & 0xf];
-//         fbuffer_append_reserved(search->buffer, scratch, 5);
-//     }
-//     // switch (ch) {
-//     //     case '"':  fbuffer_append_reserved_char(search->buffer, '"'); break;
-//     //     case '\\': fbuffer_append_reserved_char(search->buffer, '\\'); break;
-//     //     case '/':  fbuffer_append_reserved_char(search->buffer, '/');  break;
-//     //     case '\b': fbuffer_append_reserved_char(search->buffer, 'b');  break;
-//     //     case '\f': fbuffer_append_reserved_char(search->buffer, 'f');  break;
-//     //     case '\n': fbuffer_append_reserved_char(search->buffer, 'n');  break;
-//     //     case '\r': fbuffer_append_reserved_char(search->buffer, 'r');  break;
-//     //     case '\t': fbuffer_append_reserved_char(search->buffer, 't');  break;
-//     //     default: {
-//     //         const char *hexdig = "0123456789abcdef";
-//     //         char scratch[5] = { 'u', '0', '0', 0, 0 };
-//     //         scratch[3] = hexdig[(ch >> 4) & 0xf];
-//     //         scratch[4] = hexdig[ch & 0xf];
-//     //         fbuffer_append(search->buffer, scratch, 5);
-//     //         break;
-//     //     }
+
+//     // unsigned char escaped = escape_char_table[ch];
+//     // if (RB_LIKELY(escaped != 0)) {
+//     //     fbuffer_append_reserved_char(search->buffer, escaped);
+//     // } else {
+//     //     const char *hexdig = "0123456789abcdef";
+//     //     char scratch[5] = { 'u', '0', '0', 0, 0 };
+//     //     scratch[3] = hexdig[(ch >> 4) & 0xf];
+//     //     scratch[4] = hexdig[ch & 0xf];
+//     //     fbuffer_append_reserved(search->buffer, scratch, 5);
 //     // }
+//     switch (ch) {
+//         case '"':  fbuffer_append_reserved_char(search->buffer, '"'); break;
+//         case '\\': fbuffer_append_reserved_char(search->buffer, '\\'); break;
+//         case '/':  fbuffer_append_reserved_char(search->buffer, '/');  break;
+//         case '\b': fbuffer_append_reserved_char(search->buffer, 'b');  break;
+//         case '\f': fbuffer_append_reserved_char(search->buffer, 'f');  break;
+//         case '\n': fbuffer_append_reserved_char(search->buffer, 'n');  break;
+//         case '\r': fbuffer_append_reserved_char(search->buffer, 'r');  break;
+//         case '\t': fbuffer_append_reserved_char(search->buffer, 't');  break;
+//         default: {
+//             const char *hexdig = "0123456789abcdef";
+//             char scratch[5] = { 'u', '0', '0', 0, 0 };
+//             scratch[3] = hexdig[(ch >> 4) & 0xf];
+//             scratch[4] = hexdig[ch & 0xf];
+//             fbuffer_append(search->buffer, scratch, 5);
+//             break;
+//         }
+//     }
 //     search->ptr++;
 //     search->cursor = search->ptr;
 // }
@@ -291,6 +291,11 @@ static inline void convert_UTF8_to_JSON(search_state *search)
             escape_UTF8_char_basic(search);
         } while (mask > 0);
         search->ptr = search->chunk_end;
+        // Basically search_flush but with a known small amount of data.
+        if (search->ptr > search->cursor) {
+            fbuffer_append16(search->buffer, search->cursor, search->ptr - search->cursor);
+            search->cursor = search->ptr;
+        }
     }
 
     if (search->ptr < search->end) {
@@ -448,12 +453,22 @@ static inline uint64_t search_escape_basic_neon(search_state *search)
     * have at least one byte that needs to be escaped.
     */
 
+    fbuffer_inc_capa(search->buffer, search->end - search->ptr);
     uint64_t matches_mask = 0;
-    if ((matches_mask = string_scan_simd_neon(&search->ptr, search->end))) {
-        // search->has_matches = true;
+    const char *out = fbuffer_cursor(search->buffer);
+    if ((matches_mask = string_scan_and_copy_simd_neon(&search->ptr, search->end, &out))) {
+        ptrdiff_t copied = out - fbuffer_cursor(search->buffer);
+        fbuffer_consumed(search->buffer, copied);
+        search->cursor = search->ptr;
         search->chunk_base = search->ptr;
         search->chunk_end = search->ptr + sizeof(uint8x16_t);
         return matches_mask;
+    }
+
+    ptrdiff_t copied = out - fbuffer_cursor(search->buffer);
+    if (copied > 0) {
+        fbuffer_consumed(search->buffer, copied);
+        search->cursor = search->ptr;
     }
 
     // There are fewer than 16 bytes left.

@@ -3,6 +3,7 @@
 
 #include "../json.h"
 #include "../vendor/jeaiii-ltoa.h"
+#include "../simd/simd.h"
 
 enum fbuffer_type {
     FBUFFER_HEAP_ALLOCATED = 0,
@@ -144,6 +145,17 @@ static inline void fbuffer_append(FBuffer *fb, const char *newstr, unsigned long
         fbuffer_append_reserved(fb, newstr, len);
     }
 }
+
+#ifdef HAVE_SIMD
+static inline void fbuffer_append16(FBuffer *fb, const char *newstr, unsigned long len)
+{
+    if (len > 0) {
+        fbuffer_inc_capa(fb, len);
+        json_fast_memcpy16(fb->ptr + fb->len, newstr, len);
+        fb->len += len;
+    }
+}
+#endif /* HAVE_SIMD */
 
 /* Appends a character into a buffer. The buffer needs to have sufficient capacity, via fbuffer_inc_capa(...). */
 static inline void fbuffer_append_reserved_char(FBuffer *fb, char chr)
