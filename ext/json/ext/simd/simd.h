@@ -180,19 +180,19 @@ ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, 
     while (*ptr + sizeof(uint8x16_t)*2 <= end) {
         uint8x16_t chunk0 = vld1q_u8((const unsigned char *)*ptr);
         vst1q_u8((unsigned char *)(*out), chunk0);
+        uint8x16_t chunk1 = vld1q_u8((const unsigned char *)(*ptr + sizeof(uint8x16_t)));
+        vst1q_u8((unsigned char *)(*out + sizeof(uint8x16_t)), chunk1);
         
         const uint8x16_t too_low_or_dbl_quote0 = vcltq_u8(veorq_u8(chunk0, vdupq_n_u8(2)), vdupq_n_u8(33));
+        const uint8x16_t too_low_or_dbl_quote1 = vcltq_u8(veorq_u8(chunk1, vdupq_n_u8(2)), vdupq_n_u8(33));
+        
         uint8x16_t has_backslash0 = vceqq_u8(chunk0, vdupq_n_u8('\\'));
         uint8x16_t needs_escape0  = vorrq_u8(too_low_or_dbl_quote0, has_backslash0);
         uint64_t chunk_mask0 = neon_match_mask(needs_escape0);
         if (chunk_mask0) {
             return chunk_mask0 & 0x8888888888888888ull;
         }
-
-        uint8x16_t chunk1 = vld1q_u8((const unsigned char *)(*ptr + sizeof(uint8x16_t)));
-        vst1q_u8((unsigned char *)(*out + sizeof(uint8x16_t)), chunk1);
         
-        const uint8x16_t too_low_or_dbl_quote1 = vcltq_u8(veorq_u8(chunk1, vdupq_n_u8(2)), vdupq_n_u8(33));
         uint8x16_t has_backslash1 = vceqq_u8(chunk1, vdupq_n_u8('\\'));
         uint8x16_t needs_escape1  = vorrq_u8(too_low_or_dbl_quote1, has_backslash1);
         uint64_t chunk_mask1 = neon_match_mask(needs_escape1);
