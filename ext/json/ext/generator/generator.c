@@ -186,6 +186,31 @@ static inline unsigned char search_escape_basic(search_state *search)
     return 0;
 }
 
+// ALWAYS_INLINE(static) void escape_UTF8_char_basic(search_state *search)
+// {
+//     const unsigned char ch = (unsigned char)*search->ptr;
+//     switch (ch) {
+//         case '"':  fbuffer_append(search->buffer, "\\\"", 2); break;
+//         case '\\': fbuffer_append(search->buffer, "\\\\", 2); break;
+//         case '/':  fbuffer_append(search->buffer, "\\/", 2);  break;
+//         case '\b': fbuffer_append(search->buffer, "\\b", 2);  break;
+//         case '\f': fbuffer_append(search->buffer, "\\f", 2);  break;
+//         case '\n': fbuffer_append(search->buffer, "\\n", 2);  break;
+//         case '\r': fbuffer_append(search->buffer, "\\r", 2);  break;
+//         case '\t': fbuffer_append(search->buffer, "\\t", 2);  break;
+//         default: {
+//             const char *hexdig = "0123456789abcdef";
+//             char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
+//             scratch[4] = hexdig[(ch >> 4) & 0xf];
+//             scratch[5] = hexdig[ch & 0xf];
+//             fbuffer_append(search->buffer, scratch, 6);
+//             break;
+//         }
+//     }
+//     search->ptr++;
+//     search->cursor = search->ptr;
+// }
+
 // static const char escape_char_table[128] = {
 //     ['\"'] = '"',
 //     ['\\'] = '\\',
