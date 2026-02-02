@@ -178,10 +178,11 @@ ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const cha
 ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, const char *end, const char ** restrict out)
 {
     while (*ptr + sizeof(uint8x16_t)*2 <= end) {
-        uint8x16_t chunk0 = vld1q_u8((const unsigned char *)*ptr);
-        vst1q_u8((unsigned char *)(*out), chunk0);
-        uint8x16_t chunk1 = vld1q_u8((const unsigned char *)(*ptr + sizeof(uint8x16_t)));
-        vst1q_u8((unsigned char *)(*out + sizeof(uint8x16_t)), chunk1);
+        uint8x16x2_t chunks = vld1q_u8_x2((const unsigned char *)(*ptr));
+        vst1q_u8_x2((unsigned char *)(*out), chunks);
+
+        uint8x16_t chunk0 = chunks.val[0];
+        uint8x16_t chunk1 = chunks.val[1];
         
         const uint8x16_t too_low_or_dbl_quote0 = vcltq_u8(veorq_u8(chunk0, vdupq_n_u8(2)), vdupq_n_u8(33));
         const uint8x16_t too_low_or_dbl_quote1 = vcltq_u8(veorq_u8(chunk1, vdupq_n_u8(2)), vdupq_n_u8(33));
