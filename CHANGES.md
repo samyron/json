@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2026-02-03 (2.18.1)
+
 * Fix a potential crash in very specific circumstance if GC triggers during a call to `to_json`
   without first invoking a user defined `#to_json` method.
 
