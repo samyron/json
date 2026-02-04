@@ -147,11 +147,11 @@ static inline void fbuffer_append(FBuffer *fb, const char *newstr, unsigned long
 }
 
 #ifdef HAVE_SIMD
-static inline void fbuffer_append16(FBuffer *fb, const char *newstr, unsigned long len)
+static inline void fbuffer_append32(FBuffer *fb, const char *newstr, unsigned long len)
 {
     if (len > 0) {
         fbuffer_inc_capa(fb, len);
-        json_fast_memcpy16(fb->ptr + fb->len, newstr, len);
+        json_fast_memcpy32(fb->ptr + fb->len, newstr, len);
         fb->len += len;
     }
 }

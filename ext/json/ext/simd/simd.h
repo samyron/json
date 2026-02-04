@@ -93,6 +93,31 @@ ALWAYS_INLINE(static) void json_fast_memcpy16(char *dst, const char *src, size_t
 #endif
 }
 
+ALWAYS_INLINE(static) void json_fast_memcpy32(char *dst, const char *src, size_t len)
+{
+    RBIMPL_ASSERT_OR_ASSUME(len < 32);
+    // RBIMPL_ASSERT_OR_ASSUME(len >= SIMD_MINIMUM_THRESHOLD); // 4
+#if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
+    // Overlapping copy strategy for lengths up to 31 bytes
+    if (len >= 16) {
+        __builtin_memcpy(dst, src, 16);
+        __builtin_memcpy(dst + len - 16, src + len - 16, 16);
+    } else if (len >= 8) {
+        __builtin_memcpy(dst, src, 8);
+        __builtin_memcpy(dst + len - 8, src + len - 8, 8);
+    } else if (len >= 4) {
+        __builtin_memcpy(dst, src, 4);
+        __builtin_memcpy(dst + len - 4, src + len - 4, 4);
+    } else if (len > 0) {
+        dst[0] = src[0];
+        dst[len - 1] = src[len - 1];
+        if (len > 2) dst[1] = src[1];
+    }
+#else
+    MEMCPY(dst, src, char, len);
+#endif
+}
+
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
 
@@ -175,7 +200,43 @@ ALWAYS_INLINE(static) uint64_t string_scan_simd_neon(const char **ptr, const cha
 //     return 0;
 // }
 
-ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, const char *end, const char ** restrict out)
+ALWAYS_INLINE(static) uint64_t neon_match_mask_32(uint8x16_t matches1, uint8x16_t matches2)
+{
+    const uint8x16_t bitmask = { 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
+                                0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
+    uint8x16_t t0 = vandq_u8(matches1, bitmask);
+    uint8x16_t t1 = vandq_u8(matches2, bitmask);
+    uint8x16_t sum0 = vpaddq_u8(t0, t1);
+    sum0 = vpaddq_u8(sum0, sum0);
+    sum0 = vpaddq_u8(sum0, sum0);
+    return vgetq_lane_u32(vreinterpretq_u32_u8(sum0), 0);
+}
+
+ALWAYS_INLINE(static) uint64_t neon_match_mask_16(uint8x16_t matches)
+{
+    const uint8x16_t bitmask = { 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,
+                                 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
+    uint8x16_t t0 = vandq_u8(matches, bitmask);
+    uint8x16_t sum0 = vpaddq_u8(t0, t0);
+    sum0 = vpaddq_u8(sum0, sum0);
+    sum0 = vpaddq_u8(sum0, sum0);
+    return vgetq_lane_u16(vreinterpretq_u16_u8(sum0), 0);
+}
+
+ALWAYS_INLINE(static) uint64_t compute_chunk_mask_neon_16(const char *ptr)
+{
+    uint8x16_t chunk = vld1q_u8((const unsigned char *)ptr);
+
+    // Trick: c < 32 || c == 34 can be factored as c ^ 2 < 33
+    // https://lemire.me/blog/2025/04/13/detect-control-characters-quotes-and-backslashes-efficiently-using-swar/
+    const uint8x16_t too_low_or_dbl_quote = vcltq_u8(veorq_u8(chunk, vdupq_n_u8(2)), vdupq_n_u8(33));
+
+    uint8x16_t has_backslash = vceqq_u8(chunk, vdupq_n_u8('\\'));
+    uint8x16_t needs_escape  = vorrq_u8(too_low_or_dbl_quote, has_backslash);
+    return neon_match_mask_16(needs_escape);
+}
+
+ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, const char *end, const char ** restrict out, const char ** restrict chunk_end)
 {
     while (*ptr + sizeof(uint8x16_t)*2 <= end) {
         uint8x16x2_t chunks = vld1q_u8_x2((const unsigned char *)(*ptr));
@@ -189,19 +250,14 @@ ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, 
         
         uint8x16_t has_backslash0 = vceqq_u8(chunk0, vdupq_n_u8('\\'));
         uint8x16_t needs_escape0  = vorrq_u8(too_low_or_dbl_quote0, has_backslash0);
-        uint64_t chunk_mask0 = neon_match_mask(needs_escape0);
-        if (chunk_mask0) {
-            return chunk_mask0 & 0x8888888888888888ull;
-        }
-        
         uint8x16_t has_backslash1 = vceqq_u8(chunk1, vdupq_n_u8('\\'));
         uint8x16_t needs_escape1  = vorrq_u8(too_low_or_dbl_quote1, has_backslash1);
-        uint64_t chunk_mask1 = neon_match_mask(needs_escape1);
-        if (chunk_mask1) {
-            *ptr += sizeof(uint8x16_t);
-            *out += sizeof(uint8x16_t);
-            return chunk_mask1 & 0x8888888888888888ull;
+
+        if (vmaxvq_u8(vorrq_u8(needs_escape0, needs_escape1)) > 0) {
+            *chunk_end = *ptr + sizeof(uint8x16_t)*2;
+            return neon_match_mask_32(needs_escape0, needs_escape1);
         }
+
         *ptr += sizeof(uint8x16_t)*2;
         *out += sizeof(uint8x16_t)*2;
     }
@@ -213,15 +269,63 @@ ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, 
         const uint8x16_t too_low_or_dbl_quote0 = vcltq_u8(veorq_u8(chunk0, vdupq_n_u8(2)), vdupq_n_u8(33));
         uint8x16_t has_backslash0 = vceqq_u8(chunk0, vdupq_n_u8('\\'));
         uint8x16_t needs_escape0  = vorrq_u8(too_low_or_dbl_quote0, has_backslash0);
-        uint64_t chunk_mask0 = neon_match_mask(needs_escape0);
-        if (chunk_mask0) {
-            return chunk_mask0 & 0x8888888888888888ull;
+        if (vmaxvq_u8(needs_escape0) > 0) {
+            *chunk_end = *ptr + sizeof(uint8x16_t);
+            return neon_match_mask_16(needs_escape0);
         }
         *ptr += sizeof(uint8x16_t);
         *out += sizeof(uint8x16_t);
     }
     return 0;
 }
+
+// ALWAYS_INLINE(static) uint64_t string_scan_and_copy_simd_neon(const char **ptr, const char *end, const char ** restrict out)
+// {
+//     while (*ptr + sizeof(uint8x16_t)*2 <= end) {
+//         uint8x16x2_t chunks = vld1q_u8_x2((const unsigned char *)(*ptr));
+//         vst1q_u8_x2((unsigned char *)(*out), chunks);
+
+//         uint8x16_t chunk0 = chunks.val[0];
+//         uint8x16_t chunk1 = chunks.val[1];
+        
+//         const uint8x16_t too_low_or_dbl_quote0 = vcltq_u8(veorq_u8(chunk0, vdupq_n_u8(2)), vdupq_n_u8(33));
+//         const uint8x16_t too_low_or_dbl_quote1 = vcltq_u8(veorq_u8(chunk1, vdupq_n_u8(2)), vdupq_n_u8(33));
+        
+//         uint8x16_t has_backslash0 = vceqq_u8(chunk0, vdupq_n_u8('\\'));
+//         uint8x16_t needs_escape0  = vorrq_u8(too_low_or_dbl_quote0, has_backslash0);
+//         uint64_t chunk_mask0 = neon_match_mask(needs_escape0);
+//         if (chunk_mask0) {
+//             return chunk_mask0 & 0x8888888888888888ull;
+//         }
+        
+//         uint8x16_t has_backslash1 = vceqq_u8(chunk1, vdupq_n_u8('\\'));
+//         uint8x16_t needs_escape1  = vorrq_u8(too_low_or_dbl_quote1, has_backslash1);
+//         uint64_t chunk_mask1 = neon_match_mask(needs_escape1);
+//         if (chunk_mask1) {
+//             *ptr += sizeof(uint8x16_t);
+//             *out += sizeof(uint8x16_t);
+//             return chunk_mask1 & 0x8888888888888888ull;
+//         }
+//         *ptr += sizeof(uint8x16_t)*2;
+//         *out += sizeof(uint8x16_t)*2;
+//     }
+
+//     if (*ptr + sizeof(uint8x16_t) <= end) {
+//         uint8x16_t chunk0 = vld1q_u8((const unsigned char *)*ptr);
+//         vst1q_u8((unsigned char *)(*out), chunk0);
+        
+//         const uint8x16_t too_low_or_dbl_quote0 = vcltq_u8(veorq_u8(chunk0, vdupq_n_u8(2)), vdupq_n_u8(33));
+//         uint8x16_t has_backslash0 = vceqq_u8(chunk0, vdupq_n_u8('\\'));
+//         uint8x16_t needs_escape0  = vorrq_u8(too_low_or_dbl_quote0, has_backslash0);
+//         uint64_t chunk_mask0 = neon_match_mask(needs_escape0);
+//         if (chunk_mask0) {
+//             return chunk_mask0 & 0x8888888888888888ull;
+//         }
+//         *ptr += sizeof(uint8x16_t);
+//         *out += sizeof(uint8x16_t);
+//     }
+//     return 0;
+// }
 
 static inline uint8x16x4_t load_uint8x16_4(const unsigned char *table)
 {

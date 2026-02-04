@@ -153,7 +153,8 @@ ALWAYS_INLINE(static) void search_flush_small(search_state *search)
     // consecutive characters that need to be escaped. While the fbuffer_append is a no-op if
     // nothing needs to be flushed, we can save a few memory references with this conditional.
     if (search->ptr > search->cursor) {
-        fbuffer_append16(search->buffer, search->cursor, search->ptr - search->cursor);
+        // fbuffer_append32(search->buffer, search->cursor, search->ptr - search->cursor);
+        fbuffer_append32(search->buffer, search->cursor, search->ptr - search->cursor);
         search->cursor = search->ptr;
     }
 }
@@ -333,8 +334,9 @@ static inline void convert_UTF8_to_JSON(search_state *search)
         } while (mask > 0);
         search->ptr = search->chunk_end;
         // Basically search_flush but with a known small amount of data.
+        // search_flush(search);
         if (search->ptr > search->cursor) {
-            fbuffer_append16(search->buffer, search->cursor, search->ptr - search->cursor);
+            fbuffer_append32(search->buffer, search->cursor, search->ptr - search->cursor);
             search->cursor = search->ptr;
         }
     }
@@ -435,7 +437,7 @@ ALWAYS_INLINE(static) char *copy_remaining_bytes(search_state *search, unsigned 
 
 ALWAYS_INLINE(static) uint64_t neon_next_match(uint64_t mask, search_state *search)
 {
-    uint32_t index = trailing_zeros64(mask) >> 2;
+    uint32_t index = trailing_zeros64(mask);
 
     // It is assumed escape_UTF8_char_basic will only ever increase search->ptr by at most one character.
     // If we want to use a similar approach for full escaping we'll need to ensure:
@@ -497,12 +499,14 @@ static inline uint64_t search_escape_basic_neon(search_state *search)
     fbuffer_inc_capa(search->buffer, search->end - search->ptr);
     uint64_t matches_mask = 0;
     const char *out = fbuffer_cursor(search->buffer);
-    if ((matches_mask = string_scan_and_copy_simd_neon(&search->ptr, search->end, &out))) {
+    const char *chunk_end;
+    if ((matches_mask = string_scan_and_copy_simd_neon(&search->ptr, search->end, &out, &chunk_end))) {
         ptrdiff_t copied = out - fbuffer_cursor(search->buffer);
         fbuffer_consumed(search->buffer, copied);
         search->cursor = search->ptr;
         search->chunk_base = search->ptr;
-        search->chunk_end = search->ptr + sizeof(uint8x16_t);
+        // XXX This doesn't work. string_scan_and_copy_simd_neon updates search->ptr either 16 or 32 bytes.
+        search->chunk_end = chunk_end;
         return matches_mask;
     }
 
@@ -517,7 +521,7 @@ static inline uint64_t search_escape_basic_neon(search_state *search)
     if (remaining >= SIMD_MINIMUM_THRESHOLD) {
         char *s = copy_remaining_bytes(search, sizeof(uint8x16_t), remaining);
 
-        uint64_t mask = compute_chunk_mask_neon(s);
+        uint64_t mask = compute_chunk_mask_neon_16(s);
 
         if (!mask) {
             // Nothing to escape, ensure search_flush doesn't do anything by setting
@@ -532,7 +536,7 @@ static inline uint64_t search_escape_basic_neon(search_state *search)
         // search->has_matches = true;
         search->chunk_end = search->end;
         search->chunk_base = search->ptr;
-        return mask & 0x8888888888888888ull;
+        return mask;
     }
 
     return 0;
