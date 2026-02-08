@@ -137,7 +137,7 @@ ALWAYS_INLINE(static) void search_flush(search_state *search)
     // consecutive characters that need to be escaped. While the fbuffer_append is a no-op if
     // nothing needs to be flushed, we can save a few memory references with this conditional.
     if (search->ptr > search->cursor) {
-        fbuffer_append(search->buffer, search->cursor, search->ptr - search->cursor);
+        fbuffer_append_reserved(search->buffer, search->cursor, search->ptr - search->cursor);
         search->cursor = search->ptr;
     }
 }
@@ -171,22 +171,25 @@ static inline unsigned char search_escape_basic(search_state *search)
 
 ALWAYS_INLINE(static) void escape_UTF8_char_basic(search_state *search)
 {
+    // This will cause fbuffer_inc_capa in raw_generate_string to over-allocate as we've already counted one of the 2 or 6 characters we're escaping.
+    // TODO use fbuffer_append_reserved_char for the '\\' character.
+    fbuffer_append_reserved_char(search->buffer, '\\');
     const unsigned char ch = (unsigned char)*search->ptr;
     switch (ch) {
-        case '"':  fbuffer_append(search->buffer, "\\\"", 2); break;
-        case '\\': fbuffer_append(search->buffer, "\\\\", 2); break;
-        case '/':  fbuffer_append(search->buffer, "\\/", 2);  break;
-        case '\b': fbuffer_append(search->buffer, "\\b", 2);  break;
-        case '\f': fbuffer_append(search->buffer, "\\f", 2);  break;
-        case '\n': fbuffer_append(search->buffer, "\\n", 2);  break;
-        case '\r': fbuffer_append(search->buffer, "\\r", 2);  break;
-        case '\t': fbuffer_append(search->buffer, "\\t", 2);  break;
+        case '"':  fbuffer_append_char(search->buffer, '"'); break;
+        case '\\': fbuffer_append_char(search->buffer, '\\'); break;
+        case '/':  fbuffer_append_char(search->buffer, '/');  break;
+        case '\b': fbuffer_append_char(search->buffer, 'b');  break;
+        case '\f': fbuffer_append_char(search->buffer, 'f');  break;
+        case '\n': fbuffer_append_char(search->buffer, 'n');  break;
+        case '\r': fbuffer_append_char(search->buffer, 'r');  break;
+        case '\t': fbuffer_append_char(search->buffer, 't');  break;
         default: {
             const char *hexdig = "0123456789abcdef";
-            char scratch[6] = { '\\', 'u', '0', '0', 0, 0 };
-            scratch[4] = hexdig[(ch >> 4) & 0xf];
-            scratch[5] = hexdig[ch & 0xf];
-            fbuffer_append(search->buffer, scratch, 6);
+            char scratch[5] = { 'u', '0', '0', 0, 0 };
+            scratch[3] = hexdig[(ch >> 4) & 0xf];
+            scratch[4] = hexdig[ch & 0xf];
+            fbuffer_append(search->buffer, scratch, 5);
             break;
         }
     }
@@ -292,7 +295,7 @@ ALWAYS_INLINE(static) char *copy_remaining_bytes(search_state *search, unsigned 
     search_flush(search);
 
     FBuffer *buf = search->buffer;
-    fbuffer_inc_capa(buf, vec_len);
+    fbuffer_make_capa(buf, vec_len);
 
     char *s = (buf->ptr + buf->len);
 
@@ -406,6 +409,11 @@ static inline unsigned char search_escape_basic_neon(search_state *search)
             // Nothing to escape, ensure search_flush doesn't do anything by setting
             // search->cursor to search->ptr.
             fbuffer_consumed(search->buffer, remaining);
+
+            // We do not need to call fbuffer_track_required here because there is nothing to escape
+            // and these bytes were already accounted for when we called fbuffer_inc_capa at the start
+            // of raw_generate_json_string.
+
             search->ptr = search->end;
             search->cursor = search->end;
             return 0;
@@ -1085,7 +1093,10 @@ static inline VALUE ensure_valid_encoding(struct generate_json_data *data, VALUE
 
 static void raw_generate_json_string(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
 {
-    fbuffer_append_char(buffer, '"');
+    unsigned long required = RSTRING_LEN(obj) + 2;
+    // printf("raw_generate_json_string: required buffer size: %lu\n", required);
+    fbuffer_inc_capa(buffer, required);
+    fbuffer_append_reserved_char(buffer, '"');
 
     long len;
     search_state search;
@@ -1116,7 +1127,7 @@ static void raw_generate_json_string(FBuffer *buffer, struct generate_json_data 
             raise_generator_error(obj, "source sequence is illegal/malformed utf-8");
             break;
     }
-    fbuffer_append_char(buffer, '"');
+    fbuffer_append_reserved_char(buffer, '"');
 }
 
 static void generate_json_string(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
@@ -1165,7 +1176,7 @@ json_object_i(VALUE key, VALUE val, VALUE _arg)
         arg->first_key_type = key_type;
     }
     else {
-        fbuffer_append_char(buffer, ',');
+        fbuffer_append_reserved_char(buffer, ',');
     }
 
     if (RB_UNLIKELY(data->state->object_nl)) {
@@ -1221,7 +1232,7 @@ json_object_i(VALUE key, VALUE val, VALUE _arg)
         generate_json(buffer, data, key_to_s);
     }
     if (RB_UNLIKELY(state->space_before)) fbuffer_append_str(buffer, data->state->space_before);
-    fbuffer_append_char(buffer, ':');
+    fbuffer_append_reserved_char(buffer, ':');
     if (RB_UNLIKELY(state->space)) fbuffer_append_str(buffer, data->state->space);
     generate_json(buffer, data, val);
 
@@ -1248,7 +1259,11 @@ static void generate_json_object(FBuffer *buffer, struct generate_json_data *dat
         return;
     }
 
-    fbuffer_append_char(buffer, '{');
+    unsigned long required = RHASH_SIZE(obj) * 2 + 1;
+    // printf("generate_json_object: required buffer size estimation: %lu\n", required);
+    fbuffer_inc_capa(buffer, required);
+
+    fbuffer_append_reserved_char(buffer, '{');
 
     struct hash_foreach_arg arg = {
         .hash = obj,
@@ -1264,24 +1279,28 @@ static void generate_json_object(FBuffer *buffer, struct generate_json_data *dat
             fbuffer_append_str_repeat(buffer, data->state->indent, depth);
         }
     }
-    fbuffer_append_char(buffer, '}');
+    fbuffer_append_reserved_char(buffer, '}');
 }
 
 static void generate_json_array(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
 {
     long depth = increase_depth(data);
 
-    if (RARRAY_LEN(obj) == 0) {
+    long array_length = RARRAY_LEN(obj);
+    if (array_length == 0) {
         fbuffer_append(buffer, "[]", 2);
         --data->depth;
         return;
     }
 
-    fbuffer_append_char(buffer, '[');
+    // printf("generate_json_array: required buffer size estimation: %lu\n", array_length * 3);
+    fbuffer_inc_capa(buffer, array_length + 1);
+
+    fbuffer_append_reserved_char(buffer, '[');
     if (RB_UNLIKELY(data->state->array_nl)) fbuffer_append_str(buffer, data->state->array_nl);
     for (int i = 0; i < RARRAY_LEN(obj); i++) {
         if (i > 0) {
-            fbuffer_append_char(buffer, ',');
+            fbuffer_append_reserved_char(buffer, ',');
             if (RB_UNLIKELY(data->state->array_nl)) fbuffer_append_str(buffer, data->state->array_nl);
         }
         if (RB_UNLIKELY(data->state->indent)) {
@@ -1296,7 +1315,7 @@ static void generate_json_array(FBuffer *buffer, struct generate_json_data *data
             fbuffer_append_str_repeat(buffer, data->state->indent, depth);
         }
     }
-    fbuffer_append_char(buffer, ']');
+    fbuffer_append_reserved_char(buffer, ']');
 }
 
 static void generate_json_fallback(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
@@ -1383,13 +1402,14 @@ static void generate_json_float(FBuffer *buffer, struct generate_json_data *data
     /* This implementation writes directly into the buffer. We reserve
      * the 32 characters that fpconv_dtoa states as its maximum.
      */
-    fbuffer_inc_capa(buffer, 32);
+    fbuffer_make_capa(buffer, 32);
     char* d = buffer->ptr + buffer->len;
     int len = fpconv_dtoa(value, d);
     /* fpconv_dtoa converts a float to its shortest string representation,
      * but it adds a ".0" if this is a plain integer.
      */
     fbuffer_consumed(buffer, len);
+    fbuffer_track_required(buffer, len);
 }
 
 static void generate_json_fragment(FBuffer *buffer, struct generate_json_data *data, VALUE obj)

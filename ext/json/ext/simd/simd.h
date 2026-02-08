@@ -63,7 +63,7 @@ static inline int trailing_zeros(int input)
 ALWAYS_INLINE(static) void json_fast_memcpy16(char *dst, const char *src, size_t len)
 {
     RBIMPL_ASSERT_OR_ASSUME(len < 16);
-    RBIMPL_ASSERT_OR_ASSUME(len >= SIMD_MINIMUM_THRESHOLD); // 4
+    // RBIMPL_ASSERT_OR_ASSUME(len >= SIMD_MINIMUM_THRESHOLD); // 4
 #if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
     // If __builtin_memcpy is available, use it to copy between SIMD_MINIMUM_THRESHOLD (4) and vec_len-1 (15) bytes.
     // These copies overlap. The first copy will copy the first 8 (or 4) bytes. The second copy will copy
@@ -78,9 +78,13 @@ ALWAYS_INLINE(static) void json_fast_memcpy16(char *dst, const char *src, size_t
     if (len >= 8) {
         __builtin_memcpy(dst, src, 8);
         __builtin_memcpy(dst + len - 8, src + len - 8, 8);
-    } else {
+    } else if (len >= 4) {
         __builtin_memcpy(dst, src, 4);
         __builtin_memcpy(dst + len - 4, src + len - 4, 4);
+    } else if (len > 0) {
+        dst[0] = src[0];
+        dst[len - 1] = src[len - 1];
+        if (len > 2) dst[1] = src[1];
     }
 #else
     MEMCPY(dst, src, char, len);

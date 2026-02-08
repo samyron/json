@@ -14,6 +14,7 @@ typedef struct FBufferStruct {
     unsigned long initial_length;
     unsigned long len;
     unsigned long capa;
+    unsigned long required;
 #if JSON_DEBUG
     unsigned long requested;
 #endif
@@ -40,6 +41,7 @@ static VALUE fbuffer_finalize(FBuffer *fb);
 static void fbuffer_stack_init(FBuffer *fb, unsigned long initial_length, char *stack_buffer, long stack_buffer_size)
 {
     fb->initial_length = (initial_length > 0) ? initial_length : FBUFFER_INITIAL_LENGTH_DEFAULT;
+    fb->required = 0;
     if (stack_buffer) {
         fb->type = FBUFFER_STACK_ALLOCATED;
         fb->ptr = stack_buffer;
@@ -71,6 +73,7 @@ static void fbuffer_free(FBuffer *fb)
 static void fbuffer_clear(FBuffer *fb)
 {
     fb->len = 0;
+    fb->required = 0;
 }
 
 static void fbuffer_flush(FBuffer *fb)
@@ -82,6 +85,9 @@ static void fbuffer_flush(FBuffer *fb)
 static void fbuffer_realloc(FBuffer *fb, unsigned long required)
 {
     if (required > fb->capa) {
+#ifdef JSON_FBUFFER_DEBUG        
+        printf("resize to %lu\n", required);
+#endif
         if (fb->type == FBUFFER_STACK_ALLOCATED) {
             const char *old_buffer = fb->ptr;
             fb->ptr = ALLOC_N(char, required);
@@ -107,6 +113,9 @@ static void fbuffer_do_inc_capa(FBuffer *fb, unsigned long requested)
             return;
         }
     }
+#ifdef JSON_FBUFFER_DEBUG
+    printf("requested: %lu, capa: %lu\n", requested, fb->capa);
+#endif
 
     unsigned long required;
 
@@ -115,7 +124,12 @@ static void fbuffer_do_inc_capa(FBuffer *fb, unsigned long requested)
         fb->capa = fb->initial_length;
     }
 
-    for (required = fb->capa; requested > required - fb->len; required <<= 1);
+    // for (required = fb->capa; requested > required - fb->len; required <<= 1);
+    for (required = fb->capa; requested > required; required <<= 1);
+
+#ifdef JSON_FBUFFER_DEBUG
+    printf("resizing buffer to %lu\n", required);
+#endif
 
     fbuffer_realloc(fb, required);
 }
@@ -126,8 +140,31 @@ static inline void fbuffer_inc_capa(FBuffer *fb, unsigned long requested)
     fb->requested = requested;
 #endif
 
-    if (RB_UNLIKELY(requested > fb->capa - fb->len)) {
-        fbuffer_do_inc_capa(fb, requested);
+    fb->required += requested;
+#ifdef JSON_FBUFFER_DEBUG
+    printf("fbuffer_inc_capa: requested=%lu, fb->required=%lu, fb->capa=%lu, fb->len=%lu\n", 
+           requested, fb->required, fb->capa, fb->len);
+#endif
+
+    if (RB_UNLIKELY(fb->required > fb->capa)) {
+        fbuffer_do_inc_capa(fb, fb->required);
+    }
+}
+
+static inline void fbuffer_make_capa(FBuffer *fb, unsigned long requested)
+{
+#if JSON_DEBUG
+    fb->requested = requested;
+#endif
+
+#ifdef JSON_FBUFFER_DEBUG
+    printf("fbuffer_make_capa: requested=%lu, fb->required=%lu, fb->capa=%lu, fb->len=%lu\n", 
+           requested, fb->required, fb->capa, fb->len);
+#endif
+
+    // TODO should this be fb->len + requested instead? I don't think so but it might be correct.
+    if (RB_UNLIKELY(fb->required + requested > fb->capa)) {
+        fbuffer_do_inc_capa(fb, fb->required + requested);
     }
 }
 
@@ -201,6 +238,15 @@ static inline void fbuffer_advance_to(FBuffer *fb, char *end)
     fbuffer_consumed(fb, (end - fb->ptr) - fb->len);
 }
 
+static inline void fbuffer_track_required(FBuffer *fb, unsigned long actual_used)
+{
+#ifdef JSON_FBUFFER_DEBUG
+    printf("fbuffer_track_required: actual_used=%lu, fb->required=%lu\n", actual_used, fb->required);
+#endif
+
+    fb->required += actual_used;
+}
+
 /*
  * Appends the decimal string representation of \a number into the buffer.
  */
@@ -219,7 +265,7 @@ static void fbuffer_append_long(FBuffer *fb, long number)
 
     static const int MAX_CHARS_FOR_LONG = 20;
 
-    fbuffer_inc_capa(fb, MAX_CHARS_FOR_LONG);
+    fbuffer_make_capa(fb, MAX_CHARS_FOR_LONG);
 
     if (number < 0) {
         fbuffer_append_reserved_char(fb, '-');
@@ -231,8 +277,12 @@ static void fbuffer_append_long(FBuffer *fb, long number)
         number = -number;
     }
 
-    char *end = jeaiii_ultoa(fbuffer_cursor(fb), number);
+    char *cursor = fbuffer_cursor(fb);
+    char *end = jeaiii_ultoa(cursor, number);
     fbuffer_advance_to(fb, end);
+
+    unsigned long actual = end - cursor;
+    fbuffer_track_required(fb, actual);
 }
 
 static VALUE fbuffer_finalize(FBuffer *fb)
@@ -242,6 +292,9 @@ static VALUE fbuffer_finalize(FBuffer *fb)
         rb_io_flush(fb->io);
         return fb->io;
     } else {
+#ifdef JSON_FBUFFER_DEBUG
+        printf("total bytes used: %lu, total bytes required: %lu\n", fb->len, fb->required);
+#endif
         return rb_utf8_str_new(FBUFFER_PTR(fb), FBUFFER_LEN(fb));
     }
 }
