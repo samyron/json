@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2026-03-06 (2.19.0)
+
 * Fix `allow_blank` parsing option to no longer allow invalid types (e.g. `load([], allow_blank: true)` now raise a type error).
 * Add `allow_invalid_escape` parsing option to ignore backslashes that aren't followed by one of the valid escape characters.
 
