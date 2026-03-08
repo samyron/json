@@ -2,6 +2,10 @@
 
 ### Unreleased
 
+### 2026-03-08 (2.19.1)
+
+* Fix a compiler dependent GC bug introduced in `2.18.0`.
+
 ### 2026-03-06 (2.19.0)
 
 * Fix `allow_blank` parsing option to no longer allow invalid types (e.g. `load([], allow_blank: true)` now raise a type error).
