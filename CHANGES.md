@@ -2,6 +2,8 @@
 
 ### Unreleased
 
+### 2026-03-08 (2.19.2)
+
 * Fix a format string injection vulnerability in `JSON.parse(doc, allow_duplicate_key: false)`.
 
 ### 2026-03-08 (2.19.1)
