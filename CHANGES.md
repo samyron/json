@@ -2,9 +2,9 @@
 
 ### Unreleased
 
-### 2026-03-08 (2.19.2)
+### 2026-03-18 (2.19.2)
 
-* Fix a format string injection vulnerability in `JSON.parse(doc, allow_duplicate_key: false)`.
+* Fix a format string injection vulnerability in `JSON.parse(doc, allow_duplicate_key: false)`. `CVE-2026-33210`.
 
 ### 2026-03-08 (2.19.1)
 
@@ -23,6 +23,10 @@
 ### 2025-12-11 (2.18.0)
 
 * Add `:allow_control_characters` parser options, to allow JSON strings containing unescaped ASCII control characters (e.g. newlines).
+
+### 2026-03-18 (2.17.1.2) - Security Backport
+
+* Fix a format string injection vulnerability in `JSON.parse(doc, allow_duplicate_key: false)`. `CVE-2026-33210`.
 
 ### 2025-12-04 (2.17.1)
 
@@ -49,6 +53,10 @@
 * Optimized floating point number parsing by integrating the ryu algorithm (thanks to Josef Šimánek).
 * Optimized numbers parsing using SWAR (thanks to Scott Myron).
 * Optimized parsing of pretty printed documents using SWAR (thanks to Scott Myron).
+
+### 2026-03-18 (2.15.2.1) - Security Backport
+
+* Fix a format string injection vulnerability in `JSON.parse(doc, allow_duplicate_key: false)`. `CVE-2026-33210`.
 
 ### 2025-10-25 (2.15.2)
 
