@@ -141,6 +141,23 @@ ALWAYS_INLINE(static) void search_flush(search_state *search)
     }
 }
 
+ALWAYS_INLINE(static) void search_flush_small(search_state *search)
+{
+    // Do not remove this conditional without profiling, specifically escape-heavy text.
+    // escape_UTF8_char_basic will advance search->ptr and search->cursor (effectively a search_flush).
+    // For back-to-back characters that need to be escaped, specifically for the SIMD code paths, this method
+    // will be called just before calling escape_UTF8_char_basic. There will be no characters to append for the
+    // consecutive characters that need to be escaped. While the fbuffer_append is a no-op if
+    // nothing needs to be flushed, we can save a few memory references with this conditional.
+    if (search->ptr > search->cursor) {
+        size_t to_copy = search->ptr - search->cursor;
+        fbuffer_inc_capa(search->buffer, to_copy);
+        json_fast_memcpy16(search->buffer->ptr + search->buffer->len, search->cursor, to_copy);
+        search->buffer->len += to_copy;
+        search->cursor = search->ptr;
+    }
+}
+
 static const unsigned char escape_table_basic[256] = {
     // ASCII Control Characters
      9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
@@ -222,6 +239,7 @@ static inline unsigned char search_escape_basic(search_state *search);
 #ifdef HAVE_SIMD
 #if defined(HAVE_SIMD_NEON)
 ALWAYS_INLINE(static) uint64_t neon_next_match(search_state *search, uint64_t mask);
+ALWAYS_INLINE(static) uint64_t neon_next_match_small(search_state *search, uint64_t mask);
 #endif
 #endif
 
@@ -231,10 +249,16 @@ static inline void convert_UTF8_to_JSON(search_state *search)
 #if defined(HAVE_SIMD_NEON)
     uint64_t mask;
     while ((mask = search_escape_basic_neon(search))) {
-        do {
-            mask = neon_next_match(search, mask);
+        mask = neon_next_match(search, mask);
+        escape_UTF8_char_basic(search);
+
+        while (RB_UNLIKELY(mask > 0)) {
+            mask = neon_next_match_small(search, mask);
             escape_UTF8_char_basic(search);
-        } while (RB_UNLIKELY(mask != 0));
+        }
+        // do {
+            
+        // } while (RB_UNLIKELY(mask != 0));
 
         // neon_next_match will only advance search->ptr up to the last matching character.
         // Skip over any characters in the last chunk that occur after the last match.
@@ -344,6 +368,15 @@ ALWAYS_INLINE(static) uint64_t neon_next_match(search_state *search, uint64_t ma
     search->ptr = search->chunk_base + index;
     matches_mask &= matches_mask - 1;
     search_flush(search);
+    return matches_mask;
+}
+
+ALWAYS_INLINE(static) uint64_t neon_next_match_small(search_state *search, uint64_t matches_mask)
+{
+    uint32_t index = trailing_zeros64(matches_mask) >> 2;
+    search->ptr = search->chunk_base + index;
+    matches_mask &= matches_mask - 1;
+    search_flush_small(search);
     return matches_mask;
 }
 
