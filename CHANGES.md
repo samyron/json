@@ -4,7 +4,7 @@
 
 ### 2026-04-19 (2.19.4)
 
-* Fix parsing of out of range floats (very large exponents that lead ot either `0.0` or `Inf`).
+* Fix parsing of out of range floats (very large exponents that lead to either `0.0` or `Inf`).
 
 ### 2026-03-25 (2.19.3)
 
