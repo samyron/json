@@ -52,9 +52,15 @@ static VALUE rb_str_to_interned_str(VALUE str)
 // to be able to fit safely on the stack.
 // As such, binary search into a sorted array gives a good tradeoff between compactness and
 // performance.
+// `fingerprints` and `entries` are parallel arrays: fingerprints[i] is the
+// fingerprint of entries[i]. Both are kept sorted by (fingerprint, byte-lex
+// of the full string) so binary search on fingerprints locates the matching
+// entry. rvalue_cache_insert_at is the only mutator and must update both in
+// lockstep to preserve this invariant.
 #define JSON_RVALUE_CACHE_CAPA 63
 typedef struct rvalue_cache_struct {
     int length;
+    uint64_t fingerprints[JSON_RVALUE_CACHE_CAPA];
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
 
@@ -77,11 +83,13 @@ static inline VALUE build_symbol(const char *str, const long length)
     return rb_str_intern(build_interned_string(str, length));
 }
 
-static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring)
+static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring, uint64_t fingerprint)
 {
     MEMMOVE(&cache->entries[index + 1], &cache->entries[index], VALUE, cache->length - index);
+    MEMMOVE(&cache->fingerprints[index + 1], &cache->fingerprints[index], uint64_t, cache->length - index);
     cache->length++;
     cache->entries[index] = rstring;
+    cache->fingerprints[index] = fingerprint;
 }
 
 #define rstring_cache_memcmp memcmp
@@ -107,6 +115,18 @@ ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr
         }
     }
 
+    if (i >= 8 && i < length) {
+        uint64_t a, b;
+        memcpy(&a, str + length - 8, 8);
+        memcpy(&b, rptr + length - 8, 8);
+        if (a != b) {
+            a = __builtin_bswap64(a);
+            b = __builtin_bswap64(b);
+            return (a < b) ? -1 : 1;
+        }
+        return 0;
+    }
+
     for (; i < length; i++) {
         if (str[i] != rptr[i]) {
             return (str[i] < rptr[i]) ? -1 : 1;
@@ -118,33 +138,55 @@ ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr
 #endif
 #endif
 
-ALWAYS_INLINE(static) int rstring_cache_cmp(const char *str, const long length, VALUE rstring)
+// High byte = length; low 7 bytes = str[0..6] in lex byte-order. Unsigned uint64
+// compare then matches the (length, then byte-lex) order used to sort the cache.
+// Only the first 7 str bytes (str[0..6]) are encoded; bytes at offset 7
+// and beyond must be verified with rstring_cache_memcmp on a tie.
+ALWAYS_INLINE(static) uint64_t rstring_cache_fingerprint(const char *str, const long length)
 {
-    const char *rstring_ptr;
-    long rstring_length;
-
-    RSTRING_GETMEM(rstring, rstring_ptr, rstring_length);
-
-    if (length == rstring_length) {
-        return rstring_cache_memcmp(str, rstring_ptr, length);
-    } else {
-        return (int)(length - rstring_length);
+#if JSON_CPU_LITTLE_ENDIAN_64BITS && __has_builtin(__builtin_bswap64)
+    if (length >= 8) {
+        uint64_t raw;
+        memcpy(&raw, str, 8);
+        return (__builtin_bswap64(raw) >> 8) | ((uint64_t)length << 56);
     }
+#endif
+    uint64_t fp = (uint64_t)length << 56;
+    long n = length < 7 ? length : 7;
+    for (long i = 0; i < n; i++) {
+        fp |= (uint64_t)(unsigned char)str[i] << ((6 - i) * 8);
+    }
+    return fp;
 }
 
 ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
+    uint64_t fp_query = rstring_cache_fingerprint(str, length);
     int low = 0;
     int high = cache->length - 1;
 
     while (low <= high) {
         int mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        int cmp = rstring_cache_cmp(str, length, entry);
+        uint64_t fp_entry = cache->fingerprints[mid];
 
+        if (fp_entry < fp_query) {
+            low = mid + 1;
+            continue;
+        }
+        if (fp_entry > fp_query) {
+            high = mid - 1;
+            continue;
+        }
+
+        VALUE entry = cache->entries[mid];
+        if (length <= 7) {
+            return entry;
+        }
+        int cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry), length);
         if (cmp == 0) {
             return entry;
-        } else if (cmp > 0) {
+        }
+        if (cmp > 0) {
             low = mid + 1;
         } else {
             high = mid - 1;
@@ -154,24 +196,40 @@ ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char 
     VALUE rstring = build_interned_string(str, length);
 
     if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        rvalue_cache_insert_at(cache, low, rstring);
+        rvalue_cache_insert_at(cache, low, rstring, fp_query);
     }
     return rstring;
 }
 
 static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
+    uint64_t fp_query = rstring_cache_fingerprint(str, length);
     int low = 0;
     int high = cache->length - 1;
 
     while (low <= high) {
         int mid = (high + low) >> 1;
-        VALUE entry = cache->entries[mid];
-        int cmp = rstring_cache_cmp(str, length, rb_sym2str(entry));
+        uint64_t fp_entry = cache->fingerprints[mid];
 
+        if (fp_entry < fp_query) {
+            low = mid + 1;
+            continue;
+        }
+        if (fp_entry > fp_query) {
+            high = mid - 1;
+            continue;
+        }
+
+        VALUE entry = cache->entries[mid];
+        if (length <= 7) {
+            return entry;
+        }
+        VALUE entry_str = rb_sym2str(entry);
+        int cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry_str), length);
         if (cmp == 0) {
             return entry;
-        } else if (cmp > 0) {
+        }
+        if (cmp > 0) {
             low = mid + 1;
         } else {
             high = mid - 1;
@@ -181,7 +239,7 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
     VALUE rsymbol = build_symbol(str, length);
 
     if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        rvalue_cache_insert_at(cache, low, rsymbol);
+        rvalue_cache_insert_at(cache, low, rsymbol, fp_query);
     }
     return rsymbol;
 }
