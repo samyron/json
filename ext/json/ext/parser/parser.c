@@ -53,13 +53,17 @@ static VALUE rb_str_to_interned_str(VALUE str)
 // As such, binary search into a sorted array gives a good tradeoff between compactness and
 // performance.
 // `fingerprints` and `entries` are parallel arrays: fingerprints[i] is the
-// fingerprint of entries[i]. Both are kept sorted by (fingerprint, byte-lex
-// of the full string) so binary search on fingerprints locates the matching
-// entry. rvalue_cache_insert_at is the only mutator and must update both in
-// lockstep to preserve this invariant.
+// fingerprint of entries[i]. Both are sorted by (length, lexicographic byte order).
 #define JSON_RVALUE_CACHE_CAPA 63
 typedef struct rvalue_cache_struct {
     int length;
+
+    // last_hit is the last index returned from (rstring|rsymbol)_cache_fetch or -1
+    // if we've modified the cache.
+    int last_hit;
+    
+    // next_hint predicts the next entry returned by last_hit when last_hit >= 0.
+    uint8_t next_hint[JSON_RVALUE_CACHE_CAPA];
     uint64_t fingerprints[JSON_RVALUE_CACHE_CAPA];
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
@@ -90,6 +94,9 @@ static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring
     cache->length++;
     cache->entries[index] = rstring;
     cache->fingerprints[index] = fingerprint;
+    // The shift invalidates any slot index stored in last_hit / next_hint.
+    // Once the cache fills no more inserts happen and the predictor stays warm.
+    cache->last_hit = -1;
 }
 
 #define rstring_cache_memcmp memcmp
@@ -162,6 +169,19 @@ ALWAYS_INLINE(static) uint64_t rstring_cache_fingerprint(const char *str, const 
 ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     uint64_t fp_query = rstring_cache_fingerprint(str, length);
+
+    int last = cache->last_hit;
+    if (last >= 0) {
+        int hint = cache->next_hint[last];
+        if (hint < cache->length && cache->fingerprints[hint] == fp_query) {
+            VALUE entry = cache->entries[hint];
+            if (length <= 7 || rstring_cache_memcmp(str, RSTRING_PTR(entry), length) == 0) {
+                cache->last_hit = hint;
+                return entry;
+            }
+        }
+    }
+
     int low = 0;
     int high = cache->length - 1;
 
@@ -180,10 +200,14 @@ ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char 
 
         VALUE entry = cache->entries[mid];
         if (length <= 7) {
+            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
+            cache->last_hit = mid;
             return entry;
         }
         int cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry), length);
         if (cmp == 0) {
+            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
+            cache->last_hit = mid;
             return entry;
         }
         if (cmp > 0) {
@@ -204,6 +228,24 @@ ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char 
 static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     uint64_t fp_query = rstring_cache_fingerprint(str, length);
+
+    int last = cache->last_hit;
+    if (last >= 0) {
+        int hint = cache->next_hint[last];
+        if (hint < cache->length && cache->fingerprints[hint] == fp_query) {
+            VALUE entry = cache->entries[hint];
+            if (length <= 7) {
+                cache->last_hit = hint;
+                return entry;
+            }
+            VALUE entry_str = rb_sym2str(entry);
+            if (rstring_cache_memcmp(str, RSTRING_PTR(entry_str), length) == 0) {
+                cache->last_hit = hint;
+                return entry;
+            }
+        }
+    }
+
     int low = 0;
     int high = cache->length - 1;
 
@@ -222,11 +264,15 @@ static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const lon
 
         VALUE entry = cache->entries[mid];
         if (length <= 7) {
+            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
+            cache->last_hit = mid;
             return entry;
         }
         VALUE entry_str = rb_sym2str(entry);
         int cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry_str), length);
         if (cmp == 0) {
+            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
+            cache->last_hit = mid;
             return entry;
         }
         if (cmp > 0) {
@@ -1665,6 +1711,7 @@ static VALUE cParser_parse(JSON_ParserConfig *config, VALUE Vsource)
         .stack = &stack,
         .stack_handle = &stack_handle,
     };
+    _state.name_cache.last_hit = -1;
     JSON_ParserState *state = &_state;
 
     VALUE result = json_parse_any(state, config);
