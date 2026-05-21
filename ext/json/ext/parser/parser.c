@@ -48,22 +48,26 @@ static VALUE rb_str_to_interned_str(VALUE str)
 // Object names are likely to be repeated, and are frozen.
 // As such we can re-use them if we keep a cache of the ones we've seen so far,
 // and save much more expensive lookups into the global fstring table.
-// This cache implementation is deliberately simple, as we're optimizing for compactness,
-// to be able to fit safely on the stack.
-// As such, binary search into a sorted array gives a good tradeoff between compactness and
-// performance.
-// `fingerprints` and `entries` are parallel arrays: fingerprints[i] is the
-// fingerprint of entries[i]. Both are sorted by (length, lexicographic byte order).
-#define JSON_RVALUE_CACHE_CAPA 63
+// The cache is a small open-addressed hash table that lives on the C stack
+// alongside the parser state, so it is kept compact. A slot is chosen by
+// hashing the entry's 64-bit fingerprint; collisions are resolved with linear
+// probing. `fingerprints` and `entries` are parallel arrays: fingerprints[i]
+// is the fingerprint of entries[i]. A zero fingerprint marks an empty slot --
+// a real fingerprint always carries a non-zero length in its high byte.
+#define JSON_RVALUE_CACHE_BITS 8
+#define JSON_RVALUE_CACHE_CAPA (1 << JSON_RVALUE_CACHE_BITS)
+#define JSON_RVALUE_CACHE_MASK (JSON_RVALUE_CACHE_CAPA - 1)
+// Stop inserting once the table is 3/4 full. This keeps linear-probe chains
+// short and guarantees a lookup always meets an empty slot (so it terminates).
+#define JSON_RVALUE_CACHE_MAX_ENTRIES (JSON_RVALUE_CACHE_CAPA * 3 / 4)
+// A fingerprint only encodes the length and first 7 bytes, so distinct strings
+// that share both collide. Such strings all hash to the same slot and form one
+// probe chain in which every step costs a full string comparison. A crafted
+// batch of them would otherwise turn each lookup into a linear scan, so we give
+// up on the cache after this many fingerprint collisions on a single lookup.
+#define JSON_RVALUE_CACHE_MAX_COLLISIONS 8
 typedef struct rvalue_cache_struct {
     int length;
-
-    // last_hit is the last index returned from (rstring|rsymbol)_cache_fetch or -1
-    // if we've modified the cache.
-    int last_hit;
-    
-    // next_hint predicts the next entry returned by last_hit when last_hit >= 0.
-    uint8_t next_hint[JSON_RVALUE_CACHE_CAPA];
     uint64_t fingerprints[JSON_RVALUE_CACHE_CAPA];
     VALUE entries[JSON_RVALUE_CACHE_CAPA];
 } rvalue_cache;
@@ -87,211 +91,132 @@ static inline VALUE build_symbol(const char *str, const long length)
     return rb_str_intern(build_interned_string(str, length));
 }
 
-static void rvalue_cache_insert_at(rvalue_cache *cache, int index, VALUE rstring, uint64_t fingerprint)
+// Equality check for two strings of equal length. Only called for length > 7,
+// so the 8-byte chunk reads below never run off either buffer. Endianness does
+// not matter: both operands are loaded the same way and only compared, not
+// ordered.
+ALWAYS_INLINE(static) bool rstring_cache_eq(const char *str, const char *rptr, const long length)
 {
-    MEMMOVE(&cache->entries[index + 1], &cache->entries[index], VALUE, cache->length - index);
-    MEMMOVE(&cache->fingerprints[index + 1], &cache->fingerprints[index], uint64_t, cache->length - index);
-    cache->length++;
-    cache->entries[index] = rstring;
-    cache->fingerprints[index] = fingerprint;
-    // The shift invalidates any slot index stored in last_hit / next_hint.
-    // Once the cache fills no more inserts happen and the predictor stays warm.
-    cache->last_hit = -1;
-}
-
-#define rstring_cache_memcmp memcmp
-
-#if JSON_CPU_LITTLE_ENDIAN_64BITS
-#if __has_builtin(__builtin_bswap64)
-#undef rstring_cache_memcmp
-ALWAYS_INLINE(static) int rstring_cache_memcmp(const char *str, const char *rptr, const long length)
-{
-    // The libc memcmp has numerous complex optimizations, but in this particular case,
-    // we know the string is small (JSON_RVALUE_CACHE_MAX_ENTRY_LENGTH), so being able to
-    // inline a simpler memcmp outperforms calling the libc version.
     long i = 0;
-
     for (; i + 8 <= length; i += 8) {
         uint64_t a, b;
         memcpy(&a, str + i, 8);
         memcpy(&b, rptr + i, 8);
         if (a != b) {
-            a = __builtin_bswap64(a);
-            b = __builtin_bswap64(b);
-            return (a < b) ? -1 : 1;
+            return false;
         }
     }
 
-    if (i >= 8 && i < length) {
+    if (i < length) {
         uint64_t a, b;
         memcpy(&a, str + length - 8, 8);
         memcpy(&b, rptr + length - 8, 8);
         if (a != b) {
-            a = __builtin_bswap64(a);
-            b = __builtin_bswap64(b);
-            return (a < b) ? -1 : 1;
-        }
-        return 0;
-    }
-
-    for (; i < length; i++) {
-        if (str[i] != rptr[i]) {
-            return (str[i] < rptr[i]) ? -1 : 1;
+            return false;
         }
     }
 
-    return 0;
+    return true;
 }
-#endif
-#endif
 
-// High byte = length; low 7 bytes = str[0..6] in lex byte-order. Unsigned uint64
-// compare then matches the (length, then byte-lex) order used to sort the cache.
-// Only the first 7 str bytes (str[0..6]) are encoded; bytes at offset 7
-// and beyond must be verified with rstring_cache_memcmp on a tie.
+// The high byte holds the length and the low 7 bytes hold string content.
+// For length <= 7 every byte is encoded, so fingerprint equality is exact;
+// longer strings share only a 7-byte prefix and must also be verified with
+// rstring_cache_eq. The hash table never relies on fingerprint ordering, so
+// bytes are packed in native order (no byte swap needed).
 ALWAYS_INLINE(static) uint64_t rstring_cache_fingerprint(const char *str, const long length)
 {
     uint64_t fp = (uint64_t)length << 56;
-    long i = 0;
-#if JSON_CPU_LITTLE_ENDIAN_64BITS && __has_builtin(__builtin_bswap64)
+#if JSON_CPU_LITTLE_ENDIAN_64BITS
     if (length >= 8) {
         uint64_t raw;
         memcpy(&raw, str, 8);
-        return (__builtin_bswap64(raw) >> 8) | fp;
+        return (raw & 0x00FFFFFFFFFFFFFFull) | fp;
     }
     if (length >= 4) {
+        // head holds str[0..3]; extra holds the remaining str[4..length-1]
+        // bytes (the high length-4 bytes of the trailing word). They occupy
+        // disjoint bit ranges, so the encoding is exact for length 4..7.
         uint32_t head, tail;
         memcpy(&head, str, 4);
         memcpy(&tail, str + length - 4, 4);
-        fp |= (uint64_t)__builtin_bswap32(head) << 24;
-        fp |= (uint64_t)__builtin_bswap32(tail) << ((7 - length) * 8);
-        return fp;
+        uint64_t extra = (uint64_t)tail >> ((8 - length) * 8);
+        return fp | (uint64_t)head | (extra << 32);
     }
 #endif
     long n = length < 7 ? length : 7;
-    for (; i < n; i++) {
+    for (long i = 0; i < n; i++) {
         fp |= (uint64_t)(unsigned char)str[i] << ((6 - i) * 8);
     }
     return fp;
 }
 
+// Map a fingerprint to a starting slot. Fibonacci hashing: multiply by
+// 2^64/phi and keep the well-mixed high bits.
+ALWAYS_INLINE(static) uint32_t rvalue_cache_slot(uint64_t fingerprint)
+{
+    return (uint32_t)((fingerprint * 0x9E3779B97F4A7C15ull) >> (64 - JSON_RVALUE_CACHE_BITS));
+}
+
 ALWAYS_INLINE(static) VALUE rstring_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     uint64_t fp_query = rstring_cache_fingerprint(str, length);
+    uint32_t slot = rvalue_cache_slot(fp_query);
 
-    int last = cache->last_hit;
-    if (last >= 0) {
-        int hint = cache->next_hint[last];
-        if (hint < cache->length && cache->fingerprints[hint] == fp_query) {
-            VALUE entry = cache->entries[hint];
-            if (length <= 7 || rstring_cache_memcmp(str, RSTRING_PTR(entry), length) == 0) {
-                cache->last_hit = hint;
+    for (int collisions = 0; true; slot = (slot + 1) & JSON_RVALUE_CACHE_MASK) {
+        uint64_t fp_entry = cache->fingerprints[slot];
+
+        if (fp_entry == fp_query) {
+            VALUE entry = cache->entries[slot];
+            if (length <= 7 || rstring_cache_eq(str, RSTRING_PTR(entry), length)) {
                 return entry;
             }
+
+            if (++collisions >= JSON_RVALUE_CACHE_MAX_COLLISIONS) {
+                break;
+            }
+        } else if (fp_entry == 0) {
+            VALUE rstring = build_interned_string(str, length);
+            if (cache->length < JSON_RVALUE_CACHE_MAX_ENTRIES) {
+                cache->fingerprints[slot] = fp_query;
+                cache->entries[slot] = rstring;
+                cache->length++;
+            }
+            return rstring;
         }
     }
-
-    int low = 0;
-    int high = cache->length - 1;
-
-    while (low <= high) {
-        int mid = (high + low) >> 1;
-        uint64_t fp_entry = cache->fingerprints[mid];
-
-        if (fp_entry < fp_query) {
-            low = mid + 1;
-            continue;
-        }
-        if (fp_entry > fp_query) {
-            high = mid - 1;
-            continue;
-        }
-
-        VALUE entry = cache->entries[mid];
-        int cmp;
-        if (length <= 7 || (cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry), length)) == 0) {
-            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
-            cache->last_hit = mid;
-            return entry;
-        }
-        if (cmp > 0) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    VALUE rstring = build_interned_string(str, length);
-
-    if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        rvalue_cache_insert_at(cache, low, rstring, fp_query);
-    }
-    return rstring;
+    return build_interned_string(str, length);
 }
 
 static VALUE rsymbol_cache_fetch(rvalue_cache *cache, const char *str, const long length)
 {
     uint64_t fp_query = rstring_cache_fingerprint(str, length);
+    uint32_t slot = rvalue_cache_slot(fp_query);
 
-    int last = cache->last_hit;
-    if (last >= 0) {
-        int hint = cache->next_hint[last];
-        if (hint < cache->length && cache->fingerprints[hint] == fp_query) {
-            VALUE entry = cache->entries[hint];
-            if (length <= 7) {
-                cache->last_hit = hint;
+    for (int collisions = 0; true; slot = (slot + 1) & JSON_RVALUE_CACHE_MASK) {
+        uint64_t fp_entry = cache->fingerprints[slot];
+
+        if (fp_entry == fp_query) {
+            VALUE entry = cache->entries[slot];
+            if (length <= 7 || rstring_cache_eq(str, RSTRING_PTR(rb_sym2str(entry)), length)) {
                 return entry;
             }
-            VALUE entry_str = rb_sym2str(entry);
-            if (rstring_cache_memcmp(str, RSTRING_PTR(entry_str), length) == 0) {
-                cache->last_hit = hint;
-                return entry;
+
+            if (++collisions >= JSON_RVALUE_CACHE_MAX_COLLISIONS) {
+                break;
             }
+        } else if (fp_entry == 0) {
+            VALUE rsymbol = build_symbol(str, length);
+            if (cache->length < JSON_RVALUE_CACHE_MAX_ENTRIES) {
+                cache->fingerprints[slot] = fp_query;
+                cache->entries[slot] = rsymbol;
+                cache->length++;
+            }
+            return rsymbol;
         }
     }
 
-    int low = 0;
-    int high = cache->length - 1;
-
-    while (low <= high) {
-        int mid = (high + low) >> 1;
-        uint64_t fp_entry = cache->fingerprints[mid];
-
-        if (fp_entry < fp_query) {
-            low = mid + 1;
-            continue;
-        }
-        if (fp_entry > fp_query) {
-            high = mid - 1;
-            continue;
-        }
-
-        VALUE entry = cache->entries[mid];
-        if (length <= 7) {
-            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
-            cache->last_hit = mid;
-            return entry;
-        }
-        VALUE entry_str = rb_sym2str(entry);
-        int cmp = rstring_cache_memcmp(str, RSTRING_PTR(entry_str), length);
-        if (cmp == 0) {
-            if (last >= 0) cache->next_hint[last] = (uint8_t)mid;
-            cache->last_hit = mid;
-            return entry;
-        }
-        if (cmp > 0) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    VALUE rsymbol = build_symbol(str, length);
-
-    if (cache->length < JSON_RVALUE_CACHE_CAPA) {
-        rvalue_cache_insert_at(cache, low, rsymbol, fp_query);
-    }
-    return rsymbol;
+    return build_symbol(str, length);
 }
 
 /* rvalue stack */
@@ -1715,7 +1640,6 @@ static VALUE cParser_parse(JSON_ParserConfig *config, VALUE Vsource)
         .stack = &stack,
         .stack_handle = &stack_handle,
     };
-    _state.name_cache.last_hit = -1;
     JSON_ParserState *state = &_state;
 
     VALUE result = json_parse_any(state, config);
