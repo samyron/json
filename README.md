@@ -249,6 +249,17 @@ There are also the methods `Kernel#j` for generate, and `Kernel#jj` for
 `pretty_generate` output to the console, that work analogous to Core Ruby's `p` and
 the `pp` library's `pp` methods.
 
+## Security
+
+When parsing or serializing untrusted input, parser and generator options should never be user controlled.
+
+```ruby
+# Dangerous, DO NOT DO THIS.
+JSON.generate(params[:data], params[:options])
+```
+
+Security vulnerability reports relying on attacker controlled parsing or generator options will be handled as regular bug fixes.
+
 ## Development
 
 ### Prerequisites
