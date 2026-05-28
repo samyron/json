@@ -2,7 +2,10 @@
 
 ### Unreleased
 
+### 2026-05-28 (2.19.6)
+
 * Cleanly handle overly large `depth` generator argument.
+* Add missing write barrier in `ParserConfig`.
 
 ### 2026-05-04 (2.19.5)
 
