@@ -2,6 +2,13 @@
 
 ### Unreleased
 
+### 2026-05-28 (2.19.7)
+
+* Fix some more edge cases with out of range floats.
+* Ensure the string provided to `JSON.parse` can't be mutated during parsing.
+* Add missing write barriers in `State#dup`.
+* Further validate generator `depth` config.
+
 ### 2026-05-28 (2.19.6)
 
 * Cleanly handle overly large `depth` generator argument.
