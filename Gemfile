@@ -9,7 +9,6 @@ group :development do
   gem "rake-compiler"
   gem "test-unit"
   gem "test-unit-ruby-core"
-  gem "all_images", "~> 0" unless RUBY_PLATFORM =~ /java/
   gem "simplecov", require: false
 
   if RUBY_VERSION < "3.1."
