@@ -2,6 +2,9 @@
 
 ### Unreleased
 
+### 2026-06-03 (2.19.8)
+
+* Fix 1-byte buffer overread on EOS errors.
 * Handle invalid types passed as `max_nesting` option.
 
 ### 2026-05-28 (2.19.7)
