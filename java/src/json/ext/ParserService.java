@@ -27,8 +27,8 @@ public class ParserService implements BasicLibraryService {
         RubyModule jsonExtModule = info.jsonModule.get().defineModuleUnder("Ext");
         RubyClass parserConfigClass =
             jsonExtModule.defineClassUnder("ParserConfig", runtime.getObject(),
-                                           ParserConfig.ALLOCATOR);
-        parserConfigClass.defineAnnotatedMethods(ParserConfig.class);
+                                           Parser.ALLOCATOR);
+        parserConfigClass.defineAnnotatedMethods(Parser.class);
         return true;
     }
 }
