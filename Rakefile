@@ -84,8 +84,6 @@ namespace :ci do
 end
 
 JAVA_DIR            = "java/src/json/ext"
-JAVA_RAGEL_PATH     = "#{JAVA_DIR}/ParserConfig.rl"
-JAVA_PARSER_SRC     = "#{JAVA_DIR}/ParserConfig.java"
 JAVA_SOURCES        = FileList["#{JAVA_DIR}/*.java"].exclude("#{JAVA_DIR}/Vectorized*.java")
 JAVA_VEC_SOURCES    = FileList["#{JAVA_DIR}/Vectorized*.java"]
 JAVA_CLASSES        = []
@@ -95,35 +93,6 @@ JRUBY_GENERATOR_JAR = File.expand_path("lib/json/ext/generator.jar")
 CLEAN.concat FileList["java/src/**/*.class"]
 CLEAN << JRUBY_PARSER_JAR
 CLEAN << JRUBY_GENERATOR_JAR
-
-CLOBBER << JAVA_PARSER_SRC
-
-which = lambda { |c|
-  w = `which #{c}`
-  break w.chomp unless w.empty?
-}
-
-if RUBY_PLATFORM =~ /mingw|mswin/
-  # cleans up Windows CI output
-  RAGEL_CODEGEN     = %w[ragel].find(&which)
-  RAGEL_DOTGEN      = %w[ragel].find(&which)
-else
-  RAGEL_CODEGEN     = %w[rlcodegen rlgen-cd ragel].find(&which)
-  RAGEL_DOTGEN      = %w[rlgen-dot rlgen-cd ragel].find(&which)
-end
-
-file JAVA_PARSER_SRC => JAVA_RAGEL_PATH do
-  cd JAVA_DIR do
-    if RAGEL_CODEGEN == 'ragel'
-      sh "ragel ParserConfig.rl -J -o ParserConfig.java"
-    else
-      sh "ragel -x ParserConfig.rl | #{RAGEL_CODEGEN} -J"
-    end
-  end
-end
-
-desc "Generate parser with ragel"
-task :ragel => [JAVA_PARSER_SRC]
 
 if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   path_separator = File::PATH_SEPARATOR
@@ -174,7 +143,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
   end
 
   desc "Compiling jruby extension"
-  task :compile => [:ragel] + JAVA_CLASSES
+  task :compile => JAVA_CLASSES
 
   desc "Package the jruby gem"
   task :jruby_gem => :create_jar do
@@ -199,6 +168,7 @@ if defined?(RUBY_ENGINE) and RUBY_ENGINE == 'jruby'
         "json/ext/Parser*.class",
         "json/ext/RuntimeInfo*.class",
         "json/ext/StringDecoder*.class",
+        "json/ext/*StringScanner*.class",
         "json/ext/Utils*.class"
       ]
       sh 'jar', 'cf', File.basename(JRUBY_PARSER_JAR), *parser_classes

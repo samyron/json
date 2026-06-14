@@ -186,8 +186,7 @@ final class StringDecoder extends ByteListTranscoder {
             } else if (digit >= 'A' && digit <= 'F') {
                 digitValue = 10 + digit - 'A';
             } else {
-                throw new NumberFormatException("Invalid base 16 number "
-                        + src.subSequence(numberStart, numberStart + length));
+                throw invalidUnicodeEscape(context, numberStart);
             }
             result = result * 16 + digitValue;
         }
@@ -217,6 +216,16 @@ final class StringDecoder extends ByteListTranscoder {
         ByteList message = new ByteList(
                 ByteList.plain("invalid escape character in string: "));
         message.append(src, charStart, srcEnd - charStart);
+        return Utils.newException(context, Utils.M_PARSER_ERROR,
+                                  context.runtime.newString(message));
+    }
+
+    protected RaiseException invalidUnicodeEscape(ThreadContext context, int escapeStart) {
+        ByteList message = new ByteList(
+                ByteList.plain("incomplete unicode character escape sequence at "));
+        // Point at the backslash-u that introduced the escape.
+        int start = Math.max(escapeStart - 2, 0);
+        message.append(src, start, srcEnd - start);
         return Utils.newException(context, Utils.M_PARSER_ERROR,
                                   context.runtime.newString(message));
     }
