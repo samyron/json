@@ -10,6 +10,7 @@ import org.jruby.runtime.ThreadContext;
 import org.jruby.util.ByteList;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * A decoder that reads a JSON-encoded string from the given sources and
@@ -30,19 +31,49 @@ final class StringDecoder extends ByteListTranscoder {
     // Array used for writing multibyte characters into the buffer at once
     private final byte[] aux = new byte[4];
 
+    private final StringScanner scanner = StringScanner.getInstance();
+
     public StringDecoder(boolean allowControlCharacters, boolean allowInvalidEscape) {
         this.allowControlCharacters = allowControlCharacters;
         this.allowInvalidEscape = allowInvalidEscape;
     }
 
-    ByteList decode(ThreadContext context, ByteList src, int start, int end) {
+    /**
+     * @param chunks little-endian {@link ByteBuffer} over {@code src}'s backing
+     *               array, shared with the parser, used to SWAR-skip the plain
+     *               ASCII runs between interesting bytes.
+     */
+    ByteList decode(ThreadContext context, ByteList src, int start, int end, ByteBuffer chunks) {
         try {
             init(src, start, end);
             this.out = new ByteList(end - start);
-            while (hasNext()) {
-                handleChar(context, readUtf8Char(context));
+            final byte[] data = src.unsafeBytes();
+            final int base = src.begin();
+            int runStart = pos;
+            while (pos < srcEnd) {
+                int b = data[base + pos] & 0xFF;
+                if (b >= 0x20 && b != '\\') {
+                    pos = scanner.nextEscapeOrControl(data, chunks, base + pos, base + srcEnd) - base;
+                } else if (b == '\\') {
+                    if (pos > runStart) {
+                        append(data, base + runStart, pos - runStart);
+                    }
+                    charStart = pos;
+                    pos++; // consume the backslash
+                    handleEscapeSequence(context);
+                    runStart = pos;
+                } else {
+                    // ASCII control character.
+                    if (!allowControlCharacters) {
+                        charStart = pos;
+                        throw invalidControlChar(context);
+                    }
+                    pos++; // permitted: keep it in the verbatim run
+                }
             }
-            quoteStop(pos);
+            if (srcEnd > runStart) {
+                append(data, base + runStart, srcEnd - runStart);
+            }
             return out;
         } catch (IOException e) {
             throw context.runtime.newIOErrorFromException(e);
@@ -56,15 +87,6 @@ final class StringDecoder extends ByteListTranscoder {
             throw invalidControlChar(context);
         }
         return c;
-    }
-
-    private void handleChar(ThreadContext context, int c) throws IOException {
-        if (c == '\\') {
-            quoteStop(charStart);
-            handleEscapeSequence(context);
-        } else {
-            quoteStart();
-        }
     }
 
     private void handleEscapeSequence(ThreadContext context) throws IOException {

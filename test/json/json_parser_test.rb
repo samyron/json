@@ -335,6 +335,7 @@ class JSONParserTest < Test::Unit::TestCase
 
   if RUBY_ENGINE != "jruby" # https://github.com/ruby/json/issues/138
     def test_parse_broken_string
+      puts "************** HERE ******************"
       s = parse(%{["\x80"]})[0]
       assert_equal("\x80", s)
       assert_equal Encoding::UTF_8, s.encoding

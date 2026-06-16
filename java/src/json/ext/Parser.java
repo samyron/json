@@ -734,7 +734,7 @@ public class Parser extends RubyObject {
                     len = q - contentStart;
                 } else {
                     ByteList decoded = decoder.decode(context, byteList,
-                                                      contentStart - begin, q - begin);
+                                                      contentStart - begin, q - begin, chunks);
                     buf = decoded.getUnsafeBytes();
                     off = decoded.begin();
                     len = decoded.realSize();
@@ -752,7 +752,7 @@ public class Parser extends RubyObject {
                 content = new ByteList(data, contentStart, q - contentStart, true);
             } else {
                 content = decoder.decode(context, byteList,
-                                         contentStart - begin, q - begin);
+                                         contentStart - begin, q - begin, chunks);
             }
 
             RubyString string = context.runtime.newString(content);
