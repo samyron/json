@@ -726,21 +726,19 @@ public class Parser extends RubyObject {
                 return internedKey(buf, off, len);
             }
 
-            ByteList content;
+            RubyString string;
             if (plain) {
-                // Plain ASCII string, skip the decoder.
-                content = new ByteList(data, contentStart, q - contentStart, true);
+                string = RubyString.newString(context.runtime, data, contentStart,
+                                              q - contentStart, UTF8Encoding.INSTANCE);
             } else {
-                content = decoder.decode(context, byteList,
-                                         contentStart - begin, q - begin);
+                ByteList content = decoder.decode(context, byteList,
+                                                  contentStart - begin, q - begin);
+                string = context.runtime.newString(content);
+                string.setEncoding(UTF8Encoding.INSTANCE);
+                string.clearCodeRange();
             }
 
-            RubyString string = context.runtime.newString(content);
-            string.setEncoding(UTF8Encoding.INSTANCE);
-            string.clearCodeRange();
-
             if (config.freeze) {
-                string.setFrozen(true);
                 return context.runtime.freezeAndDedupString(string);
             }
 
