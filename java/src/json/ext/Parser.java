@@ -547,7 +547,7 @@ public class Parser extends RubyObject {
             final Ruby runtime = context.runtime;
             int base = valueTop - count;
             int limit = valueTop;
-            RubyHash hash = new RubyHash(runtime, count / 2);
+            RubyHash hash = RubyHash.newHash(runtime);
             for (int i = base; i < limit; i += 2) {
                 // We use RubyHash#fastASet because all object keys have already been
                 // frozen and deduplicated. 
