@@ -306,5 +306,3 @@ The latest version of this library can be downloaded at
 Online Documentation should be located at
 
 * https://www.rubydoc.info/gems/json
-
-[Ragel]: http://www.colm.net/open-source/ragel/
