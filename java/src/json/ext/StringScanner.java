@@ -69,7 +69,7 @@ class StringScanner {
      *         {@link #ASCII_BIT} is set when the body contains no non-ASCII byte
      *         (it may still hold escapes or control characters)
      */
-    long scan(byte[] data, ByteBuffer chunks, int start, int end) {
+    long scan(byte[] data, ByteBuffer chunks, int start, int end, boolean validateUtf8) {
         int p = start;
         boolean plain = true;
         boolean ascii = true;
@@ -86,9 +86,20 @@ class StringScanner {
                 //                        clears ASCII_BIT
                 //   non-plain, !ASCII -> quote and backslash only; multi-byte
                 //                        UTF-8 is skipped eight bytes at a time
-                long m = plain ? stringScanMask(x)
-                              : ascii ? quoteBackslashHighMask(x)
-                                      : quoteBackslashMask(x);
+                //
+                // When UTF-8 validation is disabled, non-ASCII bytes are copied
+                // verbatim, so they stay on the plain fast path and the high-bit
+                // term drops out of every mask: plain scans for control, quote
+                // and backslash; non-plain scans for quote and backslash only.
+                long m;
+                if (validateUtf8) {
+                    m = plain ? stringScanMask(x)
+                             : ascii ? quoteBackslashHighMask(x)
+                                     : quoteBackslashMask(x);
+                } else {
+                    m = plain ? controlQuoteBackslashMask(x)
+                             : quoteBackslashMask(x);
+                }
                 if (m == 0) {
                     p += 8;
                 } else {
@@ -113,8 +124,10 @@ class StringScanner {
                     continue outer;
                 }
                 if (b >= 0x80) {
-                    plain = false;
                     ascii = false;
+                    if (validateUtf8) {
+                        plain = false;
+                    }
                     p++;
                     continue outer;
                 }
@@ -182,6 +195,21 @@ class StringScanner {
         long s       = x ^ BACKSLASHES;
         long bslash  = (s - ONES) & ~s;
         return (control | bslash) & HIGH_BITS;
+    }
+
+    /**
+     * Like {@link #stringScanMask} but omits the non-ASCII (high-bit) term:
+     * flags double quotes, backslashes and ASCII control characters (&lt; 0x20)
+     * only. Used as the starting mask when UTF-8 validation is disabled, where
+     * non-ASCII bytes are copied verbatim and so stay on the plain fast path.
+     */
+    private static long controlQuoteBackslashMask(long x) {
+        long control = (x - SPACES) & ~x; // bytes < 0x20 (ASCII)
+        long q       = x ^ DOUBLE_QUOTES;
+        long quote   = (q - ONES) & ~q;
+        long s       = x ^ BACKSLASHES;
+        long bslash  = (s - ONES) & ~s;
+        return (control | quote | bslash) & HIGH_BITS;
     }
 
     /**
