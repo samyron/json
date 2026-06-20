@@ -17,7 +17,7 @@ final class VectorizedStringScanner extends StringScanner {
     private static final ByteVector DQUOTE = ByteVector.broadcast(SP, '"');
 
     @Override
-    long scan(byte[] data, ByteBuffer chunks, int start, int end) {
+    long scan(byte[] data, ByteBuffer chunks, int start, int end, boolean validateUtf8) {
         final int width = SP.length();
         int p = start;
         boolean plain = true;
@@ -25,14 +25,24 @@ final class VectorizedStringScanner extends StringScanner {
 
         // The same structure as the StringEncoder. The logic is
         // duplicated for maximum inlining.
+        //
+        // When UTF-8 validation is disabled, non-ASCII lanes are copied verbatim
+        // and stay on the plain fast path, so the high-bit term drops out: plain
+        // scans for control, quote and backslash; non-plain for quote and
+        // backslash only.
         outer:
         while (true) {
             while (p + width <= end) {
                 ByteVector chunk = ByteVector.fromArray(SP, data, p);
-                VectorMask<Byte> interesting =
-                    plain ? interestingLanes(chunk)
-                          : ascii ? quoteBackslashOrHighLanes(chunk)
-                                  : quoteOrBackslashLanes(chunk);
+                VectorMask<Byte> interesting;
+                if (validateUtf8) {
+                    interesting = plain ? interestingLanes(chunk)
+                                        : ascii ? quoteBackslashOrHighLanes(chunk)
+                                                : quoteOrBackslashLanes(chunk);
+                } else {
+                    interesting = plain ? controlQuoteBackslashLanes(chunk)
+                                        : quoteOrBackslashLanes(chunk);
+                }
                 if (interesting.anyTrue()) {
                     p += interesting.firstTrue();
                     break;
@@ -50,8 +60,10 @@ final class VectorizedStringScanner extends StringScanner {
                     continue outer;
                 }
                 if (b >= 0x80) {
-                    plain = false;
                     ascii = false;
+                    if (validateUtf8) {
+                        plain = false;
+                    }
                     p++;
                     continue outer;
                 }
@@ -85,7 +97,9 @@ final class VectorizedStringScanner extends StringScanner {
     }
 
     private static VectorMask<Byte> escapeOrControlLanes(ByteVector chunk) {
-        return chunk.lt(SPACE).or(chunk.eq(BACKSLASH));
+        VectorMask<Byte> negative = chunk.lt(ZERO);
+        VectorMask<Byte> control = chunk.lt(SPACE).andNot(negative);
+        return control.or(chunk.eq(BACKSLASH));
     }
 
     private static VectorMask<Byte> interestingLanes(ByteVector chunk) {
@@ -98,6 +112,17 @@ final class VectorizedStringScanner extends StringScanner {
 
     private static VectorMask<Byte> quoteOrBackslashLanes(ByteVector chunk) {
         return chunk.eq(DQUOTE).or(chunk.eq(BACKSLASH));
+    }
+
+    // Like interestingLanes but without the non-ASCII (high-bit) term: flags
+    // ASCII control characters, double quotes and backslashes only. Used as the
+    // plain-path mask when UTF-8 validation is disabled.
+    private static VectorMask<Byte> controlQuoteBackslashLanes(ByteVector chunk) {
+        VectorMask<Byte> negative = chunk.lt(ZERO);
+        VectorMask<Byte> lowOrQuote = chunk.lanewise(VectorOperators.XOR, TWO)
+                                           .lt(THIRTY_THREE)
+                                           .andNot(negative);
+        return lowOrQuote.or(chunk.eq(BACKSLASH));
     }
 
     private static VectorMask<Byte> quoteBackslashOrHighLanes(ByteVector chunk) {

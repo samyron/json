@@ -690,7 +690,7 @@ public class Parser extends RubyObject {
             final byte[] data = this.data;
             final int contentStart = cursor + 1; // skip opening quote
 
-            long scanned = scanner.scan(data, chunks, contentStart, end);
+            long scanned = scanner.scan(data, chunks, contentStart, end, validateUTF8Strings);
             final int q = (int) scanned;
             if (q < 0) {
                 throw newException(Utils.M_PARSER_ERROR,

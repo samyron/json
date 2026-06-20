@@ -52,8 +52,8 @@ final class StringDecoder extends ByteListTranscoder {
         }
     }
 
-    // Decodes ASCII-only strings with no UTF-8 validation. It is assumed this is only called when
-    // the StringScanner#scan returned a result with the ASCII_BIT bit set.
+    // Decodes strings with no UTF-8 validation. It is assumed the string is either ASCII-only
+    // or UTF-8 avlidation has been disabled.
     ByteList decodeNoValidate(ThreadContext context, ByteList src, int start, int end, ByteBuffer chunks) {
         try {
             init(src, start, end);
