@@ -2,8 +2,12 @@
 
 ### Unreleased
 
-* Changed the C parser to no longer be recursive, so parsing very deep documents with `max_nesting: false` will no longer
+### 2026-06-23 (2.20.0)
+
+* Both C and Java parsers are no longer recursive, so parsing very deep documents with `max_nesting: false` will no longer
   result in `SystemStackError stack level too deep` errors.
+  * The `:max_nesting` option still defaults to `100`.
+* Optimized floating point number parsing further by replacing the ryu algorithm by a port of Eisel-Lemire Fast Float.
 * Added `JSON::ResumableParser` to parse streams of JSON documents. Not yet available on JRuby.
 * Deprecate default support of JavaScript comments in the parser and add `allow_comments: true` parsing option.
 * Integrate with Ruby 4.1 `ruby_sized_xfree`.
