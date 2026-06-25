@@ -488,6 +488,11 @@ public class GeneratorState extends RubyObject {
         return buffer_initial_length;
     }
 
+    @JRubyMethod(name="sort_keys?")
+    public RubyBoolean sort_keys_p(ThreadContext context) {
+        return RubyBoolean.newBoolean(context, sortKeys);
+    }
+
     public int getDepth() {
         return depth;
     }
@@ -613,6 +618,7 @@ public class GeneratorState extends RubyObject {
         result.op_aset(context, runtime.newSymbol("strict"), strict_get(context));
         result.op_aset(context, runtime.newSymbol("depth"), depth_get(context));
         result.op_aset(context, runtime.newSymbol("buffer_initial_length"), buffer_initial_length_get(context));
+        result.op_aset(context, runtime.newSymbol("sort_keys?"), ascii_only_p(context));
 
         if (this.allowDuplicateKey) {
             if (!this.deprecateDuplicateKey) {
