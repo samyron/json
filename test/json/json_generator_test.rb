@@ -190,6 +190,41 @@ class JSONGeneratorTest < Test::Unit::TestCase
     JSON
   end
 
+  def test_generate_sort_keys
+    json = generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: true)
+    assert_equal('{"1":"b","2":"a","3":"c"}', json)
+
+    json = generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: false)
+    assert_equal('{"2":"a","1":"b","3":"c"}', json)
+
+    json = pretty_generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: true)
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+        "1": "b",
+        "2": "a",
+        "3": "c"
+      }
+    JSON
+
+    json = pretty_generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: false)
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+        "2": "a",
+        "1": "b",
+        "3": "c"
+      }
+    JSON
+
+    json = pretty_generate({2=>"a", 1=>"b", 3=>"c"})
+    assert_equal(<<~'JSON'.chomp, json)
+      {
+        "2": "a",
+        "1": "b",
+        "3": "c"
+      }
+    JSON
+  end
+
   def test_generate_custom
     state = State.new(:space_before => " ", :space => "   ", :indent => "<i>", :object_nl => "\n", :array_nl => "<a_nl>")
     json = generate({1=>{2=>3,4=>[5,6]}}, state)

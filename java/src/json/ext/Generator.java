@@ -573,6 +573,11 @@ public final class Generator {
             return;
         }
 
+        if (state.sortKeys()) {
+            RubyArray<?> sortedPairs = (RubyArray<?>) object.callMethod(context, "sort");
+            object = (RubyHash) sortedPairs.callMethod(context, "to_h");
+        }
+
         final ByteList objectNl = state.getObjectNl();
         byte[] objectNLBytes = objectNl.unsafeBytes();
         final byte[] indent = Utils.repeat(state.getIndent(), depth);

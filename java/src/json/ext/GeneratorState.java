@@ -105,6 +105,12 @@ public class GeneratorState extends RubyObject {
     static final int DEFAULT_BUFFER_INITIAL_LENGTH = 1024;
 
     /**
+     * If set to <code>true</code> object keys will be sorted when generating JSON.
+     */
+    private boolean sortKeys = DEFAULT_SORT_KEYS;
+    static final boolean DEFAULT_SORT_KEYS = false;
+
+    /**
      * The current depth (inside a #to_json call)
      */
     protected int depth = 0;
@@ -222,6 +228,7 @@ public class GeneratorState extends RubyObject {
 
         this.allowDuplicateKey = orig.allowDuplicateKey;
         this.deprecateDuplicateKey = orig.deprecateDuplicateKey;
+        this.sortKeys = orig.sortKeys;
 
         return this;
     }
@@ -431,6 +438,13 @@ public class GeneratorState extends RubyObject {
         return strict;
     }
 
+    /**
+     * Returns true if object keys should be sorted.
+     */
+    public boolean sortKeys() {
+        return sortKeys;
+    }
+
     @JRubyMethod(name={"strict","strict?"})
     public RubyBoolean strict_get(ThreadContext context) {
         return RubyBoolean.newBoolean(context, strict);
@@ -568,6 +582,9 @@ public class GeneratorState extends RubyObject {
             this.allowDuplicateKey = opts.getBool("allow_duplicate_key", false);
             this.deprecateDuplicateKey = false;
         }
+
+        sortKeys = opts.getBool("sort_keys", DEFAULT_SORT_KEYS);
+
         return this;
     }
 

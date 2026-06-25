@@ -34,13 +34,14 @@ typedef struct JSON_Generator_StateStruct {
     bool ascii_only;
     bool script_safe;
     bool strict;
+    bool sort_keys;
 } JSON_Generator_State;
 
 static VALUE mJSON, cState, cFragment, eGeneratorError, eNestingError, Encoding_UTF_8;
 
 static ID i_to_s, i_to_json, i_new, i_encode;
 static VALUE sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan, sym_allow_duplicate_key,
-             sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict, sym_as_json;
+             sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict, sym_as_json, sym_sort_keys;
 
 
 #define GET_STATE_TO(self, state) \
@@ -1050,6 +1051,12 @@ static inline long increase_depth(struct generate_json_data *data)
 
 static void generate_json_object(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
 {
+    if (RB_UNLIKELY(data->state->sort_keys)) {
+        VALUE sorted_array = rb_funcall(obj, rb_intern("sort"), 0);
+        VALUE sorted_hash = rb_funcall(sorted_array, rb_intern("to_h"), 0);
+        obj = sorted_hash;
+    }
+
     long depth = increase_depth(data);
 
     if (RHASH_SIZE(obj) == 0) {
@@ -1832,6 +1839,7 @@ static int configure_state_i(VALUE key, VALUE val, VALUE _arg)
         state->as_json_single_arg = proc && rb_proc_arity(proc) == 1;
         state_write_value(data, &state->as_json, proc);
     }
+    else if (key == sym_sort_keys)             { state->sort_keys = RTEST(val); }
     return ST_CONTINUE;
 }
 
@@ -1986,6 +1994,7 @@ void Init_generator(void)
     sym_strict = ID2SYM(rb_intern("strict"));
     sym_as_json = ID2SYM(rb_intern("as_json"));
     sym_allow_duplicate_key = ID2SYM(rb_intern("allow_duplicate_key"));
+    sym_sort_keys = ID2SYM(rb_intern("sort_keys"));
 
     usascii_encindex = rb_usascii_encindex();
     utf8_encindex = rb_utf8_encindex();
