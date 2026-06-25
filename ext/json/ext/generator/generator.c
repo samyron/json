@@ -1383,6 +1383,7 @@ static VALUE cState_init_copy(VALUE obj, VALUE orig)
     RB_OBJ_WRITTEN(obj, Qundef, objState->object_nl);
     RB_OBJ_WRITTEN(obj, Qundef, objState->array_nl);
     RB_OBJ_WRITTEN(obj, Qundef, objState->as_json);
+    RB_OBJ_WRITTEN(obj, Qundef, objState->sort_keys);
 
     return obj;
 }
@@ -1729,6 +1730,31 @@ static VALUE cState_ascii_only_set(VALUE self, VALUE enable)
     return Qnil;
 }
 
+/*
+ * call-seq: sort_keys?
+ *
+ * Returns true, if object keys should be sorted in the generated JSON. Otherwise
+ * returns false.
+ */
+static VALUE cState_sort_keys_p(VALUE self)
+{
+    GET_STATE(self);
+    return state->sort_keys ? Qtrue : Qfalse;
+}
+
+/*
+ * call-seq: sort_keys=(enable)
+ *
+ * This sets whether object keys should be sorted in the generated JSON.
+ */
+static VALUE cState_sort_keys_set(VALUE self, VALUE enable)
+{
+    rb_check_frozen(self);
+    GET_STATE(self);
+    state->sort_keys = RTEST(enable);
+    return Qnil;
+}
+
 static VALUE cState_allow_duplicate_key_p(VALUE self)
 {
     GET_STATE(self);
@@ -1965,6 +1991,8 @@ void Init_generator(void)
     rb_define_method(cState, "buffer_initial_length=", cState_buffer_initial_length_set, 1);
     rb_define_method(cState, "generate", cState_generate, -1);
     rb_define_method(cState, "_generate_no_fallback", cState_generate_no_fallback, -1);
+    rb_define_method(cState, "sort_keys?", cState_sort_keys_p, 0);
+    rb_define_method(cState, "sort_keys=", cState_sort_keys_set, 1);
 
     rb_define_private_method(cState, "allow_duplicate_key?", cState_allow_duplicate_key_p, 0);
 
