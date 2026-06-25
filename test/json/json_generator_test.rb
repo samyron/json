@@ -324,6 +324,7 @@ class JSONGeneratorTest < Test::Unit::TestCase
       :object_nl             => "",
       :space                 => "",
       :space_before          => "",
+      :sort_keys             => false,
     }.sort_by { |n,| n.to_s }, state.to_h.sort_by { |n,| n.to_s })
 
     state = JSON::State.new(allow_duplicate_key: true)
@@ -342,6 +343,7 @@ class JSONGeneratorTest < Test::Unit::TestCase
       :object_nl             => "",
       :space                 => "",
       :space_before          => "",
+      :sort_keys             => false,
     }.sort_by { |n,| n.to_s }, state.to_h.sort_by { |n,| n.to_s })
   end
 

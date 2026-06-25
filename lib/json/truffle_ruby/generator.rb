@@ -164,6 +164,7 @@ module JSON
           @script_safe           = false
           @strict                = false
           @max_nesting           = 100
+          @sort_keys             = false
           configure(opts) if opts
         end
 
@@ -198,6 +199,10 @@ module JSON
         # If this attribute is set to true, attempting to serialize types not
         # supported by the JSON spec will raise a JSON::GeneratorError
         attr_accessor :strict
+
+        # If this attribute is set to true, object keys will be sorted in
+        # the generated JSON.
+        attr_accessor :sort_keys
 
         # :stopdoc:
         attr_reader :buffer_initial_length
@@ -285,6 +290,7 @@ module JSON
           @allow_nan             = !!opts[:allow_nan]         if opts.key?(:allow_nan)
           @as_json               = opts[:as_json].to_proc     if opts[:as_json]
           @ascii_only            = opts[:ascii_only]          if opts.key?(:ascii_only)
+          @sort_keys             = opts[:sort_keys]           if opts.key?(:sort_keys)
           @depth                 = opts[:depth] || 0
           @buffer_initial_length ||= opts[:buffer_initial_length]
 
@@ -349,9 +355,11 @@ module JSON
 
           depth = @depth
           if @indent.empty? and @space.empty? and @space_before.empty? and @object_nl.empty? and @array_nl.empty? and
-              !@ascii_only and !@script_safe and @max_nesting == 0 and (!@strict || Symbol === obj)
+              !@ascii_only and !@script_safe and @max_nesting == 0 and (!@strict || Symbol === obj) and !@sort_keys
             result = generate_json(obj, ''.dup)
           else
+            obj = obj.sort.to_h if @sort_keys
+            
             result = obj.to_json(self)
           end
           JSON::TruffleRuby::Generator.valid_utf8?(result) or raise GeneratorError.new(
