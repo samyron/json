@@ -200,8 +200,9 @@ module JSON
         # supported by the JSON spec will raise a JSON::GeneratorError
         attr_accessor :strict
 
-        # If this attribute is set to true, object keys will be sorted in
-        # the generated JSON.
+        # Controls key sorting in the generated JSON. If set to +true+, object
+        # keys are sorted by key lexicographically. If set to a Proc, it is
+        # used as a comparator receiving two [key, value] pairs.
         attr_accessor :sort_keys
 
         # :stopdoc:
@@ -358,8 +359,10 @@ module JSON
               !@ascii_only and !@script_safe and @max_nesting == 0 and (!@strict || Symbol === obj) and !@sort_keys
             result = generate_json(obj, ''.dup)
           else
-            obj = obj.sort.to_h if @sort_keys
-            
+            if @sort_keys
+              obj = (Proc === @sort_keys ? obj.sort(&@sort_keys) : obj.sort).to_h
+            end
+
             result = obj.to_json(self)
           end
           JSON::TruffleRuby::Generator.valid_utf8?(result) or raise GeneratorError.new(
