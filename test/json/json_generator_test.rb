@@ -225,6 +225,20 @@ class JSONGeneratorTest < Test::Unit::TestCase
     JSON
   end
 
+  def test_generate_sort_keys_with_proc
+    reverse = ->(a, b) { b[0] <=> a[0] }
+    json = generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: reverse)
+    assert_equal('{"3":"c","2":"a","1":"b"}', json)
+
+    by_value = ->(a, b) { a[1] <=> b[1] }
+    json = generate({2=>"c", 1=>"a", 3=>"b"}, sort_keys: by_value)
+    assert_equal('{"1":"a","3":"b","2":"c"}', json)
+
+    state = State.new(sort_keys: reverse)
+    assert_same reverse, state.to_h[:sort_keys]
+    assert_equal('{"3":"c","2":"a","1":"b"}', state.generate({2=>"a", 1=>"b", 3=>"c"}))
+  end
+
   def test_generate_custom
     state = State.new(:space_before => " ", :space => "   ", :indent => "<i>", :object_nl => "\n", :array_nl => "<a_nl>")
     json = generate({1=>{2=>3,4=>[5,6]}}, state)

@@ -34,7 +34,7 @@ typedef struct JSON_Generator_StateStruct {
     bool ascii_only;
     bool script_safe;
     bool strict;
-    bool sort_keys;
+    VALUE sort_keys;
 } JSON_Generator_State;
 
 static VALUE mJSON, cState, cFragment, eGeneratorError, eNestingError, Encoding_UTF_8;
@@ -710,6 +710,7 @@ static void State_mark(void *ptr)
     rb_gc_mark_movable(state->object_nl);
     rb_gc_mark_movable(state->array_nl);
     rb_gc_mark_movable(state->as_json);
+    rb_gc_mark_movable(state->sort_keys);
 }
 
 static void State_compact(void *ptr)
@@ -721,6 +722,7 @@ static void State_compact(void *ptr)
     state->object_nl = rb_gc_location(state->object_nl);
     state->array_nl = rb_gc_location(state->array_nl);
     state->as_json = rb_gc_location(state->as_json);
+    state->sort_keys = rb_gc_location(state->sort_keys);
 }
 
 static size_t State_memsize(const void *ptr)
@@ -770,6 +772,7 @@ static void vstate_spill(struct generate_json_data *data)
     RB_OBJ_WRITTEN(vstate, Qundef, state->object_nl);
     RB_OBJ_WRITTEN(vstate, Qundef, state->array_nl);
     RB_OBJ_WRITTEN(vstate, Qundef, state->as_json);
+    RB_OBJ_WRITTEN(vstate, Qundef, state->sort_keys);
 }
 
 static inline VALUE json_call_to_json(struct generate_json_data *data, VALUE obj)
@@ -1051,10 +1054,15 @@ static inline long increase_depth(struct generate_json_data *data)
 
 static void generate_json_object(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
 {
-    if (RB_UNLIKELY(data->state->sort_keys)) {
-        VALUE sorted_array = rb_funcall(obj, rb_intern("sort"), 0);
-        VALUE sorted_hash = rb_funcall(sorted_array, rb_intern("to_h"), 0);
-        obj = sorted_hash;
+    if (RB_UNLIKELY(RTEST(data->state->sort_keys))) {
+        VALUE sort_keys = data->state->sort_keys;
+        VALUE sorted_array;
+        if (rb_obj_is_proc(sort_keys)) {
+            sorted_array = rb_funcall_with_block(obj, rb_intern("sort"), 0, NULL, sort_keys);
+        } else {
+            sorted_array = rb_funcall(obj, rb_intern("sort"), 0);
+        }
+        obj = rb_funcall(sorted_array, rb_intern("to_h"), 0);
     }
 
     long depth = increase_depth(data);
@@ -1731,27 +1739,31 @@ static VALUE cState_ascii_only_set(VALUE self, VALUE enable)
 }
 
 /*
- * call-seq: sort_keys?
+ * call-seq: sort_keys
  *
- * Returns true, if object keys should be sorted in the generated JSON. Otherwise
- * returns false.
+ * Get the value of sort_keys.
  */
 static VALUE cState_sort_keys_p(VALUE self)
 {
     GET_STATE(self);
-    return state->sort_keys ? Qtrue : Qfalse;
+    return state->sort_keys;
 }
 
 /*
- * call-seq: sort_keys=(enable)
+ * call-seq: sort_keys=(value)
  *
- * This sets whether object keys should be sorted in the generated JSON.
+ * value is a boolean or proc. If the value is the boolean true, 
+ * object keys will be sorted lexicographically in ascending order.
+ *
+ * If the value is a proc, it must be a comparator. It will receive two
+ * [key, value] pairs to allow for arbitrary sorting.
  */
-static VALUE cState_sort_keys_set(VALUE self, VALUE enable)
+static VALUE cState_sort_keys_set(VALUE self, VALUE value)
 {
     rb_check_frozen(self);
     GET_STATE(self);
-    state->sort_keys = RTEST(enable);
+    VALUE sort_keys = rb_obj_is_proc(value) ? value : (RTEST(value) ? Qtrue : Qfalse);
+    RB_OBJ_WRITE(self, &state->sort_keys, sort_keys);
     return Qnil;
 }
 
@@ -1865,7 +1877,10 @@ static int configure_state_i(VALUE key, VALUE val, VALUE _arg)
         state->as_json_single_arg = proc && rb_proc_arity(proc) == 1;
         state_write_value(data, &state->as_json, proc);
     }
-    else if (key == sym_sort_keys)             { state->sort_keys = RTEST(val); }
+    else if (key == sym_sort_keys)             {
+        VALUE sort_keys = rb_obj_is_proc(val) ? val : (RTEST(val) ? Qtrue : Qfalse);
+        state_write_value(data, &state->sort_keys, sort_keys);
+    }
     return ST_CONTINUE;
 }
 
@@ -1991,7 +2006,7 @@ void Init_generator(void)
     rb_define_method(cState, "buffer_initial_length=", cState_buffer_initial_length_set, 1);
     rb_define_method(cState, "generate", cState_generate, -1);
     rb_define_method(cState, "_generate_no_fallback", cState_generate_no_fallback, -1);
-    rb_define_method(cState, "sort_keys?", cState_sort_keys_p, 0);
+    rb_define_method(cState, "sort_keys", cState_sort_keys_p, 0);
     rb_define_method(cState, "sort_keys=", cState_sort_keys_set, 1);
 
     rb_define_private_method(cState, "allow_duplicate_key?", cState_allow_duplicate_key_p, 0);
