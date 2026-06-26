@@ -17,6 +17,7 @@ import org.jruby.RubyFixnum;
 import org.jruby.RubyFloat;
 import org.jruby.RubyHash;
 import org.jruby.RubyIO;
+import org.jruby.RubyProc;
 import org.jruby.RubyString;
 import org.jruby.RubySymbol;
 import org.jruby.runtime.Helpers;
@@ -574,7 +575,10 @@ public final class Generator {
         }
 
         if (state.sortKeys()) {
-            RubyArray<?> sortedPairs = (RubyArray<?>) object.callMethod(context, "sort");
+            RubyProc comparator = state.getSortKeysProc();
+            RubyArray<?> sortedPairs = comparator != null
+                    ? (RubyArray<?>) Helpers.invoke(context, object, "sort", comparator.getBlock())
+                    : (RubyArray<?>) object.callMethod(context, "sort");
             object = (RubyHash) sortedPairs.callMethod(context, "to_h");
         }
 
