@@ -440,16 +440,9 @@ public class GeneratorState extends RubyObject {
     }
 
     /**
-     * Returns true if object keys should be sorted (either lexicographically
-     * or with a custom comparator).
-     */
-    public boolean sortKeys() {
-        return sortKeys != null && sortKeys.isTrue();
-    }
-
-    /**
-     * Returns the comparator proc used to sort keys, or <code>null</code> if
-     * keys should be sorted lexicographically.
+     * Returns the proc used to sort the keys of an object, or
+     * <code>null</code> if keys should not be sorted. The proc receives the
+     * entire Hash and returns a Hash with its pairs in the desired order.
      */
     public RubyProc getSortKeysProc() {
         return sortKeys instanceof RubyProc ? (RubyProc) sortKeys : null;
@@ -457,7 +450,10 @@ public class GeneratorState extends RubyObject {
 
     private static IRubyObject normalizeSortKeys(ThreadContext context, IRubyObject value) {
         if (value instanceof RubyProc) return value;
-        return (value != null && value.isTrue()) ? context.getRuntime().getTrue() : null;
+        if (value != null && value.isTrue()) {
+            return context.runtime.getModule("JSON").getConstant("SORT_KEYS_PROC");
+        }
+        return null;
     }
 
     @JRubyMethod(name={"strict","strict?"})

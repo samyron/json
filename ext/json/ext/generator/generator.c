@@ -39,7 +39,7 @@ typedef struct JSON_Generator_StateStruct {
 
 static VALUE mJSON, cState, cFragment, eGeneratorError, eNestingError, Encoding_UTF_8;
 
-static ID i_to_s, i_to_json, i_new, i_encode;
+static ID i_to_s, i_to_json, i_new, i_encode, i_call;
 static VALUE sym_indent, sym_space, sym_space_before, sym_object_nl, sym_array_nl, sym_max_nesting, sym_allow_nan, sym_allow_duplicate_key,
              sym_ascii_only, sym_depth, sym_buffer_initial_length, sym_script_safe, sym_escape_slash, sym_strict, sym_as_json, sym_sort_keys;
 
@@ -1055,14 +1055,8 @@ static inline long increase_depth(struct generate_json_data *data)
 static void generate_json_object(FBuffer *buffer, struct generate_json_data *data, VALUE obj)
 {
     if (RB_UNLIKELY(RTEST(data->state->sort_keys))) {
-        VALUE sort_keys = data->state->sort_keys;
-        VALUE sorted_array;
-        if (rb_obj_is_proc(sort_keys)) {
-            sorted_array = rb_funcall_with_block(obj, rb_intern("sort"), 0, NULL, sort_keys);
-        } else {
-            sorted_array = rb_funcall(obj, rb_intern("sort"), 0);
-        }
-        obj = rb_funcall(sorted_array, rb_intern("to_h"), 0);
+        obj = rb_funcall(data->state->sort_keys, i_call, 1, obj);
+        Check_Type(obj, T_HASH);
     }
 
     long depth = increase_depth(data);
@@ -1738,6 +1732,14 @@ static VALUE cState_ascii_only_set(VALUE self, VALUE enable)
     return Qnil;
 }
 
+static VALUE normalize_sort_keys(VALUE value)
+{
+    if (rb_obj_is_proc(value)) {
+        return value;
+    }
+    return RTEST(value) ? rb_const_get(mJSON, rb_intern("SORT_KEYS_PROC")) : Qfalse;
+}
+
 /*
  * call-seq: sort_keys
  *
@@ -1752,18 +1754,17 @@ static VALUE cState_sort_keys_p(VALUE self)
 /*
  * call-seq: sort_keys=(value)
  *
- * value is a boolean or proc. If the value is the boolean true, 
- * object keys will be sorted lexicographically in ascending order.
+ * value is a boolean or a proc. If the value is the boolean true, object keys
+ * will be sorted lexicographically in ascending order.
  *
- * If the value is a proc, it must be a comparator. It will receive two
- * [key, value] pairs to allow for arbitrary sorting.
+ * If the value is a proc, it receives the entire Hash and must return a Hash
+ * with its pairs in the desired order, allowing for arbitrary sorting.
  */
 static VALUE cState_sort_keys_set(VALUE self, VALUE value)
 {
     rb_check_frozen(self);
     GET_STATE(self);
-    VALUE sort_keys = rb_obj_is_proc(value) ? value : (RTEST(value) ? Qtrue : Qfalse);
-    RB_OBJ_WRITE(self, &state->sort_keys, sort_keys);
+    RB_OBJ_WRITE(self, &state->sort_keys, normalize_sort_keys(value));
     return Qnil;
 }
 
@@ -1878,8 +1879,7 @@ static int configure_state_i(VALUE key, VALUE val, VALUE _arg)
         state_write_value(data, &state->as_json, proc);
     }
     else if (key == sym_sort_keys)             {
-        VALUE sort_keys = rb_obj_is_proc(val) ? val : (RTEST(val) ? Qtrue : Qfalse);
-        state_write_value(data, &state->sort_keys, sort_keys);
+        state_write_value(data, &state->sort_keys, normalize_sort_keys(val));
     }
     return ST_CONTINUE;
 }
@@ -2021,6 +2021,7 @@ void Init_generator(void)
     i_to_json = rb_intern("to_json");
     i_new = rb_intern("new");
     i_encode = rb_intern("encode");
+    i_call = rb_intern("call");
 
     sym_indent = ID2SYM(rb_intern("indent"));
     sym_space = ID2SYM(rb_intern("space"));

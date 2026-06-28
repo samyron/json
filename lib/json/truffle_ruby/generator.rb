@@ -201,9 +201,14 @@ module JSON
         attr_accessor :strict
 
         # Controls key sorting in the generated JSON. If set to +true+, object
-        # keys are sorted by key lexicographically. If set to a Proc, it is
-        # used as a comparator receiving two [key, value] pairs.
-        attr_accessor :sort_keys
+        # keys are sorted by key lexicographically. If set to a Proc, it
+        # receives the entire Hash and must return a Hash with its pairs in the
+        # desired order.
+        attr_reader :sort_keys
+
+        def sort_keys=(value) # :nodoc:
+          @sort_keys = Proc === value ? value : (value ? JSON::SORT_KEYS_PROC : false)
+        end
 
         # :stopdoc:
         attr_reader :buffer_initial_length
@@ -291,7 +296,7 @@ module JSON
           @allow_nan             = !!opts[:allow_nan]         if opts.key?(:allow_nan)
           @as_json               = opts[:as_json].to_proc     if opts[:as_json]
           @ascii_only            = opts[:ascii_only]          if opts.key?(:ascii_only)
-          @sort_keys             = opts[:sort_keys]           if opts.key?(:sort_keys)
+          self.sort_keys         = opts[:sort_keys]           if opts.key?(:sort_keys)
           @depth                 = opts[:depth] || 0
           @buffer_initial_length ||= opts[:buffer_initial_length]
 
@@ -360,7 +365,7 @@ module JSON
             result = generate_json(obj, ''.dup)
           else
             if @sort_keys
-              obj = (Proc === @sort_keys ? obj.sort(&@sort_keys) : obj.sort).to_h
+              obj = @sort_keys.call(obj)
             end
 
             result = obj.to_json(self)

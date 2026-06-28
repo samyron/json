@@ -243,6 +243,10 @@ module JSON
 
   MinusInfinity = -Infinity
 
+# The default proc used when the +sort_keys+ generation option is +true+.
+# It returns a new hash with the entries sorted by their keys.
+  SORT_KEYS_PROC = ->(hash) { hash.sort.to_h }
+
   # The base exception for JSON errors.
   class JSONError < StandardError; end
 

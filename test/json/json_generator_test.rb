@@ -226,17 +226,21 @@ class JSONGeneratorTest < Test::Unit::TestCase
   end
 
   def test_generate_sort_keys_with_proc
-    reverse = ->(a, b) { b[0] <=> a[0] }
+    reverse = ->(hash) { hash.sort.reverse.to_h }
     json = generate({2=>"a", 1=>"b", 3=>"c"}, sort_keys: reverse)
     assert_equal('{"3":"c","2":"a","1":"b"}', json)
 
-    by_value = ->(a, b) { a[1] <=> b[1] }
+    by_value = ->(hash) { hash.sort_by { |_k, v| v }.to_h }
     json = generate({2=>"c", 1=>"a", 3=>"b"}, sort_keys: by_value)
     assert_equal('{"1":"a","3":"b","2":"c"}', json)
 
     state = State.new(sort_keys: reverse)
     assert_same reverse, state.to_h[:sort_keys]
     assert_equal('{"3":"c","2":"a","1":"b"}', state.generate({2=>"a", 1=>"b", 3=>"c"}))
+
+    # A truthy sort_keys is normalized to the default sorting proc.
+    state = State.new(sort_keys: true)
+    assert_same JSON::SORT_KEYS_PROC, state.sort_keys
   end
 
   def test_generate_custom

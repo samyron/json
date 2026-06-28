@@ -574,12 +574,9 @@ public final class Generator {
             return;
         }
 
-        if (state.sortKeys()) {
-            RubyProc comparator = state.getSortKeysProc();
-            RubyArray<?> sortedPairs = comparator != null
-                    ? (RubyArray<?>) Helpers.invoke(context, object, "sort", comparator.getBlock())
-                    : (RubyArray<?>) object.callMethod(context, "sort");
-            object = (RubyHash) sortedPairs.callMethod(context, "to_h");
+        RubyProc sortKeysProc = state.getSortKeysProc();
+        if (sortKeysProc != null) {
+            object = (RubyHash) Helpers.invoke(context, sortKeysProc, "call", object);
         }
 
         final ByteList objectNl = state.getObjectNl();
