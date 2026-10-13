@@ -2,7 +2,14 @@
 
 ### Unreleased
 
+### 2026-10-13 (3.1.0)
+
+* Added `rfc8785` generator option to canonicalize the output. Replaces the `json-canonicalization` with numerous correctness fixes.
+* Use the `rb_len_t` type introduced in Ruby 4.1 to allow for proper 64bit support on LP64 platforms (Windows).
 * JRuby: parser errors now include the position (`line`, `column` and the message suffix) as well as `json_path`, matching the C extension.
+* Improved the accuracy of parser error's `line`, `column` and snipets in presence of multibyte characters.
+* Fix `JSON.load` to work correctly when provided a `Zlib::GzipReader` as IO source.
+* Reject non-ASCII BINARY strings during JSON generation. This was deprecated since a long time and scheduled to be removed for 3.0.
 
 ### 2026-09-09 (3.0.2)
 
